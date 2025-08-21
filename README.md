@@ -1,0 +1,423 @@
+# AI Quality Kit
+
+A comprehensive testing framework for AI applications that automatically evaluates LLM outputs for quality, safety, and compliance. This toolkit acts as a CI/CD quality gate for AI systems, ensuring reliable and safe AI deployments.
+
+## What does this product do?
+
+**AI Quality Kit** automatically tests LLM outputs across multiple dimensions:
+
+- **Quality Evaluation**: Uses Ragas metrics (faithfulness, context recall) to assess answer quality and retrieval effectiveness
+- **Guardrails Validation**: Enforces structured output formats through JSON schema validation and deterministic checks
+- **Safety Testing**: Performs black-box safety testing against adversarial prompts with zero-tolerance violation policy
+- **Format Compliance**: Validates output consistency and detects potential data leakage through PII detection
+
+The toolkit integrates seamlessly into CI/CD pipelines, failing builds when quality thresholds are not met, ensuring only reliable AI systems reach production.
+
+## Where does it run?
+
+**AI Quality Kit** runs as a **FastAPI backend service** that can be deployed:
+
+- **Locally**: Development and testing environment
+- **Docker**: Containerized deployment for production
+- **CI/CD**: Automated testing in GitHub Actions
+- **Integration**: Behind chat UIs, Slack/Teams bots, or other services using the REST API
+
+The service exposes a simple `/ask` endpoint that accepts questions and returns structured responses with context.
+
+## Quick Start
+
+### Local Development
+
+```bash
+# 1. Clone and setup
+git clone <repository-url>
+cd ai-quality-kit
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# 2. Install dependencies
+pip install -r infra/requirements.txt
+
+# 3. Configure environment
+cp .env.example .env
+# Edit .env and add your API keys:
+# OPENAI_API_KEY=sk-proj-your_actual_openai_key_here
+# or for Anthropic:
+# PROVIDER=anthropic
+# ANTHROPIC_API_KEY=your_anthropic_key_here
+
+# 4. Start the service
+uvicorn apps.rag_service.main:app --reload --port 8000
+
+# 5. Test the API
+curl -X POST http://localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"query": "How to validate schema drift?"}'
+```
+
+### Docker Deployment
+
+```bash
+# Build image
+docker build -t ai-quality-kit -f infra/dockerfile .
+
+# Run with environment file
+docker run -p 8000:8000 --env-file .env ai-quality-kit
+
+# Test health
+curl http://localhost:8000/health
+```
+
+### Running Tests
+
+```bash
+# Run all quality tests
+pytest -q
+
+# Run specific test suites
+pytest evals/test_ragas_quality.py -v           # Quality evaluation
+pytest guardrails/test_guardrails.py -v        # Output validation
+pytest safety/test_safety_basic.py -v          # Safety testing
+```
+
+## How to Use
+
+### REST API Interaction
+
+The primary interface is the `/ask` endpoint:
+
+```bash
+# Basic question
+curl -X POST http://localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What metrics should I monitor in my data pipeline?"}'
+
+# Response format:
+{
+  "answer": "Key metrics to track include data freshness, data volume, data quality scores...",
+  "context": ["Passage 1: ETL pipeline monitoring requires...", "Passage 2: ..."]
+}
+```
+
+### Simple HTML Interface Example
+
+Create a basic web interface:
+
+```html
+<!DOCTYPE html>
+<html>
+<head><title>AI Quality Kit Demo</title></head>
+<body>
+    <h1>AI Quality Kit</h1>
+    <form id="askForm">
+        <input type="text" id="query" placeholder="Ask a question..." style="width: 400px;">
+        <button type="submit">Ask</button>
+    </form>
+    <div id="response"></div>
+    
+    <script>
+        document.getElementById('askForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const query = document.getElementById('query').value;
+            const response = await fetch('/ask', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({query})
+            });
+            const data = await response.json();
+            document.getElementById('response').innerHTML = 
+                `<h3>Answer:</h3><p>${data.answer}</p>
+                 <h3>Context:</h3><ul>${data.context.map(c => `<li>${c}</li>`).join('')}</ul>`;
+        };
+    </script>
+</body>
+</html>
+```
+
+### CLI Query Example
+
+```bash
+# Simple CLI wrapper
+echo '{"query": "How can I detect schema drift?"}' | \
+  curl -s -X POST http://localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -d @- | \
+  python -c "import sys, json; data = json.load(sys.stdin); print(f\"Answer: {data['answer']}\")"
+```
+
+## Supported LLM Providers
+
+### Currently Supported
+
+- **OpenAI** (default): GPT-4, GPT-3.5-turbo, GPT-4o-mini
+- **Anthropic**: Claude-3.5-sonnet, Claude-3-haiku
+
+### Provider Configuration
+
+Switch providers via environment variables:
+
+```bash
+# OpenAI (default)
+export PROVIDER=openai
+export MODEL_NAME=gpt-4o-mini
+export OPENAI_API_KEY=your_key
+
+# Anthropic
+export PROVIDER=anthropic
+export ANTHROPIC_MODEL=claude-3-5-sonnet
+export ANTHROPIC_API_KEY=your_key
+```
+
+### Adding New Providers
+
+Extend `llm/provider.py` to add support for:
+
+- **Azure OpenAI**: Modify `_get_azure_openai_chat()`
+- **Google Gemini**: Add new function with Gemini API calls
+- **Ollama/Local**: Implement REST calls to local model server
+- **Custom APIs**: Follow the pattern in `_get_custom_rest_chat()`
+
+Example extension:
+```python
+def _get_gemini_chat() -> Callable[[List[str]], str]:
+    import google.generativeai as genai
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+    # Implementation details...
+```
+
+**Note**: This tests API-based LLM services, not web interfaces like ChatGPT's web UI directly.
+
+## Test Development
+
+### Who writes the tests?
+
+- **Domain Experts**: Provide ground-truth QA pairs and business context
+- **QA/AI Quality Engineers**: Build evaluation frameworks, set thresholds, design safety tests
+- **DevOps Engineers**: Integrate into CI/CD pipelines and deployment automation
+
+### Creating Golden Datasets
+
+1. **Add QA pairs** to `data/golden/qaset.jsonl`:
+```json
+{"query": "Your question", "answer": "Expected answer"}
+```
+
+2. **Add context passages** to `data/golden/passages.jsonl`:
+```json
+{"id": "passage_n", "text": "Relevant information that can answer questions"}
+```
+
+3. **Use the seed script** for bulk additions:
+```bash
+python scripts/seed_example_data.py --type data-eng  # Predefined examples
+python scripts/seed_example_data.py --type custom \
+  --qa-query "Your question" \
+  --qa-answer "Expected answer" \
+  --passage-id "passage_new" \
+  --passage-text "Context information"
+```
+
+## Quality Thresholds
+
+| Metric | Threshold | Purpose |
+|--------|-----------|---------|
+| **Faithfulness** | ≥ 0.75 | Ensures answers are grounded in provided context |
+| **Context Recall** | ≥ 0.80 | Validates retrieval system finds relevant information |
+| **JSON Schema Pass Rate** | 100% | Guarantees structured output compliance |
+| **Safety Violations** | 0 | Zero-tolerance policy for harmful content |
+
+### Threshold Configuration
+
+Modify thresholds in test files:
+```python
+# evals/test_ragas_quality.py
+thresholds = {
+    'faithfulness': 0.75,      # Increase for stricter grounding
+    'context_recall': 0.80     # Increase for better retrieval
+}
+```
+
+## How reliable are LLM-judge evaluations?
+
+**LLM-based evaluations are not 100% reliable**, but we improve trust through:
+
+### Multi-layered Validation
+- **LLM-based semantic metrics** (Ragas) for nuanced quality assessment
+- **Deterministic guardrails** (JSON schema, regex) for format validation
+- **Heuristic checks** (PII detection) for safety compliance
+- **Golden datasets** for consistent evaluation benchmarks
+
+### Best Practices
+- **Multiple judges**: Consider implementing multiple LLM evaluators and requiring consensus
+- **Human validation**: Regularly audit LLM judge decisions against human expert judgment
+- **Threshold tuning**: Start conservative and adjust based on production performance
+- **Metric diversity**: Combine multiple evaluation approaches rather than relying on single metrics
+
+### Reliability Improvements
+```python
+# Example: Multi-judge evaluation
+judges = ['gpt-4', 'claude-3.5-sonnet', 'gemini-pro']
+scores = [evaluate_with_judge(sample, judge) for judge in judges]
+consensus_score = np.mean(scores)  # Or require majority agreement
+```
+
+## Why does this matter?
+
+### Regulatory Compliance
+- **EU AI Act**: Requires risk assessment and quality management for AI systems
+- **NIST AI Risk Management Framework**: Mandates testing and monitoring of AI systems
+- **Industry Standards**: Demonstrates due diligence in AI safety and reliability
+
+### Business Risk Reduction
+- **Prevents deployment** of unreliable models that could damage user trust
+- **Catches regressions** in model performance before they reach production
+- **Ensures consistency** in AI behavior across deployments and updates
+
+### EvalOps Implementation
+This toolkit demonstrates **Evaluation Operations (EvalOps)** - the practice of continuous evaluation and monitoring of AI systems, similar to how DevOps revolutionized software deployment.
+
+## CI/CD Integration
+
+### GitHub Actions Setup
+
+1. **Add repository secrets**:
+   - `OPENAI_API_KEY`
+   - `ANTHROPIC_API_KEY` (optional)
+
+2. **Copy CI workflow**:
+```bash
+cp infra/github-actions-ci.yml .github/workflows/ci.yml
+```
+
+3. **Configure variables** (optional):
+   - `MODEL_NAME` (default: gpt-4o-mini)
+   - `PROVIDER` (default: openai)
+   - `RAG_TOP_K` (default: 4)
+
+### Quality Gates
+
+The CI pipeline will **fail** if:
+- Faithfulness score < 0.75
+- Context recall score < 0.80
+- JSON schema validation fails
+- Any safety violations detected
+- PII/banned content found
+
+This prevents merging code that degrades AI quality.
+
+## Environment Management
+
+### Development Environment
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r infra/requirements.txt
+cp .env.example .env
+# Configure .env with your API keys
+```
+
+### Production Environment
+```bash
+# Using Docker
+docker build -t ai-quality-kit -f infra/dockerfile .
+docker run -p 8000:8000 --env-file .env ai-quality-kit
+
+# Or direct deployment
+export OPENAI_API_KEY=your_production_key
+export MODEL_NAME=gpt-4  # More capable for production
+uvicorn apps.rag_service.main:app --host 0.0.0.0 --port 8000
+```
+
+### Cross-Platform Support
+- **macOS/Linux**: Use `source .venv/bin/activate`
+- **Windows**: Use `.venv\Scripts\activate`
+- **Docker**: Works identically across all platforms
+
+## Project Structure
+
+```
+ai-quality-kit/
+├── apps/rag_service/          # FastAPI RAG application
+│   ├── main.py               # FastAPI app and endpoints
+│   ├── rag_pipeline.py       # RAG implementation with FAISS
+│   └── config.py             # Environment configuration
+├── llm/                      # LLM provider abstraction
+│   ├── provider.py           # Multi-provider chat interface
+│   └── prompts.py            # System prompts for different tasks
+├── evals/                    # Quality evaluation framework
+│   ├── test_ragas_quality.py # Ragas-based quality tests
+│   ├── metrics.py            # Evaluation metrics implementation
+│   └── dataset_loader.py     # Dataset loading utilities
+├── guardrails/               # Output validation framework
+│   ├── schema.json           # JSON schema definition
+│   └── test_guardrails.py    # Schema and format validation tests
+├── safety/                   # Safety testing framework
+│   ├── attacks.txt           # Adversarial prompts for testing
+│   └── test_safety_basic.py  # Safety violation detection tests
+├── data/golden/              # Ground truth datasets
+│   ├── qaset.jsonl          # Question-answer pairs
+│   └── passages.jsonl       # Context passages for retrieval
+├── infra/                    # Infrastructure and deployment
+│   ├── requirements.txt      # Python dependencies
+│   ├── dockerfile           # Container definition
+│   └── github-actions-ci.yml # CI/CD pipeline
+├── scripts/                  # Utility scripts
+│   └── seed_example_data.py  # Data seeding helper
+├── .env.example              # Environment variables template
+└── README.md                 # This documentation
+```
+
+## Development Roadmap
+
+### Phase 1: Enhanced Monitoring
+- **Logging integration**: Snowflake/BigQuery for eval result storage
+- **Dashboards**: Metabase/Grafana for quality trend visualization
+- **Alerting**: Slack/email notifications for threshold breaches
+
+### Phase 2: Advanced Evaluation
+- **Multi-judge evaluation**: Consensus scoring across multiple LLM judges
+- **Human feedback integration**: RLHF-style quality improvement
+- **Domain-specific metrics**: Custom evaluation criteria per use case
+
+### Phase 3: Production Optimization
+- **Caching layer**: Redis for API response caching
+- **Smoke mode**: Reduced API calls for cost optimization during development
+- **A/B testing**: Framework for comparing model versions
+
+### Phase 4: Observability
+- **Tracing integration**: Langfuse/Phoenix for end-to-end observability
+- **Performance monitoring**: Latency, throughput, and cost tracking
+- **Data drift detection**: Automatic monitoring of input distribution changes
+
+### Phase 5: Automation
+- **Nightly safety jobs**: Scheduled adversarial testing
+- **Auto-retraining triggers**: Model updates based on performance degradation
+- **Compliance reporting**: Automated generation of regulatory compliance reports
+
+## Contributing
+
+1. **Fork the repository**
+2. **Create feature branch**: `git checkout -b feature/new-evaluation`
+3. **Add tests**: Ensure new features include appropriate test coverage
+4. **Run quality checks**: `pytest -q` must pass
+5. **Submit pull request**: CI will validate all quality gates
+
+### Development Guidelines
+- All code must include type hints and docstrings
+- New LLM providers should follow the pattern in `llm/provider.py`
+- Evaluation metrics should be deterministic where possible
+- Safety tests must maintain zero-tolerance policy
+
+## License
+
+[Add your license information here]
+
+## Support
+
+- **Issues**: Use GitHub Issues for bug reports and feature requests
+- **Documentation**: This README and inline code documentation
+- **Community**: [Add community links if applicable]
+
+---
+
+**Ready to ensure your AI systems meet production quality standards? Start with the Quick Start guide above!**
