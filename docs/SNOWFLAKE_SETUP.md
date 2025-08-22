@@ -252,3 +252,47 @@ CREATE TABLE LLM_EVAL_RESULTS (
     RECORDED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
 );
 ```
+
+## API Logging, Live Evaluation, and Caching Tables
+
+To enable production-grade API logging, live evaluation, and caching, create the following tables in your Snowflake schema:
+
+```sql
+-- Request/response logging (one row per API call)
+CREATE TABLE IF NOT EXISTS LLM_API_LOGS (
+  ID STRING DEFAULT UUID_STRING() PRIMARY KEY,
+  RUN_ID STRING,
+  REQUEST_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+  RESPONSE_AT TIMESTAMP_NTZ,
+  PROVIDER STRING,
+  MODEL_NAME STRING,
+  QUERY_HASH STRING,
+  QUERY_TEXT STRING,
+  CONTEXT ARRAY,
+  ANSWER STRING,
+  SOURCE STRING,              -- "live" | "cache"
+  LATENCY_MS NUMBER,
+  STATUS STRING,              -- "ok" | "error"
+  ERROR_MSG STRING
+);
+
+-- Live evaluation results (one row per metric per API call)
+CREATE TABLE IF NOT EXISTS LLM_API_EVAL_RESULTS (
+  LOG_ID STRING,              -- foreign key to LLM_API_LOGS.ID
+  METRIC_GROUP STRING,        -- "ragas" | "guardrails" | "safety"
+  METRIC_NAME STRING,         -- e.g., "faithfulness"
+  METRIC_VALUE FLOAT,
+  EXTRA JSON,
+  RECORDED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+);
+
+-- Response cache (normalized by query hash and context version)
+CREATE TABLE IF NOT EXISTS LLM_RESPONSE_CACHE (
+  QUERY_HASH STRING,
+  CONTEXT_VERSION STRING,
+  ANSWER STRING,
+  CONTEXT ARRAY,
+  CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+  EXPIRES_AT TIMESTAMP_NTZ
+);
+```

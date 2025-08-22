@@ -64,19 +64,40 @@ def eval_batch(samples: List[Dict[str, Any]]) -> Dict[str, float]:
         if 'ground_truths' in eval_data:
             metrics_to_eval.append(context_recall)
         
-        # Run evaluation
+        # Run evaluation with error handling for uvloop compatibility
         logger.info(f"Evaluating {len(samples)} samples with Ragas...")
-        result = evaluate(dataset, metrics=metrics_to_eval)
-        
-        # Extract scores
-        scores = {}
-        if 'faithfulness' in result:
-            scores['faithfulness'] = float(result['faithfulness'])
-        if 'context_recall' in result:
-            scores['context_recall'] = float(result['context_recall'])
-        
-        logger.info(f"Evaluation completed. Scores: {scores}")
-        return scores
+        try:
+            result = evaluate(dataset, metrics=metrics_to_eval)
+            
+            # Debug: Print the raw result
+            logger.info(f"Raw Ragas result: {result}")
+            
+            # Extract scores
+            scores = {}
+            if 'faithfulness' in result:
+                scores['faithfulness'] = float(result['faithfulness'])
+            if 'context_recall' in result:
+                scores['context_recall'] = float(result['context_recall'])
+            
+            # Check if all scores are 0 (which might indicate an issue)
+            if all(score == 0.0 for score in scores.values()) and scores:
+                logger.warning("All evaluation scores are 0.0, this might indicate an evaluation issue")
+            
+            logger.info(f"Evaluation completed. Scores: {scores}")
+            return scores
+            
+        except Exception as ragas_error:
+            # Handle uvloop compatibility issue
+            if "Can't patch loop" in str(ragas_error) or "uvloop" in str(ragas_error):
+                logger.warning("Ragas evaluation failed due to uvloop compatibility issue. Skipping evaluation.")
+                return {}
+            # Handle the "0" error case
+            elif str(ragas_error).strip() == "0":
+                logger.warning("Ragas evaluation returned '0' error, possibly a score issue. Returning empty scores.")
+                return {}
+            else:
+                logger.error(f"Ragas evaluation failed with error: {ragas_error}")
+                raise ragas_error
         
     except Exception as e:
         logger.error(f"Evaluation failed: {e}")
