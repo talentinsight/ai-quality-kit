@@ -21,6 +21,8 @@ from apps.rag_service.rag_pipeline import RAGPipeline
 from evals.dataset_loader import load_qa
 from llm.provider import get_chat
 from llm.prompts import JSON_OUTPUT_ENFORCING_PROMPT
+from apps.db.eval_logger import log_evaluation_results
+from apps.db.run_context import has_run_id, get_run_id
 
 
 class TestGuardrails:
@@ -31,7 +33,7 @@ class TestGuardrails:
         """Setup test fixtures."""
         cls.rag_pipeline = None
         cls.qa_data = None
-        cls.chat = get_chat()
+        cls.chat = None
         
         # Load JSON schema
         schema_path = "guardrails/schema.json"
@@ -40,6 +42,9 @@ class TestGuardrails:
     
     def setup_method(self):
         """Setup method run before each test."""
+        if self.chat is None:
+            self.chat = get_chat()
+            
         if self.rag_pipeline is None:
             # Initialize RAG pipeline
             model_name = os.getenv("MODEL_NAME", "gpt-4o-mini")
@@ -150,6 +155,23 @@ Analyze the question and context, then respond with the required JSON structure.
                 validation_failures.append(f"Query '{query}': JSON extraction failed - {str(e)}")
             except Exception as e:
                 validation_failures.append(f"Query '{query}': Unexpected error - {str(e)}")
+        
+        # Log evaluation results to Snowflake if enabled and run context exists
+        if has_run_id():
+            run_id = get_run_id()
+            success_rate = 1.0 if not validation_failures else 0.0
+            log_evaluation_results(
+                run_id=run_id,
+                metric_group="guardrails",
+                metrics={"json_schema_pass": success_rate},
+                extra={
+                    "test": "json_schema_validation",
+                    "total_queries": len(self.qa_data),
+                    "failed_queries": len(validation_failures),
+                    "provider": os.getenv("PROVIDER", "unknown"),
+                    "model": os.getenv("MODEL_NAME", "unknown")
+                }
+            )
         
         if validation_failures:
             failure_msg = "\n".join(validation_failures)

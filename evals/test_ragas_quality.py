@@ -3,6 +3,7 @@
 import pytest
 import os
 import sys
+import uuid
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -16,6 +17,8 @@ sys.path.append(str(project_root))
 from apps.rag_service.rag_pipeline import RAGPipeline
 from evals.dataset_loader import load_qa
 from evals.metrics import eval_batch, create_eval_sample, check_thresholds
+from apps.db.eval_logger import log_evaluation_results
+from apps.db.run_context import set_run_id
 
 
 class TestRagasQuality:
@@ -32,6 +35,17 @@ class TestRagasQuality:
             'faithfulness': 0.75,
             'context_recall': 0.80
         }
+        
+        # Setup evaluation run ID for logging
+        cls.run_id = os.getenv("EVAL_RUN_ID")
+        if not cls.run_id:
+            cls.run_id = str(uuid.uuid4())
+        
+        # Set run ID in context for other tests
+        set_run_id(cls.run_id)
+        
+        # Log run start info
+        print(f"Starting evaluation run: {cls.run_id}")
     
     def setup_method(self):
         """Setup method run before each test."""
@@ -87,6 +101,19 @@ class TestRagasQuality:
         faithfulness_score = scores.get('faithfulness', 0.0)
         threshold = self.thresholds['faithfulness']
         
+        # Log evaluation results to Snowflake if enabled
+        log_evaluation_results(
+            run_id=self.run_id,
+            metric_group="ragas",
+            metrics={"faithfulness": faithfulness_score},
+            extra={
+                "threshold": threshold,
+                "test": "faithfulness_threshold",
+                "provider": os.getenv("PROVIDER", "unknown"),
+                "model": os.getenv("MODEL_NAME", "unknown")
+            }
+        )
+        
         assert faithfulness_score >= threshold, (
             f"Faithfulness score {faithfulness_score:.3f} is below threshold {threshold}. "
             f"This indicates the model is generating answers not well-grounded in the provided context. "
@@ -123,6 +150,19 @@ class TestRagasQuality:
         context_recall_score = scores.get('context_recall', 0.0)
         threshold = self.thresholds['context_recall']
         
+        # Log evaluation results to Snowflake if enabled
+        log_evaluation_results(
+            run_id=self.run_id,
+            metric_group="ragas",
+            metrics={"context_recall": context_recall_score},
+            extra={
+                "threshold": threshold,
+                "test": "context_recall_threshold",
+                "provider": os.getenv("PROVIDER", "unknown"),
+                "model": os.getenv("MODEL_NAME", "unknown")
+            }
+        )
+        
         assert context_recall_score >= threshold, (
             f"Context recall score {context_recall_score:.3f} is below threshold {threshold}. "
             f"This indicates the retrieval system is not finding relevant context for the questions. "
@@ -157,6 +197,20 @@ class TestRagasQuality:
         
         # Check all thresholds
         threshold_results = check_thresholds(scores, self.thresholds)
+        
+        # Log combined evaluation results to Snowflake if enabled
+        log_evaluation_results(
+            run_id=self.run_id,
+            metric_group="ragas",
+            metrics=scores,
+            extra={
+                "thresholds": self.thresholds,
+                "test": "combined_quality_thresholds",
+                "provider": os.getenv("PROVIDER", "unknown"),
+                "model": os.getenv("MODEL_NAME", "unknown"),
+                "threshold_results": threshold_results
+            }
+        )
         
         failed_metrics = [
             metric for metric, passed in threshold_results.items() 

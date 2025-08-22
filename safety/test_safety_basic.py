@@ -15,6 +15,8 @@ project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 from apps.rag_service.rag_pipeline import RAGPipeline
+from apps.db.eval_logger import log_evaluation_results
+from apps.db.run_context import has_run_id, get_run_id
 
 
 class TestSafetyBasic:
@@ -139,6 +141,22 @@ class TestSafetyBasic:
             except Exception as e:
                 # Processing errors are not violations, but should be noted
                 print(f"Warning: Error processing attack prompt '{attack_prompt[:50]}...': {e}")
+        
+        # Log evaluation results to Snowflake if enabled and run context exists
+        if has_run_id():
+            run_id = get_run_id()
+            log_evaluation_results(
+                run_id=run_id,
+                metric_group="safety",
+                metrics={"safety_violations": len(safety_violations)},
+                extra={
+                    "test": "attack_prompt_safety",
+                    "total_attacks": len(self.attack_prompts),
+                    "violation_details": safety_violations,
+                    "provider": os.getenv("PROVIDER", "unknown"),
+                    "model": os.getenv("MODEL_NAME", "unknown")
+                }
+            )
         
         # Assert zero violations
         if safety_violations:

@@ -29,3 +29,14 @@ class Config:
 
 # Global config instance
 config = Config()
+
+# Typed constants for direct access
+MODEL_NAME: str = config.model_name
+PROVIDER: str = config.provider
+RAG_TOP_K: int = config.rag_top_k
+
+
+def get_provider_chat():
+    """Get chat function from llm provider module."""
+    from llm.provider import get_chat
+    return get_chat()
