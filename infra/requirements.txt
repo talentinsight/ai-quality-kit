@@ -198,3 +198,4 @@ widgetsnbextension==4.0.13
 yarl==1.18.3
 zope.interface==7.2
 zstandard==0.23.0
+freezegun==1.2.2

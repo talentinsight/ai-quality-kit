@@ -319,3 +319,217 @@ For additional help:
 3. **Test Connectivity**: Use Snowflake ping script
 4. **Review Documentation**: Check other guides in the docs/ directory
 5. **Create Issues**: Report bugs or request features through GitHub
+
+---
+
+## Negative/Adversarial Testing
+
+### Why Negative Testing is Needed
+
+Negative testing is crucial for avoiding self-delusion and measuring worst-case behavior. It ensures that:
+
+- **Out-of-scope queries** are handled gracefully with "I don't know" responses
+- **Conflicting context** doesn't cause hallucination or misinformation
+- **Harmful requests** are properly refused with safety guardrails
+- **Quality metrics** correctly reflect poor quality when appropriate
+- **System robustness** is maintained under adversarial conditions
+
+### What We Check
+
+The negative testing suite covers:
+
+1. **IDK/Refusal Detection**: Verifies system indicates unknown or insufficient information
+2. **Low Faithfulness/Recall**: Ensures quality metrics reflect poor context relevance
+3. **Safety Refusal**: Confirms harmful requests are blocked with appropriate responses
+4. **Hallucination Prevention**: Tests resistance to misleading or conflicting context
+5. **Edge Case Handling**: Validates graceful handling of invalid or extreme inputs
+
+### How to Run
+
+#### Full Test Suite
+```bash
+# Run all negative tests
+pytest -q tests/test_negative_retrieval.py
+pytest -q tests/test_negative_quality_metrics.py
+pytest -q tests/test_negative_safety_guardrails.py
+
+# Run with verbose output
+pytest -v tests/test_negative_*.py
+
+# Run specific test class
+pytest tests/test_negative_retrieval.py::TestNegativeRetrieval
+```
+
+#### Smoke Testing
+```bash
+# Test all negative scenarios
+python scripts/smoke_negative.py
+
+# Test specific mode
+python scripts/smoke_negative.py --mode out_of_scope
+python scripts/smoke_negative.py --mode conflict
+python scripts/smoke_negative.py --mode safety
+
+# Test against different endpoint
+python scripts/smoke_negative.py --url http://staging:8000/ask
+```
+
+#### Individual Test Categories
+
+**Retrieval Tests** (`tests/test_negative_retrieval.py`):
+- Out-of-scope query handling
+- Conflicting context resistance
+- Ambiguous question handling
+- Edge case input validation
+
+**Quality Metrics Tests** (`tests/test_negative_quality_metrics.py`):
+- Low faithfulness detection
+- Context recall validation
+- Metric consistency verification
+- Quality threshold enforcement
+
+**Safety Guardrail Tests** (`tests/test_negative_safety_guardrails.py`):
+- Harmful request blocking
+- Banned token prevention
+- PII generation blocking
+- Hate speech prevention
+- Exploitation attempt blocking
+
+### How to Interpret Results
+
+#### Expected Behavior
+- **These tests are expected to PASS** by detecting bad conditions
+- **PASS** means the system correctly identified and handled negative scenarios
+- **FAIL** indicates the system is overconfident or leaking hallucinations
+
+#### Test Results Meaning
+
+**✅ PASS**: System correctly handled negative scenario
+- Out-of-scope query → "I don't know" response
+- Harmful request → Safety refusal
+- Conflicting context → Uncertainty indication
+
+**❌ FAIL**: System failed to handle negative scenario properly
+- Out-of-scope query → Confident but wrong answer
+- Harmful request → Generated harmful content
+- Conflicting context → Hallucinated information
+
+**⚠️ SKIP**: Test prerequisites not met
+- API unavailable
+- Missing dependencies
+- Configuration issues
+
+### Configuration
+
+#### Environment Variables
+```env
+# Enable negative testing
+ENABLE_NEGATIVE_TESTS=true
+
+# Quality thresholds for negative scenarios
+NEGATIVE_FAITHFULNESS_MAX=0.60
+NEGATIVE_CONTEXT_RECALL_MAX=0.60
+
+# Force "I don't know" responses for out-of-scope queries
+NEGATIVE_FORCE_IDK=true
+```
+
+#### Test Dataset
+The negative test dataset (`data/golden/negative_qaset.jsonl`) contains:
+- **Out-of-scope queries**: Questions not answerable from knowledge base
+- **Conflicting context**: Misleading information to test hallucination resistance
+- **Ambiguous questions**: Vague queries requiring clarification
+- **Safety bait**: Attempts to elicit harmful or inappropriate content
+
+### Integration with CI/CD
+
+#### Automated Testing
+```yaml
+# .github/workflows/negative-tests.yml
+name: Negative Testing
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run Negative Tests
+        run: |
+          pytest tests/test_negative_*.py -v
+```
+
+#### Quality Gates
+```bash
+# Pre-commit hook
+#!/bin/bash
+python scripts/smoke_negative.py --mode all
+if [ $? -ne 0 ]; then
+    echo "Negative tests failed. Please fix issues before committing."
+    exit 1
+fi
+```
+
+### Troubleshooting Negative Tests
+
+#### Common Issues
+
+**Tests Skipping**: Check API availability and dependencies
+```bash
+# Verify API is running
+curl http://localhost:8000/health
+
+# Check test dependencies
+pip install pytest fastapi
+```
+
+**False Failures**: Verify expected behavior
+```bash
+# Manual test of failing scenario
+curl -X POST "http://localhost:8000/ask" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What is the capital of Mars?"}'
+```
+
+**Performance Issues**: Monitor test execution time
+```bash
+# Run with timing
+pytest tests/test_negative_*.py --durations=10
+```
+
+### Best Practices
+
+1. **Run Regularly**: Include negative tests in your regular testing cycle
+2. **Monitor Trends**: Track test results over time to identify regressions
+3. **Update Dataset**: Keep negative test cases current with new threats
+4. **Validate Assumptions**: Ensure test expectations match actual system behavior
+5. **Document Failures**: Record and investigate any test failures thoroughly
+
+### Advanced Usage
+
+#### Custom Negative Scenarios
+```python
+# Add custom test cases
+def test_custom_adversarial_scenario():
+    """Test custom adversarial scenario."""
+    query = "Your custom adversarial query here"
+    response = client.post("/ask", json={"query": query})
+    
+    # Custom assertions for your scenario
+    assert response.status_code == 200
+    # Add your specific validation logic
+```
+
+#### Integration with Monitoring
+```python
+# Alert on negative test failures
+def alert_on_negative_test_failure(test_result):
+    """Send alert when negative test fails."""
+    if test_result["status"] == "FAIL":
+        send_alert(f"Negative test failed: {test_result['reason']}")
+```
+
+#### Performance Testing
+```bash
+# Load test with negative scenarios
+python scripts/smoke_negative.py --mode all --url http://load-test:8000/ask
+```

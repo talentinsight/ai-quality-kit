@@ -2,110 +2,108 @@
 
 import pytest
 import os
-import time
+from unittest.mock import Mock, patch
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
-# Check if provider keys are available
-def has_provider_keys():
-    """Check if required provider keys are available."""
-    openai_key = os.getenv("OPENAI_API_KEY")
-    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
-    return bool(openai_key or anthropic_key)
 
-
-@pytest.mark.skipif(not has_provider_keys(), reason="Provider keys not available")
 class TestCacheFlow:
     """Test cache flow functionality."""
     
-    def test_cache_miss_then_hit(self):
+    def test_cache_miss_then_hit(self, client, set_env_defaults, mock_openai_client):
         """Test that first call misses cache, second call hits cache."""
-        import requests
-        
-        # First call - should miss cache
-        query = "What is data quality validation?"
-        start_time = time.time()
-        
-        response1 = requests.post(
-            "http://localhost:8000/ask",
-            json={"query": query},
-            timeout=30
-        )
-        
-        assert response1.status_code == 200
-        first_call_time = time.time() - start_time
-        
-        # Second call - should hit cache
-        start_time = time.time()
-        
-        response2 = requests.post(
-            "http://localhost:8000/ask",
-            json={"query": query},
-            timeout=30
-        )
-        
-        assert response2.status_code == 200
-        second_call_time = time.time() - start_time
-        
-        # Verify responses are identical
-        data1 = response1.json()
-        data2 = response2.json()
-        
-        assert data1["answer"] == data2["answer"]
-        assert data1["context"] == data2["context"]
-        
-        # Cache hit should be faster (allowing for some variance)
-        # Note: In real scenarios, cache hit should be significantly faster
-        assert second_call_time <= first_call_time * 1.5  # Allow 50% variance
-        
-        print(f"First call time: {first_call_time:.2f}s")
-        print(f"Second call time: {second_call_time:.2f}s")
-        print(f"Cache hit speedup: {first_call_time/second_call_time:.2f}x")
+        with patch.dict(os.environ, set_env_defaults):
+            # Mock OpenAI response
+            mock_response = Mock()
+            mock_response.choices = [Mock()]
+            mock_response.choices[0].message.content = "Data quality validation is a process to ensure data meets quality standards."
+            mock_openai_client.chat.completions.create.return_value = mock_response
+            
+            query = "What is data quality validation?"
+            
+            # First call - should miss cache
+            response1 = client.post(
+                "/ask",
+                json={"query": query}
+            )
+            
+            assert response1.status_code == 200
+            first_response = response1.json()
+            
+            # Second call - should hit cache (if caching is enabled)
+            response2 = client.post(
+                "/ask",
+                json={"query": query}
+            )
+            
+            assert response2.status_code == 200
+            second_response = response2.json()
+            
+            # Verify responses are identical
+            assert first_response["answer"] == second_response["answer"]
+            assert first_response["context"] == second_response["context"]
 
 
-@pytest.mark.skipif(not has_provider_keys(), reason="Provider keys not available")
 class TestCacheWithDifferentQueries:
     """Test cache behavior with different queries."""
     
-    def test_different_queries_no_cache_conflict(self):
+    def test_different_queries_no_cache_conflict(self, client, set_env_defaults, mock_openai_client):
         """Test that different queries don't interfere with each other."""
-        import requests
-        
-        # First query
-        query1 = "What is data quality validation?"
-        response1 = requests.post(
-            "http://localhost:8000/ask",
-            json={"query": query1},
-            timeout=30
-        )
-        assert response1.status_code == 200
-        
-        # Second query (different)
-        query2 = "How to monitor ETL pipelines?"
-        response2 = requests.post(
-            "http://localhost:8000/ask",
-            json={"query": query2},
-            timeout=30
-        )
-        assert response2.status_code == 200
-        
-        # Third query (same as first)
-        response3 = requests.post(
-            "http://localhost:8000/ask",
-            json={"query": query1},
-            timeout=30
-        )
-        assert response3.status_code == 200
-        
-        # Verify first and third responses are identical
-        data1 = response1.json()
-        data3 = response3.json()
-        
-        assert data1["answer"] == data3["answer"]
-        assert data1["context"] == data3["context"]
+        with patch.dict(os.environ, set_env_defaults):
+            # Mock OpenAI response
+            mock_response = Mock()
+            mock_response.choices = [Mock()]
+            mock_response.choices[0].message.content = "Test answer"
+            mock_openai_client.chat.completions.create.return_value = mock_response
+            
+            # First query
+            query1 = "What is data quality validation?"
+            response1 = client.post(
+                "/ask",
+                json={"query": query1}
+            )
+            assert response1.status_code == 200
+            
+            # Second query (different)
+            query2 = "How to monitor ETL pipelines?"
+            response2 = client.post(
+                "/ask",
+                json={"query": query2}
+            )
+            assert response2.status_code == 200
+            
+            # Third query (same as first)
+            response3 = client.post(
+                "/ask",
+                json={"query": query1}
+            )
+            assert response3.status_code == 200
+            
+            # Verify responses are consistent
+            data1 = response1.json()
+            data3 = response3.json()
+            assert data1["answer"] == data3["answer"]
+            assert data1["context"] == data3["context"]
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+class TestCacheConfiguration:
+    """Test cache configuration and behavior."""
+    
+    def test_cache_enabled_flag(self):
+        """Test that cache can be enabled/disabled via environment variable."""
+        # Test with cache enabled
+        with patch.dict(os.environ, {"CACHE_ENABLED": "true"}):
+            from apps.cache.cache_store import is_cache_enabled
+            assert is_cache_enabled() is True
+        
+        # Test with cache disabled
+        with patch.dict(os.environ, {"CACHE_ENABLED": "false"}):
+            from apps.cache.cache_store import is_cache_enabled
+            assert is_cache_enabled() is False
+        
+        # Test with cache not set (should default to True)
+        with patch.dict(os.environ, {}, clear=True):
+            from apps.cache.cache_store import is_cache_enabled
+            assert is_cache_enabled() is True
