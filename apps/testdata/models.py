@@ -1,0 +1,203 @@
+"""Pydantic models for test data intake."""
+
+import os
+from datetime import datetime
+from typing import Dict, List, Optional, Any
+from pydantic import BaseModel, Field, field_validator, model_validator
+import json
+import yaml
+
+# Configuration
+INTAKE_MAX_MB = int(os.getenv("INTAKE_MAX_MB", "10"))
+MAX_FILE_SIZE = INTAKE_MAX_MB * 1024 * 1024  # Convert to bytes
+
+
+class PassageRecord(BaseModel):
+    """Individual passage record validation."""
+    id: str = Field(..., description="Unique passage identifier")
+    text: str = Field(..., min_length=1, description="Passage content")
+    meta: Optional[Dict[str, Any]] = Field(None, description="Optional metadata")
+
+
+class QARecord(BaseModel):
+    """Individual QA record validation."""
+    qid: str = Field(..., description="Unique question identifier")
+    question: str = Field(..., min_length=1, description="Question text")
+    expected_answer: str = Field(..., min_length=1, description="Expected answer")
+    contexts: Optional[List[str]] = Field(None, description="Optional context passages")
+
+
+class ValidationError(BaseModel):
+    """Validation error details."""
+    field: str = Field(..., description="Field name that failed validation")
+    message: str = Field(..., description="Error message")
+    line_number: Optional[int] = Field(None, description="Line number for JSONL files")
+
+
+class ArtifactInfo(BaseModel):
+    """Information about a single artifact."""
+    present: bool = Field(..., description="Whether artifact is present")
+    count: Optional[int] = Field(None, description="Number of records/lines")
+    sha256: Optional[str] = Field(None, description="SHA256 digest of raw content")
+    validation_errors: List[ValidationError] = Field(default_factory=list, description="Validation errors")
+
+
+class TestDataBundle(BaseModel):
+    """Complete test data bundle."""
+    testdata_id: str = Field(..., description="Unique bundle identifier")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    expires_at: datetime = Field(..., description="Expiration timestamp")
+    passages: Optional[List[PassageRecord]] = Field(None, description="Passage records")
+    qaset: Optional[List[QARecord]] = Field(None, description="QA records")
+    attacks: Optional[List[str]] = Field(None, description="Attack patterns")
+    schema: Optional[Dict[str, Any]] = Field(None, description="JSON Schema")
+    raw_payloads: Dict[str, str] = Field(default_factory=dict, description="Raw content for SHA256")
+
+
+class TestDataMeta(BaseModel):
+    """Metadata about test data bundle."""
+    testdata_id: str = Field(..., description="Bundle identifier")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    expires_at: datetime = Field(..., description="Expiration timestamp")
+    artifacts: Dict[str, ArtifactInfo] = Field(..., description="Artifact information")
+
+
+class UploadResponse(BaseModel):
+    """Response from upload endpoint."""
+    testdata_id: str = Field(..., description="Generated bundle identifier")
+    artifacts: List[str] = Field(..., description="Successfully processed artifacts")
+    counts: Dict[str, int] = Field(..., description="Record counts per artifact")
+
+
+class URLRequest(BaseModel):
+    """Request for URL-based ingestion."""
+    urls: Dict[str, str] = Field(..., description="URLs for each artifact type")
+    
+    @field_validator('urls')
+    @classmethod
+    def validate_urls(cls, v):
+        """Validate that at least one URL is provided."""
+        if not v:
+            raise ValueError("At least one URL must be provided")
+        allowed_keys = {"passages", "qaset", "attacks", "schema"}
+        invalid_keys = set(v.keys()) - allowed_keys
+        if invalid_keys:
+            raise ValueError(f"Invalid artifact types: {invalid_keys}")
+        return v
+
+
+class PasteRequest(BaseModel):
+    """Request for paste-based ingestion."""
+    passages: Optional[str] = Field(None, description="Passages JSONL content")
+    qaset: Optional[str] = Field(None, description="QA JSONL content")
+    attacks: Optional[str] = Field(None, description="Attack patterns (text or YAML)")
+    schema: Optional[str] = Field(None, description="JSON Schema content")
+    
+    @model_validator(mode='after')
+    def validate_at_least_one_field(self):
+        """Ensure at least one content field is provided."""
+        provided_fields = sum(1 for v in [self.passages, self.qaset, self.attacks, self.schema] if v is not None)
+        if provided_fields == 0:
+            raise ValueError("At least one content field must be provided")
+        return self
+
+
+def validate_jsonl_content(content: str, record_class: type) -> tuple[List[Any], List[ValidationError]]:
+    """Validate JSONL content against a record class."""
+    records = []
+    errors = []
+    
+    if not content.strip():
+        return records, [ValidationError(field="content", message="Empty content provided", line_number=None)]
+    
+    lines = content.strip().split('\n')
+    for line_num, line in enumerate(lines, 1):
+        line = line.strip()
+        if not line:
+            continue
+            
+        try:
+            data = json.loads(line)
+            record = record_class(**data)
+            records.append(record)
+        except json.JSONDecodeError as e:
+            errors.append(ValidationError(
+                field="json",
+                message=f"Invalid JSON: {str(e)}",
+                line_number=line_num
+            ))
+        except Exception as e:
+            errors.append(ValidationError(
+                field="validation",
+                message=str(e),
+                line_number=line_num
+            ))
+    
+    return records, errors
+
+
+def validate_attacks_content(content: str) -> tuple[List[str], List[ValidationError]]:
+    """Validate attacks content (text or YAML format)."""
+    errors = []
+    
+    if not content.strip():
+        return [], [ValidationError(field="content", message="Empty content provided", line_number=None)]
+    
+    # Try YAML first
+    try:
+        data = yaml.safe_load(content)
+        if isinstance(data, dict) and "attacks" in data:
+            attacks = data["attacks"]
+            if isinstance(attacks, list) and all(isinstance(a, str) for a in attacks):
+                return attacks, errors
+            else:
+                errors.append(ValidationError(
+                    field="attacks",
+                    message="YAML attacks field must be a list of strings",
+                    line_number=None
+                ))
+        else:
+            # Fall back to text format (one line per attack)
+            attacks = [line.strip() for line in content.strip().split('\n') if line.strip()]
+            return attacks, errors
+    except yaml.YAMLError:
+        # Fall back to text format
+        attacks = [line.strip() for line in content.strip().split('\n') if line.strip()]
+        return attacks, errors
+    
+    return [], errors
+
+
+def validate_schema_content(content: str) -> tuple[Optional[Dict[str, Any]], List[ValidationError]]:
+    """Validate JSON Schema content."""
+    errors = []
+    
+    if not content.strip():
+        return None, [ValidationError(field="content", message="Empty content provided", line_number=None)]
+    
+    try:
+        schema = json.loads(content)
+        if not isinstance(schema, dict):
+            errors.append(ValidationError(
+                field="schema",
+                message="Schema must be a JSON object",
+                line_number=None
+            ))
+            return None, errors
+        
+        # Basic JSON Schema validation (check for required fields)
+        if "$schema" not in schema and "type" not in schema and "properties" not in schema:
+            errors.append(ValidationError(
+                field="schema",
+                message="Does not appear to be a valid JSON Schema (missing $schema, type, or properties)",
+                line_number=None
+            ))
+        
+        return schema, errors
+    except json.JSONDecodeError as e:
+        errors.append(ValidationError(
+            field="json",
+            message=f"Invalid JSON: {str(e)}",
+            line_number=None
+        ))
+        return None, errors

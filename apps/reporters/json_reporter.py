@@ -44,7 +44,8 @@ def build_json(
         "detailed": detailed_rows,
         "api_details": api_rows,
         "inputs_expected": inputs_rows,
-        "adversarial": adv_rows or [],
+        "adversarial": adv_rows or [],  # Keep for backwards compatibility
+        "adversarial_details": adv_rows or [],  # New structured format
         "coverage": coverage or {}
     }
 

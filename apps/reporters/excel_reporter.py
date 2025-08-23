@@ -28,7 +28,7 @@ def write_excel(path: str, data: Dict[str, Any]) -> None:
     _create_inputs_expected_sheet(wb, data)
     
     # Optional sheets for red team results
-    if data.get("adversarial") and len(data["adversarial"]) > 0:
+    if data.get("adversarial_details") and len(data["adversarial_details"]) > 0:
         _create_adversarial_sheet(wb, data)
     
     if data.get("coverage") and data["coverage"]:
@@ -212,42 +212,49 @@ def _create_adversarial_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     """Create Adversarial_Details sheet for red team results."""
     ws = wb.create_sheet("Adversarial_Details")
     
+    # Required column order as specified
     headers = [
-        "attack_id", "variant_id", "category", "prompt_variant_masked", 
-        "decision", "banned_hits_json", "notes", "timestamp"
+        "run_id", "timestamp", "suite", "provider", "model", "request_id", 
+        "attack_id", "attack_text", "response_snippet", "safety_flags", "blocked", "notes"
     ]
     
-    # Write headers
+    # Write headers with styling
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=header)  # type: ignore
         cell.font = Font(bold=True)  # type: ignore
         cell.alignment = Alignment(wrap_text=True)  # type: ignore
-        
-        # Set column widths
-        if header == "prompt_variant_masked":
-            ws.column_dimensions[get_column_letter(col)].width = 50  # type: ignore
-        elif "_json" in header:
+    
+    # Auto-size columns based on content type
+    for col, header in enumerate(headers, 1):
+        if header in ["attack_text", "response_snippet"]:
+            ws.column_dimensions[get_column_letter(col)].width = 40  # type: ignore
+        elif header in ["safety_flags", "notes"]:
             ws.column_dimensions[get_column_letter(col)].width = 25  # type: ignore
         else:
             ws.column_dimensions[get_column_letter(col)].width = 16  # type: ignore
     
     # Write data rows
-    adv_rows = data.get("adversarial", [])
+    adv_rows = data.get("adversarial_details", [])
     for row_idx, row_data in enumerate(adv_rows, 2):
         values = [
+            row_data.get("run_id", ""),
+            row_data.get("timestamp", ""),
+            row_data.get("suite", ""),
+            row_data.get("provider", ""),
+            row_data.get("model", ""),
+            row_data.get("request_id", ""),
             row_data.get("attack_id", ""),
-            row_data.get("variant_id", ""),
-            row_data.get("category", ""),
-            row_data.get("prompt_variant_masked", ""),
-            row_data.get("decision", ""),
-            json.dumps(row_data.get("banned_hits_json", [])) if row_data.get("banned_hits_json") else "",
-            row_data.get("notes", ""),
-            row_data.get("timestamp", "")
+            row_data.get("attack_text", ""),
+            row_data.get("response_snippet", ""),
+            json.dumps(row_data.get("safety_flags", [])) if row_data.get("safety_flags") else "",
+            row_data.get("blocked", False),
+            row_data.get("notes", "")
         ]
         
         for col, value in enumerate(values, 1):
             cell = ws.cell(row=row_idx, column=col, value=value)  # type: ignore
-            if col == 4:  # prompt_variant_masked
+            # Apply text wrapping for long content fields
+            if headers[col-1] in ["attack_text", "response_snippet", "notes"]:
                 cell.alignment = Alignment(wrap_text=True)  # type: ignore
     
     ws.freeze_panes = "A2"  # type: ignore
@@ -257,32 +264,40 @@ def _create_coverage_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     """Create Coverage sheet for test coverage analysis."""
     ws = wb.create_sheet("Coverage")
     
+    # Required column order as specified
     headers = [
-        "category", "attempts", "successes", "success_rate", "avg_latency_ms"
+        "module", "stmts", "miss", "branch", "brpart", "cover_percent", "total_lines"
     ]
     
-    # Write headers
+    # Write headers with styling
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=header)  # type: ignore
         cell.font = Font(bold=True)  # type: ignore
-        ws.column_dimensions[get_column_letter(col)].width = 16  # type: ignore
+        cell.alignment = Alignment(wrap_text=True)  # type: ignore
     
-    # Write data rows from coverage dict
+    # Auto-size columns
+    for col, header in enumerate(headers, 1):
+        if header == "module":
+            ws.column_dimensions[get_column_letter(col)].width = 30  # type: ignore
+        else:
+            ws.column_dimensions[get_column_letter(col)].width = 12  # type: ignore
+    
+    # Write data rows from coverage modules
     coverage = data.get("coverage", {})
-    row_idx = 2
-    for category, stats in coverage.items():
-        if isinstance(stats, dict):
-            values = [
-                category,
-                stats.get("attempts", 0),
-                stats.get("successes", 0),
-                stats.get("success_rate", 0.0),
-                stats.get("avg_latency_ms", 0)
-            ]
-            
-            for col, value in enumerate(values, 1):
-                ws.cell(row=row_idx, column=col, value=value)  # type: ignore
-            
-            row_idx += 1
+    modules = coverage.get("modules", [])
+    
+    for row_idx, module_data in enumerate(modules, 2):
+        values = [
+            module_data.get("module", ""),
+            module_data.get("stmts", 0),
+            module_data.get("miss", 0),
+            module_data.get("branch", 0),
+            module_data.get("brpart", 0),
+            module_data.get("cover_percent", 0.0),
+            module_data.get("total_lines", 0)
+        ]
+        
+        for col, value in enumerate(values, 1):
+            cell = ws.cell(row=row_idx, column=col, value=value)  # type: ignore
     
     ws.freeze_panes = "A2"  # type: ignore

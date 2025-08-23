@@ -79,6 +79,11 @@ async def startup_event():
         rag_pipeline.build_index_from_passages(passages_path)
         logger.info("RAG pipeline initialized successfully")
         
+        # Start testdata store cleanup task
+        from apps.testdata.store import start_store
+        await start_store()
+        logger.info("Test data store initialized successfully")
+        
     except Exception as e:
         logger.error(f"Failed to initialize RAG pipeline: {e}")
         raise
@@ -261,6 +266,10 @@ def setup_routers():
     # Always include orchestrator
     from apps.orchestrator.router import router as orchestrator_router
     app.include_router(orchestrator_router)
+    
+    # Always include test data intake
+    from apps.testdata.router import router as testdata_router
+    app.include_router(testdata_router)
     
     # Include A2A if enabled
     a2a_enabled = os.getenv("A2A_ENABLED", "true").lower() == "true"
