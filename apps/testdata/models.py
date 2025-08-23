@@ -50,7 +50,7 @@ class TestDataBundle(BaseModel):
     passages: Optional[List[PassageRecord]] = Field(None, description="Passage records")
     qaset: Optional[List[QARecord]] = Field(None, description="QA records")
     attacks: Optional[List[str]] = Field(None, description="Attack patterns")
-    schema: Optional[Dict[str, Any]] = Field(None, description="JSON Schema")
+    json_schema: Optional[Dict[str, Any]] = Field(None, description="JSON Schema")
     raw_payloads: Dict[str, str] = Field(default_factory=dict, description="Raw content for SHA256")
 
 
@@ -91,12 +91,12 @@ class PasteRequest(BaseModel):
     passages: Optional[str] = Field(None, description="Passages JSONL content")
     qaset: Optional[str] = Field(None, description="QA JSONL content")
     attacks: Optional[str] = Field(None, description="Attack patterns (text or YAML)")
-    schema: Optional[str] = Field(None, description="JSON Schema content")
+    json_schema: Optional[str] = Field(None, description="JSON Schema content")
     
     @model_validator(mode='after')
     def validate_at_least_one_field(self):
         """Ensure at least one content field is provided."""
-        provided_fields = sum(1 for v in [self.passages, self.qaset, self.attacks, self.schema] if v is not None)
+        provided_fields = sum(1 for v in [self.passages, self.qaset, self.attacks, self.json_schema] if v is not None)
         if provided_fields == 0:
             raise ValueError("At least one content field must be provided")
         return self

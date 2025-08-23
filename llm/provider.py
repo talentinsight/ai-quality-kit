@@ -2,11 +2,15 @@
 
 import os
 import json
+import asyncio
 from typing import List, Callable, Optional
 import openai
 import anthropic
 from anthropic import Anthropic
 from dotenv import load_dotenv
+from fastapi import HTTPException
+
+from .resilient_client import get_resilient_client, CircuitBreakerError
 
 # Load environment variables from .env file
 load_dotenv()
@@ -62,21 +66,35 @@ def _get_openai_chat(model_override: Optional[str] = None) -> Callable[[List[str
     
     model_name = model_override or os.getenv("MODEL_NAME", "gpt-4o-mini")
     client = openai.OpenAI(api_key=api_key)
+    resilient_client = get_resilient_client()
     
     def chat(messages: List[str]) -> str:
         """Call OpenAI API with messages."""
-        formatted_messages = []
-        for i, msg in enumerate(messages):
-            role = "system" if i == 0 else "user"
-            formatted_messages.append({"role": role, "content": msg})
+        def _make_openai_call():
+            formatted_messages = []
+            for i, msg in enumerate(messages):
+                role = "system" if i == 0 else "user"
+                formatted_messages.append({"role": role, "content": msg})
+            
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=formatted_messages,
+                temperature=0.0,  # Deterministic as much as possible
+                max_tokens=1000
+            )
+            return response.choices[0].message.content or ""
         
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=formatted_messages,
-            temperature=0.0,  # Deterministic as much as possible
-            max_tokens=1000
-        )
-        return response.choices[0].message.content or ""
+        try:
+            # Use asyncio.run to handle the async resilient call
+            return asyncio.run(resilient_client.call_with_resilience(
+                _make_openai_call, f"openai_{model_name}"
+            ))
+        except CircuitBreakerError:
+            raise HTTPException(
+                status_code=503, 
+                detail="Service temporarily unavailable due to circuit breaker",
+                headers={"X-Circuit-Open": "true"}
+            )
     
     return chat
 
@@ -89,28 +107,41 @@ def _get_anthropic_chat(model_override: Optional[str] = None) -> Callable[[List[
     
     model_name = model_override or os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet")
     client = Anthropic(api_key=api_key)
+    resilient_client = get_resilient_client()
     
     def chat(messages: List[str]) -> str:
         """Call Anthropic API with messages."""
-        system_prompt = messages[0] if messages else ""
-        user_messages = messages[1:] if len(messages) > 1 else [""]
+        def _make_anthropic_call():
+            system_prompt = messages[0] if messages else ""
+            user_messages = messages[1:] if len(messages) > 1 else [""]
+            
+            # Combine user messages if multiple
+            user_content = "\n\n".join(user_messages)
+            
+            response = client.messages.create(
+                model=model_name,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_content}],
+                temperature=0.0,  # Deterministic as much as possible
+                max_tokens=1000
+            )
+            # Handle different response types from Anthropic API
+            if response.content and len(response.content) > 0:
+                content_block = response.content[0]
+                # Use getattr with default to safely access text attribute
+                return getattr(content_block, 'text', str(content_block))
+            return ""
         
-        # Combine user messages if multiple
-        user_content = "\n\n".join(user_messages)
-        
-        response = client.messages.create(
-            model=model_name,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_content}],
-            temperature=0.0,  # Deterministic as much as possible
-            max_tokens=1000
-        )
-        # Handle different response types from Anthropic API
-        if response.content and len(response.content) > 0:
-            content_block = response.content[0]
-            # Use getattr with default to safely access text attribute
-            return getattr(content_block, 'text', str(content_block))
-        return ""
+        try:
+            return asyncio.run(resilient_client.call_with_resilience(
+                _make_anthropic_call, f"anthropic_{model_name}"
+            ))
+        except CircuitBreakerError:
+            raise HTTPException(
+                status_code=503, 
+                detail="Service temporarily unavailable due to circuit breaker",
+                headers={"X-Circuit-Open": "true"}
+            )
     
     return chat
 
@@ -154,6 +185,7 @@ def _get_custom_rest_chat(model_override: Optional[str] = None) -> Callable[[Lis
         raise ValueError("CUSTOM_LLM_BASE_URL environment variable is required for custom_rest provider")
     
     model_name = model_override or os.getenv("CUSTOM_MODEL_NAME", "custom-model")
+    resilient_client = get_resilient_client()
     
     try:
         import httpx
@@ -162,29 +194,41 @@ def _get_custom_rest_chat(model_override: Optional[str] = None) -> Callable[[Lis
     
     def chat(messages: List[str]) -> str:
         """Call custom REST API with messages."""
-        # Format messages for generic REST API
-        formatted_messages = []
-        for i, msg in enumerate(messages):
-            role = "system" if i == 0 else "user"
-            formatted_messages.append({"role": role, "content": msg})
-        
-        payload = {
-            "model": model_name,
-            "messages": formatted_messages,
-            "temperature": 0.0,
-            "max_tokens": 1000
-        }
-        
-        with httpx.Client() as client:
-            response = client.post(
-                f"{base_url.rstrip('/')}/v1/chat/completions",
-                json=payload,
-                timeout=30.0
-            )
-            response.raise_for_status()
+        def _make_custom_rest_call():
+            # Format messages for generic REST API
+            formatted_messages = []
+            for i, msg in enumerate(messages):
+                role = "system" if i == 0 else "user"
+                formatted_messages.append({"role": role, "content": msg})
             
-            result = response.json()
-            return result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            payload = {
+                "model": model_name,
+                "messages": formatted_messages,
+                "temperature": 0.0,
+                "max_tokens": 1000
+            }
+            
+            with httpx.Client() as client:
+                response = client.post(
+                    f"{base_url.rstrip('/')}/v1/chat/completions",
+                    json=payload,
+                    timeout=30.0
+                )
+                response.raise_for_status()
+                
+                result = response.json()
+                return result.get("choices", [{}])[0].get("message", {}).get("content", "")
+        
+        try:
+            return asyncio.run(resilient_client.call_with_resilience(
+                _make_custom_rest_call, f"custom_rest_{model_name}"
+            ))
+        except CircuitBreakerError:
+            raise HTTPException(
+                status_code=503, 
+                detail="Service temporarily unavailable due to circuit breaker",
+                headers={"X-Circuit-Open": "true"}
+            )
     
     return chat
 

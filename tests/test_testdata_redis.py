@@ -1,0 +1,396 @@
+"""
+Tests for Redis-backed test data storage.
+"""
+import pytest
+import asyncio
+import os
+import uuid
+from unittest.mock import patch, AsyncMock
+from datetime import datetime, timedelta
+
+from apps.testdata.store import TestDataStore, create_bundle
+from apps.testdata.models import TestDataBundle, PassageRecord, QARecord
+
+
+class TestRedisIntegration:
+    """Test Redis integration with test data store."""
+    
+    @pytest.fixture
+    def mock_redis(self):
+        """Mock Redis client for testing."""
+        redis_mock = AsyncMock()
+        redis_mock.ping.return_value = True
+        redis_mock.exists.return_value = True
+        redis_mock.hgetall.return_value = {}
+        redis_mock.hset.return_value = True
+        redis_mock.expire.return_value = True
+        redis_mock.pipeline.return_value.__aenter__.return_value = redis_mock
+        redis_mock.pipeline.return_value.__aexit__.return_value = None
+        redis_mock.execute.return_value = [True, True]
+        return redis_mock
+    
+    @patch.dict('os.environ', {'REDIS_URL': 'redis://localhost:6379'})
+    @patch('redis.asyncio.from_url')
+    def test_redis_initialization_success(self, mock_redis_from_url, mock_redis):
+        """Test successful Redis initialization."""
+        mock_redis_from_url.return_value = mock_redis
+        
+        store = TestDataStore()
+        
+        # Run the async initialization
+        async def test():
+            await store._init_redis()
+            assert store._redis_available is True
+            assert store._redis is not None
+        
+        asyncio.run(test())
+    
+    @patch.dict('os.environ', {'REDIS_URL': 'redis://invalid:6379'})
+    @patch('redis.asyncio.from_url')
+    def test_redis_initialization_failure(self, mock_redis_from_url):
+        """Test Redis initialization failure fallback."""
+        mock_redis_from_url.side_effect = Exception("Connection failed")
+        
+        store = TestDataStore()
+        
+        async def test():
+            await store._init_redis()
+            assert store._redis_available is False
+            assert store._redis is None
+        
+        asyncio.run(test())
+    
+    def test_no_redis_url_configured(self):
+        """Test behavior when no Redis URL is configured."""
+        with patch.dict('os.environ', {}, clear=True):
+            store = TestDataStore()
+            
+            async def test():
+                await store._init_redis()
+                assert store._redis_available is False
+                assert store._redis is None
+            
+            asyncio.run(test())
+    
+    @patch.dict('os.environ', {'REDIS_URL': 'redis://localhost:6379'})
+    @patch('redis.asyncio.from_url')
+    def test_put_bundle_with_redis(self, mock_redis_from_url, mock_redis):
+        """Test storing bundle with Redis backing."""
+        mock_redis_from_url.return_value = mock_redis
+        
+        store = TestDataStore()
+        
+        async def test():
+            await store._init_redis()
+            
+            # Create test bundle
+            bundle = create_bundle(
+                passages=[PassageRecord(id="p1", text="test passage")],
+                qaset=[QARecord(qid="q1", question="test?", expected_answer="yes")],
+                raw_payloads={"passages": "raw passage data"}
+            )
+            
+            # Store bundle
+            testdata_id = store.put_bundle(bundle)
+            
+            # Verify stored in memory
+            assert testdata_id in store._store
+            
+            # Allow async Redis storage to complete
+            await asyncio.sleep(0.1)
+            
+            # Verify Redis storage was attempted
+            mock_redis.hset.assert_called()
+            mock_redis.expire.assert_called()
+        
+        asyncio.run(test())
+    
+    @patch.dict('os.environ', {'REDIS_URL': 'redis://localhost:6379'})
+    @patch('redis.asyncio.from_url')
+    def test_get_bundle_from_redis(self, mock_redis_from_url, mock_redis):
+        """Test retrieving bundle from Redis when not in memory."""
+        mock_redis_from_url.return_value = mock_redis
+        
+        # Mock Redis data
+        test_id = str(uuid.uuid4())
+        created_at = datetime.utcnow()
+        expires_at = created_at + timedelta(hours=24)
+        
+        mock_redis.exists.return_value = True
+        mock_redis.hgetall.side_effect = [
+            {  # meta data
+                "created_at": created_at.isoformat(),
+                "expires_at": expires_at.isoformat(),
+                "testdata_id": test_id
+            },
+            {  # payload data
+                "passages": '[{"id": "p1", "text": "test passage"}]',
+                "raw_passages": "raw passage data"
+            }
+        ]
+        
+        store = TestDataStore()
+        
+        async def test():
+            await store._init_redis()
+            
+            # Clear memory store to force Redis lookup
+            store._store.clear()
+            
+            # Get bundle (should retrieve from Redis)
+            bundle = store.get_bundle(test_id)
+            
+            assert bundle is not None
+            assert bundle.testdata_id == test_id
+            assert len(bundle.passages) == 1
+            assert bundle.passages[0].text == "test passage"
+            assert bundle.raw_payloads["passages"] == "raw passage data"
+            
+            # Should now be cached in memory
+            assert test_id in store._store
+        
+        asyncio.run(test())
+    
+    @patch.dict('os.environ', {'REDIS_URL': 'redis://localhost:6379'})
+    @patch('redis.asyncio.from_url')
+    def test_get_bundle_redis_not_found(self, mock_redis_from_url, mock_redis):
+        """Test retrieving non-existent bundle from Redis."""
+        mock_redis_from_url.return_value = mock_redis
+        mock_redis.exists.return_value = False
+        
+        store = TestDataStore()
+        
+        async def test():
+            await store._init_redis()
+            
+            # Try to get non-existent bundle
+            bundle = store.get_bundle("nonexistent")
+            
+            assert bundle is None
+        
+        asyncio.run(test())
+    
+    @patch.dict('os.environ', {'REDIS_URL': 'redis://localhost:6379'})
+    @patch('redis.asyncio.from_url')
+    def test_expired_bundle_handling(self, mock_redis_from_url, mock_redis):
+        """Test handling of expired bundles in Redis."""
+        mock_redis_from_url.return_value = mock_redis
+        
+        # Mock expired bundle data
+        test_id = str(uuid.uuid4())
+        created_at = datetime.utcnow() - timedelta(hours=25)  # Expired
+        expires_at = created_at + timedelta(hours=24)
+        
+        mock_redis.exists.return_value = True
+        mock_redis.hgetall.side_effect = [
+            {  # meta data
+                "created_at": created_at.isoformat(),
+                "expires_at": expires_at.isoformat(),
+                "testdata_id": test_id
+            },
+            {}  # payload data (empty)
+        ]
+        
+        store = TestDataStore()
+        
+        async def test():
+            await store._init_redis()
+            
+            # Try to get expired bundle
+            bundle = store.get_bundle(test_id)
+            
+            assert bundle is None
+        
+        asyncio.run(test())
+    
+    def test_fallback_to_memory_only(self):
+        """Test that store works without Redis (memory-only mode)."""
+        with patch.dict('os.environ', {}, clear=True):
+            store = TestDataStore()
+            
+            # Create and store bundle
+            bundle = create_bundle(
+                passages=[PassageRecord(id="p1", text="test passage")]
+            )
+            
+            testdata_id = store.put_bundle(bundle)
+            
+            # Should be stored in memory
+            assert testdata_id in store._store
+            
+            # Should be retrievable
+            retrieved = store.get_bundle(testdata_id)
+            assert retrieved is not None
+            assert retrieved.testdata_id == testdata_id
+    
+    @patch.dict('os.environ', {'REDIS_URL': 'redis://localhost:6379'})
+    @patch('redis.asyncio.from_url')
+    def test_redis_storage_failure_graceful(self, mock_redis_from_url, mock_redis):
+        """Test graceful handling of Redis storage failures."""
+        mock_redis_from_url.return_value = mock_redis
+        mock_redis.hset.side_effect = Exception("Redis storage failed")
+        
+        store = TestDataStore()
+        
+        async def test():
+            await store._init_redis()
+            
+            # Create test bundle
+            bundle = create_bundle(
+                passages=[PassageRecord(id="p1", text="test passage")]
+            )
+            
+            # Store bundle (should succeed despite Redis failure)
+            testdata_id = store.put_bundle(bundle)
+            
+            # Should still be in memory
+            assert testdata_id in store._store
+            
+            # Should be retrievable from memory
+            retrieved = store.get_bundle(testdata_id)
+            assert retrieved is not None
+        
+        asyncio.run(test())
+    
+    @patch.dict('os.environ', {
+        'REDIS_URL': 'redis://localhost:6379',
+        'REDIS_PREFIX': 'test:',
+        'TESTDATA_TTL_HOURS': '48'
+    })
+    @patch('redis.asyncio.from_url')
+    def test_redis_configuration(self, mock_redis_from_url, mock_redis):
+        """Test Redis configuration from environment variables."""
+        mock_redis_from_url.return_value = mock_redis
+        
+        store = TestDataStore()
+        
+        # Test key generation with custom prefix
+        test_id = "test123"
+        payload_key = store._get_payload_key(test_id)
+        meta_key = store._get_meta_key(test_id)
+        
+        assert payload_key == "test:testdata:test123:payloads"
+        assert meta_key == "test:testdata:test123:meta"
+    
+    def test_key_generation_default_prefix(self):
+        """Test Redis key generation with default prefix."""
+        store = TestDataStore()
+        
+        test_id = "test123"
+        payload_key = store._get_payload_key(test_id)
+        meta_key = store._get_meta_key(test_id)
+        
+        assert payload_key == "aqk:testdata:test123:payloads"
+        assert meta_key == "aqk:testdata:test123:meta"
+
+
+class TestRedisPersistence:
+    """Test Redis persistence across application restarts."""
+    
+    @patch.dict('os.environ', {'REDIS_URL': 'redis://localhost:6379'})
+    @patch('redis.asyncio.from_url')
+    def test_persistence_simulation(self, mock_redis_from_url, mock_redis):
+        """Simulate persistence across app restarts."""
+        mock_redis_from_url.return_value = mock_redis
+        
+        # Simulate storing data in first session
+        store1 = TestDataStore()
+        
+        async def session1():
+            await store1._init_redis()
+            
+            bundle = create_bundle(
+                passages=[PassageRecord(id="p1", text="persistent test")],
+                raw_payloads={"passages": "raw persistent data"}
+            )
+            
+            testdata_id = store1.put_bundle(bundle)
+            
+            # Allow async storage to complete
+            await asyncio.sleep(0.1)
+            
+            return testdata_id
+        
+        test_id = asyncio.run(session1())
+        
+        # Mock Redis returning the stored data in second session
+        mock_redis.exists.return_value = True
+        mock_redis.hgetall.side_effect = [
+            {  # meta data
+                "created_at": datetime.utcnow().isoformat(),
+                "expires_at": (datetime.utcnow() + timedelta(hours=24)).isoformat(),
+                "testdata_id": test_id
+            },
+            {  # payload data
+                "passages": '[{"id": "p1", "text": "persistent test"}]',
+                "raw_passages": "raw persistent data"
+            }
+        ]
+        
+        # Simulate new app instance (second session)
+        store2 = TestDataStore()
+        
+        async def session2():
+            await store2._init_redis()
+            
+            # Clear memory to simulate fresh start
+            store2._store.clear()
+            
+            # Should retrieve from Redis
+            bundle = store2.get_bundle(test_id)
+            
+            assert bundle is not None
+            assert len(bundle.passages) == 1
+            assert bundle.passages[0].text == "persistent test"
+            assert bundle.raw_payloads["passages"] == "raw persistent data"
+        
+        asyncio.run(session2())
+
+
+@pytest.mark.integration
+class TestRedisRealConnection:
+    """Integration tests with real Redis (requires Redis running)."""
+    
+    @pytest.mark.skipif(
+        not os.getenv("REDIS_URL"), 
+        reason="REDIS_URL not configured for integration tests"
+    )
+    def test_real_redis_roundtrip(self):
+        """Test with real Redis connection (integration test)."""
+        store = TestDataStore()
+        
+        async def test():
+            await store._init_redis()
+            
+            if not store._redis_available:
+                pytest.skip("Redis not available for integration test")
+            
+            # Create test bundle
+            bundle = create_bundle(
+                passages=[PassageRecord(id="p1", text="integration test")],
+                qaset=[QARecord(qid="q1", question="real?", expected_answer="yes")],
+                raw_payloads={"passages": "integration raw data"}
+            )
+            
+            # Store and retrieve
+            testdata_id = store.put_bundle(bundle)
+            
+            # Allow async storage
+            await asyncio.sleep(0.5)
+            
+            # Clear memory to force Redis lookup
+            store._store.clear()
+            
+            # Retrieve from Redis
+            retrieved = store.get_bundle(testdata_id)
+            
+            assert retrieved is not None
+            assert retrieved.testdata_id == testdata_id
+            assert len(retrieved.passages) == 1
+            assert retrieved.passages[0].text == "integration test"
+            assert len(retrieved.qaset) == 1
+            assert retrieved.qaset[0].question == "real?"
+            assert retrieved.qaset[0].expected_answer == "yes"
+            assert retrieved.raw_payloads["passages"] == "integration raw data"
+        
+        asyncio.run(test())

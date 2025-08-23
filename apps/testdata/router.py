@@ -214,7 +214,7 @@ async def upload_testdata(
     passages: Optional[UploadFile] = File(None),
     qaset: Optional[UploadFile] = File(None),
     attacks: Optional[UploadFile] = File(None),
-    schema: Optional[UploadFile] = File(None),
+    json_schema: Optional[UploadFile] = File(None),
     principal: Optional[Principal] = Depends(require_user_or_admin())
 ):
     """Upload test data files via multipart form."""
@@ -222,7 +222,7 @@ async def upload_testdata(
     
     try:
         # Check that at least one file is provided
-        files = {"passages": passages, "qaset": qaset, "attacks": attacks, "schema": schema}
+        files = {"passages": passages, "qaset": qaset, "attacks": attacks, "schema": json_schema}
         provided_files = {k: v for k, v in files.items() if v is not None}
         
         if not provided_files:
@@ -278,7 +278,7 @@ async def upload_testdata(
             passages=bundle_data.get("passages"),
             qaset=bundle_data.get("qaset"),
             attacks=bundle_data.get("attacks"),
-            schema=bundle_data.get("schema"),
+            json_schema=bundle_data.get("schema"),
             raw_payloads=raw_payloads
         )
         
@@ -359,7 +359,7 @@ async def ingest_by_url(
             passages=bundle_data.get("passages"),
             qaset=bundle_data.get("qaset"),
             attacks=bundle_data.get("attacks"),
-            schema=bundle_data.get("schema"),
+            json_schema=bundle_data.get("schema"),
             raw_payloads=raw_payloads
         )
         
@@ -405,7 +405,7 @@ async def ingest_by_paste(
             "passages": request.passages,
             "qaset": request.qaset,
             "attacks": request.attacks,
-            "schema": request.schema
+            "schema": request.json_schema
         }
         
         for artifact_type, content in content_fields.items():
@@ -448,7 +448,7 @@ async def ingest_by_paste(
             passages=bundle_data.get("passages"),
             qaset=bundle_data.get("qaset"),
             attacks=bundle_data.get("attacks"),
-            schema=bundle_data.get("schema"),
+            json_schema=bundle_data.get("schema"),
             raw_payloads=raw_payloads
         )
         
@@ -487,13 +487,8 @@ async def get_testdata_meta(
         meta = store.get_meta(testdata_id)
         
         if meta is None:
-            # Check if bundle existed but expired
-            if testdata_id in store.list_bundles():
-                _add_performance_headers(response, start_time, "/testdata")
-                raise HTTPException(status_code=410, detail="Test data bundle has expired")
-            else:
-                _add_performance_headers(response, start_time, "/testdata")
-                raise HTTPException(status_code=404, detail="Test data bundle not found")
+            _add_performance_headers(response, start_time, "/testdata")
+            raise HTTPException(status_code=404, detail="Test data bundle not found or expired")
         
         _add_performance_headers(response, start_time, "/testdata")
         return meta

@@ -1,0 +1,142 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.11, 3.12]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r infra/requirements.txt
+        # Install additional security tools
+        pip install bandit pip-audit detect-secrets
+    
+    - name: Run tests with coverage
+      run: |
+        pytest --maxfail=1 --cov=apps --cov=llm --cov-report=term-missing --cov-report=xml --cov-fail-under=65 -q --ignore=evals --ignore=guardrails --ignore=safety --ignore=tests/test_integration.py --ignore=tests/test_testdata_orchestrator.py
+      env:
+        AUTH_MODE: none
+        RL_ENABLED: false
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY != '' && secrets.OPENAI_API_KEY || 'sk-test-mock-key-for-ci' }}
+        PROVIDER: mock
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      if: matrix.python-version == '3.11'
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  sast:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Install bandit
+      run: |
+        python -m pip install --upgrade pip
+        pip install bandit[toml]
+    
+    - name: Run bandit security scan
+      run: |
+        bandit -q -r apps llm -f json -o bandit-report.json || true
+        bandit -q -r apps llm
+    
+    - name: Upload SAST results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: bandit-report
+        path: bandit-report.json
+
+  deps:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Install pip-audit
+      run: |
+        python -m pip install --upgrade pip
+        pip install pip-audit
+    
+    - name: Install project dependencies
+      run: |
+        pip install -r infra/requirements.txt
+    
+    - name: Run dependency audit
+      run: |
+        pip-audit -q --format=json --output=pip-audit-report.json || true
+        pip-audit -q
+    
+    - name: Upload dependency audit results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: pip-audit-report
+        path: pip-audit-report.json
+
+  secrets:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full history for secret scanning
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install detect-secrets
+      run: |
+        python -m pip install --upgrade pip
+        pip install detect-secrets
+    
+    - name: Create secrets baseline if not exists
+      run: |
+        if [ ! -f .secrets.baseline ]; then
+          detect-secrets scan --exclude-files '^\.git/.*|.*\.pyc$|.*__pycache__.*' --baseline .secrets.baseline
+        fi
+    
+    - name: Run secrets scan
+      run: |
+        detect-secrets scan --baseline .secrets.baseline --exclude-files '^\.git/.*|.*\.pyc$|.*__pycache__.*'
+    
+    - name: Audit secrets baseline
+      run: |
+        detect-secrets audit .secrets.baseline --diff

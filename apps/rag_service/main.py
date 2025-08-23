@@ -16,6 +16,7 @@ from apps.observability.log_service import start_log, finish_log, log_eval_metri
 from apps.observability.live_eval import evaluate_comprehensive
 from apps.observability.perf import decide_phase_and_latency, record_latency
 from apps.security.auth import get_principal, require_user_or_admin, Principal
+from apps.security.rate_limit import rate_limit_middleware
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -27,6 +28,9 @@ app = FastAPI(
     description="Retrieval-Augmented Generation service for quality evaluation",
     version="1.0.0"
 )
+
+# Add rate limiting middleware
+app.middleware("http")(rate_limit_middleware)
 
 # Add CORS middleware
 app.add_middleware(

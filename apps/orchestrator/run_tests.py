@@ -23,6 +23,8 @@ class OrchestratorRequest(BaseModel):
     target_mode: TargetMode
     api_base_url: Optional[str] = None
     api_bearer_token: Optional[str] = None
+    provider: str = "openai"
+    model: str = "gpt-4"
     suites: List[TestSuiteName]
     thresholds: Optional[Dict[str, float]] = None
     options: Optional[Dict[str, Any]] = None

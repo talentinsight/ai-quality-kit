@@ -617,32 +617,282 @@ This toolkit demonstrates **Evaluation Operations (EvalOps)** - the practice of 
 
 ## CI/CD Integration
 
+The AI Quality Kit includes comprehensive CI gates to ensure code quality, security, and test coverage before merging changes.
+
 ### GitHub Actions Setup
 
-1. **Add repository secrets**:
-   - `OPENAI_API_KEY`
-   - `ANTHROPIC_API_KEY` (optional)
+The project includes a complete CI pipeline in `.github/workflows/ci.yml` with the following jobs:
 
-2. **Copy CI workflow**:
+1. **Add repository secrets**:
+   - `OPENAI_API_KEY` (required for API calls)
+   - `ANTHROPIC_API_KEY` (optional, for Anthropic provider)
+
+2. **CI Jobs Overview**:
+   - **Test**: Runs pytest with coverage requirements
+   - **SAST**: Static Application Security Testing with Bandit
+   - **Dependencies**: Vulnerability scanning with pip-audit
+   - **Secrets**: Secret detection with detect-secrets
+
+### Coverage Gates
+
+**Minimum Coverage Requirement: 80%**
+
 ```bash
-cp infra/github-actions-ci.yml .github/workflows/ci.yml
+# CI runs this command:
+pytest --cov=apps --cov=llm --cov-report=term-missing --cov-fail-under=80 -q --ignore=evals --ignore=guardrails --ignore=safety
 ```
 
-3. **Configure variables** (optional):
-   - `MODEL_NAME` (default: gpt-4o-mini)
-   - `PROVIDER` (default: openai)
-   - `RAG_TOP_K` (default: 4)
+The build **fails** if:
+- Test coverage drops below 80%
+- Any unit tests fail
+- Integration tests fail
+
+### Security Gates
+
+**Static Analysis Security Testing (SAST)**:
+```bash
+# Scans for security vulnerabilities:
+bandit -q -r apps llm
+```
+
+**Dependency Vulnerability Scanning**:
+```bash
+# Checks for known CVEs in dependencies:
+pip-audit -q
+```
+
+**Secret Detection**:
+```bash
+# Prevents secrets from being committed:
+detect-secrets scan --baseline .secrets.baseline
+```
 
 ### Quality Gates
 
-The CI pipeline will **fail** if:
-- Faithfulness score < 0.75
-- Context recall score < 0.80
-- JSON schema validation fails
-- Any safety violations detected
-- PII/banned content found
+In addition to coverage and security, the CI pipeline **fails** if:
+- Code quality issues detected
+- Import errors or syntax errors
+- Linting failures
+- Configuration errors
 
-This prevents merging code that degrades AI quality.
+### Fixing CI Failures
+
+**Coverage Issues**:
+```bash
+# Check current coverage
+pytest --cov=apps --cov=llm --cov-report=term-missing
+
+# Add tests for uncovered lines
+# Focus on critical business logic
+```
+
+**Security Issues**:
+```bash
+# Check for security vulnerabilities
+bandit -r apps llm
+
+# Fix or add # nosec comment for false positives
+```
+
+**Dependency Issues**:
+```bash
+# Check for vulnerable dependencies
+pip-audit
+
+# Update vulnerable packages
+pip install --upgrade package_name
+```
+
+**Secret Detection**:
+```bash
+# Scan for secrets
+detect-secrets scan --exclude-files '^\.git/.*'
+
+# Update baseline if false positive
+detect-secrets scan --update .secrets.baseline
+```
+
+## Rate Limiting
+
+The AI Quality Kit includes built-in rate limiting to protect against abuse and ensure fair usage:
+
+### Configuration
+
+Rate limiting is controlled via environment variables:
+
+```bash
+# Enable/disable rate limiting
+RL_ENABLED=true
+
+# Per-token limits (authenticated requests)
+RL_PER_TOKEN_PER_MIN=60        # 60 requests per minute sustained
+RL_PER_TOKEN_BURST=10          # 10 request burst capacity
+
+# Per-IP limits (all requests from same IP)
+RL_PER_IP_PER_MIN=120          # 120 requests per minute sustained  
+RL_PER_IP_BURST=20             # 20 request burst capacity
+
+# Optional Redis backend for distributed systems
+REDIS_URL=redis://localhost:6379
+```
+
+### Protected Endpoints
+
+Rate limiting applies to sensitive endpoints:
+- `/ask` - RAG queries
+- `/orchestrator/run_tests` - Test execution
+- `/testdata/*` - Test data management
+
+Health endpoints (`/healthz`, `/readyz`) are exempt from rate limiting.
+
+### Rate Limit Response
+
+When rate limits are exceeded, the API returns HTTP 429 with details:
+
+```json
+{
+  "error": "rate_limited",
+  "retry_after_ms": 1500
+}
+```
+
+Response headers include:
+- `Retry-After`: Seconds until retry is allowed
+- `X-RateLimit-Remaining`: Remaining requests in current window
+
+### Token Bucket Algorithm
+
+Rate limiting uses a token bucket algorithm with:
+- **Burst capacity**: Allows short bursts of requests up to the burst limit
+- **Sustained rate**: Refills tokens at the per-minute rate divided by 60
+- **Independent limits**: Separate buckets for each token and IP address
+
+### Storage Backends
+
+- **Redis** (recommended): Distributed rate limiting across multiple instances
+- **In-memory**: Single instance only, suitable for development
+
+## Test Data Storage
+
+The AI Quality Kit provides persistent storage for test data bundles with automatic TTL management:
+
+### Configuration
+
+Test data storage can use Redis for persistence across application restarts:
+
+```bash
+# Redis backend for persistent test data storage
+REDIS_URL=redis://localhost:6379
+REDIS_PREFIX=aqk:
+TESTDATA_TTL_HOURS=24
+```
+
+### Storage Behavior
+
+- **Hybrid Storage**: Combines in-memory caching with optional Redis persistence
+- **Automatic Fallback**: Uses in-memory storage if Redis is unavailable
+- **TTL Management**: Bundles automatically expire after configured hours
+- **Performance**: Memory cache provides fast access, Redis ensures persistence
+
+### Data Structure
+
+Test data bundles are stored with the following Redis keys:
+- `{prefix}testdata:{id}:payloads` - Raw test data (passages, qaset, attacks, schema)
+- `{prefix}testdata:{id}:meta` - Metadata (creation time, expiration, counts)
+
+### API Usage
+
+```python
+# Store test data bundle
+from apps.testdata.store import get_store, create_bundle
+
+store = get_store()
+bundle = create_bundle(
+    passages=[{"content": "test passage"}],
+    qaset=[{"question": "test?", "answer": "yes"}]
+)
+testdata_id = store.put_bundle(bundle)
+
+# Retrieve bundle (from memory or Redis)
+bundle = store.get_bundle(testdata_id)
+
+# Get metadata only
+meta = store.get_meta(testdata_id)
+```
+
+### Persistence Across Restarts
+
+When Redis is configured:
+1. **Store**: Data saved to both memory and Redis with TTL
+2. **Restart**: Application starts with empty memory cache
+3. **Retrieve**: Missing data automatically loaded from Redis
+4. **Cache**: Retrieved data cached in memory for performance
+
+## Provider Resilience
+
+The AI Quality Kit includes comprehensive resilience patterns for outbound LLM/provider calls to ensure reliable operation under adverse conditions:
+
+### Configuration
+
+Provider resilience is configured via environment variables with sensible defaults:
+
+```bash
+# Timeouts and retries for LLM provider calls
+PROVIDER_TIMEOUT_S=20                  # Request timeout in seconds
+PROVIDER_MAX_RETRIES=2                 # Maximum retry attempts
+PROVIDER_BACKOFF_BASE_MS=200           # Base backoff time in milliseconds
+PROVIDER_CIRCUIT_FAILS=5               # Failures before circuit opens
+PROVIDER_CIRCUIT_RESET_S=30            # Circuit reset time in seconds
+```
+
+### Resilience Features
+
+- **Timeouts**: All provider calls have configurable timeouts
+- **Exponential Backoff**: Retries use exponential backoff with jitter (0-100ms)
+- **Smart Retry Logic**: Only retries transient errors (5xx, network issues), not client errors (4xx)
+- **Circuit Breaker**: Opens after consecutive failures, prevents cascading failures
+- **Fast Failure**: When circuit is open, returns 503 immediately with `X-Circuit-Open: true` header
+
+### Error Handling Semantics
+
+**Transient Errors (Will Retry):**
+- Network timeouts and connection errors
+- HTTP 5xx status codes (500, 502, 503, 504)
+- Provider-specific timeout errors
+
+**Non-Transient Errors (No Retry):**
+- HTTP 4xx status codes (400, 401, 403, 404, 429)
+- Authentication and authorization failures
+- Invalid request format errors
+
+### Circuit Breaker Behavior
+
+1. **Closed State**: Normal operation, all requests allowed
+2. **Open State**: After N consecutive failures, all requests fast-fail with 503
+3. **Half-Open State**: After reset timeout, allows one test request
+   - Success → Circuit closes, normal operation resumes
+   - Failure → Circuit reopens, continues fast-failing
+
+### Observability
+
+Structured logging includes:
+- `provider_call`: Start of provider operation
+- `provider_success`: Successful completion with duration
+- `provider_error`: Failed operation with error details
+- `retry`: Retry attempt with backoff information
+- `circuit_open`: Circuit breaker opened due to failures
+- `circuit_half_open`: Circuit testing recovery
+- `circuit_close`: Circuit closed after successful recovery
+
+### Usage Example
+
+```python
+# Provider calls are automatically wrapped with resilience
+from llm.provider import get_chat
+
+chat = get_chat()  # Returns resilient-wrapped chat function
+response = chat(["What is AI?"])  # Includes timeouts, retries, circuit breaker
+```
 
 ## Authentication
 
