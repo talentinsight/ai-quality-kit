@@ -121,3 +121,4 @@ tmp/
 *.xlsx
 report.xlsx
 quickcheck_*/
+temp_reports/
