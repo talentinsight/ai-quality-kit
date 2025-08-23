@@ -114,3 +114,10 @@ tokens.txt
 # Local development overrides
 docker-compose.override.yml
 .env.override
+
+# Test reports and temporary files
+reports/
+tmp/
+*.xlsx
+report.xlsx
+quickcheck_*/
