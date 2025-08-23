@@ -5,7 +5,8 @@ export type TestSuite =
   | "red_team"
   | "safety"
   | "performance"
-  | "regression";
+  | "regression"
+  | "gibberish";
 
 export interface OrchestratorRequest {
   target_mode: "api"|"mcp";

@@ -15,7 +15,7 @@ load_dotenv()
 
 # Type definitions
 TargetMode = Literal["api", "mcp"]
-TestSuiteName = Literal["rag_quality", "red_team", "safety", "performance", "regression"]
+TestSuiteName = Literal["rag_quality", "red_team", "safety", "performance", "regression", "gibberish"]
 
 
 class OrchestratorRequest(BaseModel):
@@ -92,6 +92,8 @@ class TestRunner:
                 suite_data[suite] = self._load_performance_tests()
             elif suite == "regression":
                 suite_data[suite] = self._load_regression_tests()
+            elif suite == "gibberish":
+                suite_data[suite] = self._load_gibberish_tests()
         
         return suite_data
     
@@ -228,6 +230,38 @@ class TestRunner:
             regression_tests.append(test)
         
         return regression_tests
+    
+    def _load_gibberish_tests(self) -> List[Dict[str, Any]]:
+        """Load gibberish tests (nonsensical inputs to test LLM robustness)."""
+        gibberish_inputs = [
+            "asdfgh qwerty zxcvbn uiop hjkl",
+            "12345 !@#$% 67890 ^&*() abcdef",
+            "Lorem ipsum dolor sit amet consectetur adipiscing elit sed do",
+            "混乱した文字列テスト 한글테스트 العربية тест",
+            "🎭🎨🎪🎯🎲🎸🎺🎻🎼🎵🎶🎤",
+            "AAAAAAAA BBBBBBBB CCCCCCCC DDDDDDDD",
+            "null undefined NaN Infinity -Infinity",
+            "SELECT * FROM users; DROP TABLE users;--",
+            "javascript:alert('xss')",
+            "../../etc/passwd",
+            "\\x41\\x42\\x43\\x44\\x45",
+            "Base64: QWxhZGRpbjpvcGVuIHNlc2FtZQ==",
+            "Zalgo: H̴e̵l̵l̵o̵ W̷o̷r̷l̷d̷",
+            "Reverse: !dlroW olleH",
+            "ROT13: Uryyb Jbeyq!"
+        ]
+        
+        tests = []
+        for i, gibberish in enumerate(gibberish_inputs):
+            tests.append({
+                "test_id": f"gibberish_{i+1}",
+                "query": gibberish,
+                "expected_behavior": "handle_gracefully",
+                "test_type": "robustness",
+                "category": "gibberish"
+            })
+        
+        return tests
     
     async def run_case(self, suite: str, item: Dict[str, Any]) -> DetailedRow:
         """Run a single test case."""
@@ -395,6 +429,35 @@ class TestRunner:
         elif suite == "regression":
             # Simple regression check (in real implementation, compare with baseline)
             evaluation["passed"] = len(answer) > 10  # Basic sanity check
+        
+        elif suite == "gibberish":
+            # Check if LLM handles gibberish gracefully
+            graceful_patterns = [
+                "don't understand", "unclear", "clarify", "rephrase", 
+                "not clear", "confusing", "help you better", "specific",
+                "anlamadım", "açıklayabilir", "daha net", "yardımcı"
+            ]
+            
+            # Check if response is graceful (acknowledges confusion)
+            graceful_response = any(pattern in answer for pattern in graceful_patterns)
+            
+            # Check if response is not hallucinating (not making up meaning)
+            answer_length = len(answer)
+            not_hallucinating = answer_length < 200  # Short responses are better for gibberish
+            
+            # Check if response doesn't echo back the gibberish
+            query_lower = item.get("query", "").lower()
+            not_echoing = query_lower not in answer
+            
+            evaluation["graceful_handling"] = graceful_response
+            evaluation["no_hallucination"] = not_hallucinating
+            evaluation["no_echo"] = not_echoing
+            evaluation["robustness_score"] = (
+                (0.5 if graceful_response else 0) +
+                (0.3 if not_hallucinating else 0) +
+                (0.2 if not_echoing else 0)
+            )
+            evaluation["passed"] = evaluation["robustness_score"] >= 0.5
         
         return evaluation
     

@@ -3,7 +3,7 @@ import { Download, Play, ShieldCheck, Settings2, MoonStar, Sun, Server, CheckCir
 import clsx from "clsx";
 import type { Provider, TestSuite, OrchestratorRequest, OrchestratorResult } from "../types";
 
-const DEFAULT_SUITES: TestSuite[] = ["rag_quality","red_team","safety","performance","regression"];
+const DEFAULT_SUITES: TestSuite[] = ["rag_quality","red_team","safety","performance","regression","gibberish"];
 const REQUIRED_SHEETS = ["Summary","Detailed","API_Details","Inputs_And_Expected"];
 
 export default function App() {
@@ -123,6 +123,7 @@ export default function App() {
     if (suites.includes("safety")) total += 5 * attacks; // ~5 safety tests
     if (suites.includes("performance")) total += perf;
     if (suites.includes("regression")) total += qaSize;
+    if (suites.includes("gibberish")) total += 15; // 15 gibberish tests
     
     return total;
   }, [suites, qaSampleSize, attackMutators, perfRepeats]);
