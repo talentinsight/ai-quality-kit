@@ -22,6 +22,7 @@ export interface OrchestratorRequest {
     attack_mutators?: number;
     perf_repeats?: number;
   };
+  testdata_id?: string;
 }
 
 export interface OrchestratorResult {
@@ -29,4 +30,49 @@ export interface OrchestratorResult {
   artifacts: { json_path: string; xlsx_path: string };
   summary?: Record<string, unknown>;
   counts?: Record<string, unknown>;
+}
+
+// Test Data Intake types
+export type ArtifactType = 'passages' | 'qaset' | 'attacks' | 'schema';
+
+export interface TestDataUploadResponse {
+  testdata_id: string;
+  artifacts: string[];
+  counts: Record<string, number>;
+}
+
+export interface TestDataUrlRequest {
+  urls: Partial<Record<ArtifactType, string>>;
+}
+
+export interface TestDataPasteRequest {
+  passages?: string;
+  qaset?: string;
+  attacks?: string;
+  schema?: string;
+}
+
+export interface ArtifactInfo {
+  present: boolean;
+  count?: number;
+  sha256?: string;
+}
+
+export interface TestDataMeta {
+  testdata_id: string;
+  created_at: string;
+  expires_at: string;
+  artifacts: Record<ArtifactType, ArtifactInfo>;
+}
+
+export interface ApiError {
+  detail: string;
+  validation_errors?: Array<{
+    artifact: string;
+    error: {
+      field: string;
+      message: string;
+      line_number?: number;
+    };
+  }>;
 }

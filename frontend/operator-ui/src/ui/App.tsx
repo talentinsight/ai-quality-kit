@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Download, Play, ShieldCheck, Settings2, MoonStar, Sun, Server, CheckCircle2, XCircle, Rocket } from "lucide-react";
+import { Download, Play, ShieldCheck, Settings2, MoonStar, Sun, Server, CheckCircle2, XCircle, Rocket, ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
 import clsx from "clsx";
 import type { Provider, TestSuite, OrchestratorRequest, OrchestratorResult } from "../types";
+import TestDataPanel from "../features/testdata/TestDataPanel";
+import { getTestdataMeta, ApiError } from "../lib/api";
 
 const DEFAULT_SUITES: TestSuite[] = ["rag_quality","red_team","safety","performance","regression","gibberish"];
 const REQUIRED_SHEETS = ["Summary","Detailed","API_Details","Inputs_And_Expected"];
@@ -38,6 +40,12 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>("");
   const [run, setRun] = useState<OrchestratorResult | null>(null);
+
+  // Test data state
+  const [testDataExpanded, setTestDataExpanded] = useState(false);
+  const [testdataId, setTestdataId] = useState("");
+  const [testdataValid, setTestdataValid] = useState<boolean | null>(null);
+  const [validatingTestdata, setValidatingTestdata] = useState(false);
 
   const thresholds = useMemo(() => ({
     faithfulness_min: Number(faithMin),
@@ -83,6 +91,7 @@ export default function App() {
         api_bearer_token: targetMode === "api" ? token : undefined,
         suites,
         thresholds,
+        testdata_id: testdataId.trim() || undefined,
         options: { 
           provider, 
           model,
@@ -107,9 +116,46 @@ export default function App() {
     }
   }
 
+  // Load last testdata_id from localStorage
+  const loadLastTestdataId = () => {
+    try {
+      const lastId = localStorage.getItem('aqk:last_testdata_id');
+      if (lastId) {
+        setTestdataId(lastId);
+        setTestdataValid(null); // Reset validation state
+      }
+    } catch (error) {
+      console.warn('Failed to load testdata_id from localStorage:', error);
+    }
+  };
 
+  // Validate testdata_id
+  const validateTestdataId = async () => {
+    if (!testdataId.trim()) {
+      setTestdataValid(null);
+      return;
+    }
 
-  const canRun = !!baseUrl && suites.length > 0 && !busy;
+    setValidatingTestdata(true);
+    try {
+      await getTestdataMeta(testdataId.trim(), token);
+      setTestdataValid(true);
+    } catch (error) {
+      console.error('Testdata validation error:', error);
+      setTestdataValid(false);
+    } finally {
+      setValidatingTestdata(false);
+    }
+  };
+
+  // Reset testdata validation when testdata_id changes
+  useEffect(() => {
+    if (testdataId.trim()) {
+      setTestdataValid(null);
+    }
+  }, [testdataId]);
+
+  const canRun = !!baseUrl && suites.length > 0 && !busy && (testdataId.trim() === '' || testdataValid !== false);
 
   // Estimated test count calculation
   const estimatedTests = useMemo(() => {
@@ -270,12 +316,104 @@ export default function App() {
             </div>
           </div>
 
+          {/* Test Data ID Section */}
+          <div className="mt-4 p-4 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+            <label className="label">Test Data ID (Optional)</label>
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                className="input flex-1 min-w-0"
+                placeholder="Enter testdata_id to override default data sources"
+                value={testdataId}
+                onChange={(e) => setTestdataId(e.target.value)}
+              />
+              <button
+                className="btn btn-ghost"
+                onClick={loadLastTestdataId}
+                title="Load last used testdata_id"
+              >
+                Use Last
+              </button>
+              <button
+                className="btn btn-ghost"
+                onClick={validateTestdataId}
+                disabled={validatingTestdata || !testdataId.trim()}
+                title="Validate testdata_id"
+              >
+                {validatingTestdata ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent" />
+                    Validating...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw size={16} />
+                    Validate
+                  </>
+                )}
+              </button>
+              {testdataValid !== null && (
+                <div className={clsx(
+                  "flex items-center gap-1 text-sm px-2 py-1 rounded-lg",
+                  testdataValid 
+                    ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300"
+                    : "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
+                )}>
+                  {testdataValid ? (
+                    <>
+                      <CheckCircle2 size={14} />
+                      Valid
+                    </>
+                  ) : (
+                    <>
+                      <XCircle size={14} />
+                      Invalid/Expired
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+            <small className="block text-slate-500 dark:text-slate-400 mt-1">
+              When provided, overrides default passages, qaset, and attacks data sources
+            </small>
+          </div>
+
           <div className="mt-5 flex items-center gap-3">
             <button className="btn btn-primary" onClick={runTests} disabled={!canRun}>
               {busy ? <span className="animate-pulse">Running…</span> : <><Play size={16}/> Run tests</>}
             </button>
             {message && <span className="text-sm text-slate-600 dark:text-slate-300">{message}</span>}
+            {testdataId.trim() && testdataValid === false && (
+              <span className="text-sm text-red-600 dark:text-red-400">
+                Invalid test data ID - please validate before running
+              </span>
+            )}
           </div>
+        </div>
+
+        {/* Test Data Section */}
+        <div className="card p-5">
+          <button
+            onClick={() => setTestDataExpanded(!testDataExpanded)}
+            className="w-full flex items-center justify-between p-0 bg-transparent border-0 text-left"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-lg font-semibold">Test Data</span>
+              <span className="text-sm text-slate-500 dark:text-slate-400">
+                Upload, fetch from URLs, or paste custom test data
+              </span>
+            </div>
+            {testDataExpanded ? (
+              <ChevronDown size={20} className="text-slate-400" />
+            ) : (
+              <ChevronRight size={20} className="text-slate-400" />
+            )}
+          </button>
+          
+          {testDataExpanded && (
+            <div className="mt-4">
+              <TestDataPanel token={token} />
+            </div>
+          )}
         </div>
 
         {/* Summary row */}

@@ -444,6 +444,118 @@ python scripts/seed_example_data.py --type custom \
   --passage-text "Context information"
 ```
 
+## Operator UI
+
+AI Quality Kit includes a React-based operator web interface for easy test data management and test execution. The UI provides an intuitive way to upload test data, configure test runs, and monitor results.
+
+### Starting the UI
+
+```bash
+# Navigate to the frontend directory
+cd frontend/operator-ui
+
+# Install dependencies (first time only)
+npm install
+
+# Start the development server
+npm run dev
+```
+
+The UI will be available at `http://localhost:5173`
+
+### UI Features
+
+#### 1. Test Configuration
+- **Provider Selection**: Choose from OpenAI, Anthropic, Gemini, Custom REST, or Mock providers
+- **Model Configuration**: Specify the exact model name (e.g., `gpt-4o-mini`, `claude-3-5-sonnet`)
+- **Test Suite Selection**: Enable/disable specific test suites (RAG quality, red team, safety, performance)
+- **Volume Controls**: Configure sample sizes, attack mutators, and performance repeats
+- **Threshold Settings**: Set minimum scores for faithfulness, context recall, and toxicity
+
+#### 2. Test Data Management
+
+The UI provides three convenient ways to upload custom test data:
+
+**Upload Tab**: Upload files directly from your computer
+- `passages.jsonl` - Context passages for RAG evaluation
+- `qaset.jsonl` - Question-answer pairs for quality testing  
+- `attacks.txt/.yaml` - Adversarial prompts for safety testing
+- `schema.json` - JSON schemas for validation testing
+
+**URL Tab**: Fetch test data from remote URLs
+- Supports HTTP/HTTPS URLs
+- Automatic content-type validation
+- 15-second timeout with 10MB size limit
+
+**Paste Tab**: Direct content entry
+- Multi-line text areas for each artifact type
+- Syntax highlighting for JSON/YAML formats
+- Real-time validation feedback
+
+#### 3. Test Data ID Integration
+
+After successful test data upload:
+1. **Copy Test Data ID**: One-click copy to clipboard for the generated `testdata_id`
+2. **Validation**: Verify test data bundle status and check remaining TTL
+3. **Run Integration**: Automatically include the `testdata_id` in test runs to override default data sources
+4. **localStorage**: Last used `testdata_id` is automatically saved and can be reloaded
+
+#### 4. Test Execution & Results
+
+**Run Controls**:
+- Real-time validation of configuration
+- Estimated test count based on selected suites and volume settings
+- Disabled run button for invalid configurations (missing auth, invalid test data ID)
+
+**Results Display**:
+- JSON and Excel report downloads
+- Summary statistics and key metrics
+- Run ID tracking and artifact management
+- Real-time status updates during execution
+
+### UI Workflow Example
+
+```bash
+# 1. Start the UI and backend
+npm run dev  # In frontend/operator-ui/
+uvicorn apps.rag_service.main:app --reload --port 8000  # In project root
+
+# 2. Configure in UI:
+#    - Set Backend URL: http://localhost:8000  
+#    - Add Bearer Token (if auth enabled)
+#    - Select provider: OpenAI
+#    - Enter model: gpt-4o-mini
+
+# 3. Upload custom test data:
+#    - Click "Test Data" to expand panel
+#    - Use Upload tab to select your qaset.jsonl file
+#    - Copy the returned testdata_id
+
+# 4. Configure test run:
+#    - Paste testdata_id in "Test Data ID" field  
+#    - Click "Validate" to verify
+#    - Select test suites: rag_quality, safety
+#    - Set volume controls as needed
+
+# 5. Execute and download:
+#    - Click "Run tests"
+#    - Wait for completion
+#    - Download JSON/Excel reports
+```
+
+### Authentication
+
+If the backend has authentication enabled (`AUTH_ENABLED=true`), provide your bearer token in the main configuration panel. The UI will include this token in all API requests.
+
+### Environment Configuration
+
+The UI reads configuration from environment variables:
+
+```bash
+# Optional: Override default backend URL
+export VITE_API_BASE=http://localhost:8000
+```
+
 ## Quality Thresholds
 
 | Metric | Threshold | Purpose |
