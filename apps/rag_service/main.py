@@ -14,7 +14,7 @@ from apps.utils.hash_utils import query_hash
 from apps.cache.cache_store import get_cached, set_cache, get_cache_ttl, get_context_version
 from apps.observability.log_service import start_log, finish_log, log_eval_metrics, audit_start, audit_finish
 from apps.observability.live_eval import evaluate_comprehensive
-from apps.observability.perf import decide_phase_and_latency
+from apps.observability.perf import decide_phase_and_latency, record_latency
 from apps.security.auth import get_principal, require_user_or_admin, Principal
 
 # Configure logging
@@ -189,6 +189,13 @@ async def ask(
             response.headers["X-Perf-Phase"] = phase
             response.headers["X-Latency-MS"] = str(latency_ms)
             
+            # Add percentile headers if enabled
+            p50, p95 = record_latency("/ask", latency_ms)
+            if p50 is not None:
+                response.headers["X-P50-MS"] = str(p50)
+            if p95 is not None:
+                response.headers["X-P95-MS"] = str(p95)
+            
             finish_log(log_id, answer, latency_ms)
             
             # Complete audit logging
@@ -229,6 +236,13 @@ async def ask(
         response.headers["X-Source"] = source
         response.headers["X-Perf-Phase"] = phase
         response.headers["X-Latency-MS"] = str(latency_ms)
+        
+        # Add percentile headers if enabled
+        p50, p95 = record_latency("/ask", latency_ms)
+        if p50 is not None:
+            response.headers["X-P50-MS"] = str(p50)
+        if p95 is not None:
+            response.headers["X-P95-MS"] = str(p95)
         
         # Complete logging
         finish_log(log_id, answer, latency_ms)

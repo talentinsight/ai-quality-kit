@@ -644,6 +644,167 @@ The CI pipeline will **fail** if:
 
 This prevents merging code that degrades AI quality.
 
+## Authentication
+
+AI Quality Kit supports two authentication modes: **Token-based** (default) and **JWT-based** authentication. Authentication is disabled by default for development but should be enabled in production environments.
+
+### Authentication Configuration
+
+#### Enabling Authentication
+
+```bash
+# Enable authentication (disabled by default)
+export AUTH_ENABLED=true
+
+# Choose authentication mode
+export AUTH_MODE=token  # Default: simple token-based auth
+# or
+export AUTH_MODE=jwt    # JWT-based authentication
+```
+
+#### Token-Based Authentication (Default)
+
+Simple bearer token authentication with predefined user roles:
+
+```bash
+# Configure valid tokens and their roles
+export AUTH_TOKENS="admin:SECRET_ADMIN_TOKEN,user:SECRET_USER_TOKEN,viewer:SECRET_VIEWER_TOKEN"
+
+# Configure route-level access control
+export RBAC_ALLOWED_ROUTES="/ask:user|admin,/orchestrator/*:admin,/reports/*:user|admin"
+```
+
+**Usage Example:**
+```bash
+# API request with bearer token
+curl -X POST "http://localhost:8000/orchestrator/run_tests" \
+  -H "Authorization: Bearer SECRET_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"suites": ["rag_quality"], "target_mode": "api", "options": {"provider": "mock"}}'
+```
+
+#### JWT Authentication
+
+JWT-based authentication supporting both symmetric (HS256) and asymmetric (RS256) algorithms:
+
+##### Symmetric Key (HS256)
+```bash
+export AUTH_MODE=jwt
+export JWT_SECRET="your-secret-key-256-bits-minimum"
+export JWT_ISSUER="your-issuer"        # Optional
+export JWT_AUDIENCE="your-audience"    # Optional
+```
+
+##### Asymmetric Key (RS256) with JWKS
+```bash
+export AUTH_MODE=jwt
+export JWT_JWKS_URL="https://your-auth-provider.com/.well-known/jwks.json"
+export JWT_ISSUER="https://your-auth-provider.com"  # Optional
+export JWT_AUDIENCE="your-api-audience"             # Optional
+```
+
+##### JWT Claims
+
+The JWT token should include roles in one of these formats:
+
+**Option 1: Roles Array**
+```json
+{
+  "sub": "user123",
+  "iss": "your-issuer",
+  "aud": "your-audience",
+  "exp": 1672531200,
+  "iat": 1672444800,
+  "roles": ["admin", "user"]
+}
+```
+
+**Option 2: Scope String**
+```json
+{
+  "sub": "user123",
+  "iss": "your-issuer", 
+  "aud": "your-audience",
+  "exp": 1672531200,
+  "iat": 1672444800,
+  "scope": "admin user viewer"
+}
+```
+
+**Usage Example:**
+```bash
+# Generate JWT (example using PyJWT)
+python -c "
+import jwt
+from datetime import datetime, timedelta, timezone
+
+payload = {
+    'sub': 'admin-user',
+    'iss': 'your-issuer',
+    'aud': 'your-audience', 
+    'exp': datetime.now(timezone.utc) + timedelta(hours=1),
+    'iat': datetime.now(timezone.utc),
+    'roles': ['admin']
+}
+token = jwt.encode(payload, 'your-secret-key', algorithm='HS256')
+print(token)
+"
+
+# API request with JWT
+curl -X POST "http://localhost:8000/orchestrator/run_tests" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"suites": ["rag_quality"], "target_mode": "api", "options": {"provider": "mock"}}'
+```
+
+### Role-Based Access Control (RBAC)
+
+Configure route-level permissions using the `RBAC_ALLOWED_ROUTES` environment variable:
+
+```bash
+# Format: route:role1|role2|role3,route2:role1|role2
+export RBAC_ALLOWED_ROUTES="/ask:user|admin,/orchestrator/*:admin,/reports/*:user|admin,/testdata/*:user|admin"
+```
+
+**Default Roles:**
+- **admin**: Full access to all endpoints
+- **user**: Access to testing and reporting endpoints
+- **viewer**: Read-only access to reports
+
+**Route Patterns:**
+- Exact match: `/ask` 
+- Wildcard match: `/orchestrator/*` (matches `/orchestrator/run_tests`, etc.)
+
+### Security Best Practices
+
+#### JWT Configuration
+- **Use strong secrets**: Minimum 256 bits for HS256 
+- **Set appropriate expiry**: Short-lived tokens (1-24 hours) with refresh capability
+- **Validate issuer/audience**: Always set and validate `iss` and `aud` claims
+- **Use RS256 in production**: Asymmetric keys for better security with JWKS rotation
+
+#### Token Management
+- **Rotate tokens regularly**: Implement token rotation policies
+- **Use HTTPS only**: Never transmit tokens over unencrypted connections
+- **Store securely**: Use secure storage for token secrets and private keys
+- **Log audit events**: Enable audit logging for authentication events
+
+#### Error Handling
+All authentication failures return `401 Unauthorized` with safe error messages that don't expose token details:
+
+```json
+{
+  "detail": "Token has expired"
+}
+```
+
+Common error scenarios:
+- Missing Authorization header: `Bearer token required`
+- Invalid token format: `Invalid token`
+- Expired JWT: `Token has expired`
+- Wrong issuer/audience: `Invalid token issuer`
+- Insufficient permissions: `Access denied. Required roles: admin`
+
 ## Environment Management
 
 ### Development Environment

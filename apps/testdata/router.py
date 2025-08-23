@@ -6,12 +6,12 @@ import time
 from typing import Dict, List, Optional, Any
 import logging
 import httpx
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Response
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Response, Request
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError as PydanticValidationError
 
 from apps.security.auth import require_user_or_admin, Principal
-from apps.observability.perf import decide_phase_and_latency
+from apps.observability.perf import decide_phase_and_latency, record_latency
 from apps.utils.pii_redaction import mask_text
 from .models import (
     UploadResponse, URLRequest, PasteRequest, TestDataMeta,
@@ -48,12 +48,19 @@ _metrics = {
 }
 
 
-def _add_performance_headers(response: Response, start_time: float):
+def _add_performance_headers(response: Response, start_time: float, route: str):
     """Add performance headers to response."""
     latency_ms = int((time.time() - start_time) * 1000)
     phase, _ = decide_phase_and_latency(start_time)
     response.headers["X-Perf-Phase"] = phase
     response.headers["X-Latency-MS"] = str(latency_ms)
+    
+    # Add percentile headers if enabled
+    p50, p95 = record_latency(route, latency_ms)
+    if p50 is not None:
+        response.headers["X-P50-MS"] = str(p50)
+    if p95 is not None:
+        response.headers["X-P95-MS"] = str(p95)
 
 
 def _increment_metrics(bytes_count: int, records_count: int):
@@ -257,7 +264,7 @@ async def upload_testdata(
         
         # If we have validation errors, return them
         if all_errors:
-            _add_performance_headers(response, start_time)
+            _add_performance_headers(response, start_time, "/testdata")
             return JSONResponse(
                 status_code=400,
                 content={
@@ -280,7 +287,7 @@ async def upload_testdata(
         
         logger.info(f"Successfully uploaded test data bundle {testdata_id} with artifacts: {artifacts}")
         
-        _add_performance_headers(response, start_time)
+        _add_performance_headers(response, start_time, "/testdata")
         return UploadResponse(
             testdata_id=testdata_id,
             artifacts=artifacts,
@@ -288,10 +295,10 @@ async def upload_testdata(
         )
         
     except HTTPException:
-        _add_performance_headers(response, start_time)
+        _add_performance_headers(response, start_time, "/testdata")
         raise
     except Exception as e:
-        _add_performance_headers(response, start_time)
+        _add_performance_headers(response, start_time, "/testdata")
         logger.error(f"Unexpected error in upload endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -338,7 +345,7 @@ async def ingest_by_url(
         
         # If we have validation errors, return them
         if all_errors:
-            _add_performance_headers(response, start_time)
+            _add_performance_headers(response, start_time, "/testdata")
             return JSONResponse(
                 status_code=400,
                 content={
@@ -361,7 +368,7 @@ async def ingest_by_url(
         
         logger.info(f"Successfully ingested test data bundle {testdata_id} from URLs with artifacts: {artifacts}")
         
-        _add_performance_headers(response, start_time)
+        _add_performance_headers(response, start_time, "/testdata")
         return UploadResponse(
             testdata_id=testdata_id,
             artifacts=artifacts,
@@ -369,10 +376,10 @@ async def ingest_by_url(
         )
         
     except HTTPException:
-        _add_performance_headers(response, start_time)
+        _add_performance_headers(response, start_time, "/testdata")
         raise
     except Exception as e:
-        _add_performance_headers(response, start_time)
+        _add_performance_headers(response, start_time, "/testdata")
         logger.error(f"Unexpected error in by_url endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -427,7 +434,7 @@ async def ingest_by_paste(
         
         # If we have validation errors, return them
         if all_errors:
-            _add_performance_headers(response, start_time)
+            _add_performance_headers(response, start_time, "/testdata")
             return JSONResponse(
                 status_code=400,
                 content={
@@ -450,7 +457,7 @@ async def ingest_by_paste(
         
         logger.info(f"Successfully ingested test data bundle {testdata_id} from paste with artifacts: {artifacts}")
         
-        _add_performance_headers(response, start_time)
+        _add_performance_headers(response, start_time, "/testdata")
         return UploadResponse(
             testdata_id=testdata_id,
             artifacts=artifacts,
@@ -458,10 +465,10 @@ async def ingest_by_paste(
         )
         
     except HTTPException:
-        _add_performance_headers(response, start_time)
+        _add_performance_headers(response, start_time, "/testdata")
         raise
     except Exception as e:
-        _add_performance_headers(response, start_time)
+        _add_performance_headers(response, start_time, "/testdata")
         logger.error(f"Unexpected error in paste endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -482,20 +489,20 @@ async def get_testdata_meta(
         if meta is None:
             # Check if bundle existed but expired
             if testdata_id in store.list_bundles():
-                _add_performance_headers(response, start_time)
+                _add_performance_headers(response, start_time, "/testdata")
                 raise HTTPException(status_code=410, detail="Test data bundle has expired")
             else:
-                _add_performance_headers(response, start_time)
+                _add_performance_headers(response, start_time, "/testdata")
                 raise HTTPException(status_code=404, detail="Test data bundle not found")
         
-        _add_performance_headers(response, start_time)
+        _add_performance_headers(response, start_time, "/testdata")
         return meta
         
     except HTTPException:
-        _add_performance_headers(response, start_time)
+        _add_performance_headers(response, start_time, "/testdata")
         raise
     except Exception as e:
-        _add_performance_headers(response, start_time)
+        _add_performance_headers(response, start_time, "/testdata")
         logger.error(f"Unexpected error in meta endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -507,5 +514,5 @@ async def get_metrics(
 ):
     """Get ingestion metrics (for debugging)."""
     start_time = time.time()
-    _add_performance_headers(response, start_time)
+    _add_performance_headers(response, start_time, "/testdata/metrics")
     return _metrics
