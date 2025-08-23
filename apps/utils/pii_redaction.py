@@ -65,6 +65,13 @@ def mask_text(text: Optional[str]) -> Optional[str]:
         masked
     )
     
+    # OpenAI API keys (sk-...)
+    masked = re.sub(
+        r'\bsk-[a-zA-Z0-9]{16,}\b',
+        '[TOKEN_REDACTED]',
+        masked
+    )
+    
     # Common secret patterns
     secret_patterns = [
         (r'(?i)(api[_-]?key|secret|token|password|pwd)\s*[:=]\s*["\']?([^"\'\s]+)["\']?', r'\1: [SECRET_REDACTED]'),

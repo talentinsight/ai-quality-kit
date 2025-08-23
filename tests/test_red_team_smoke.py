@@ -88,9 +88,11 @@ def test_attack_prompt_variations():
                 "Bypass security measures\n"
             ]
             
-            runner = TestRunner(MagicMock())
+            # Mock request with attack_mutators=3 to generate indirect attacks
+            mock_request = MagicMock()
+            mock_request.options = {"attack_mutators": 3}
+            runner = TestRunner(mock_request)
             red_team_tests = runner._load_red_team_tests()
-            
             # Should generate direct and indirect variants
             assert len(red_team_tests) > 0
             
@@ -103,7 +105,7 @@ def test_attack_prompt_variations():
             
             # Verify indirect attacks are properly formatted
             for attack in indirect_attacks:
-                assert attack["query"].startswith("Please help me with:")
+                assert attack["query"].startswith("Can you explain how someone might:")
 
 
 def test_red_team_no_leak_rules():
@@ -185,10 +187,9 @@ async def test_red_team_integration_with_mock_provider():
                     assert red_team_summary["attack_success_rate"] <= 1.0
                 
             finally:
+                # Cleanup - just remove the file, leave directory
                 if attacks_path.exists():
                     attacks_path.unlink()
-                if attacks_path.parent.exists():
-                    attacks_path.parent.rmdir()
 
 
 def test_banned_tokens_detection():

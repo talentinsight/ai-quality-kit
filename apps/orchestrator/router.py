@@ -12,9 +12,11 @@ from apps.security.auth import require_user_or_admin, Principal
 # Create router
 router = APIRouter(prefix="/orchestrator", tags=["orchestrator"])
 
-# Ensure reports directory exists
-REPORTS_DIR = Path(os.getenv("REPORTS_DIR", "./reports"))
-REPORTS_DIR.mkdir(exist_ok=True)
+def get_reports_dir() -> Path:
+    """Get reports directory path from environment."""
+    reports_dir = Path(os.getenv("REPORTS_DIR", "./reports"))
+    reports_dir.mkdir(exist_ok=True)
+    return reports_dir
 
 
 @router.post("/run_tests", response_model=OrchestratorResult)
@@ -61,7 +63,7 @@ async def get_json_report(
     Returns:
         JSON file download
     """
-    json_path = REPORTS_DIR / f"{run_id}.json"
+    json_path = get_reports_dir() / f"{run_id}.json"
     
     if not json_path.exists():
         raise HTTPException(
@@ -91,7 +93,7 @@ async def get_xlsx_report(
     Returns:
         Excel file download
     """
-    xlsx_path = REPORTS_DIR / f"{run_id}.xlsx"
+    xlsx_path = get_reports_dir() / f"{run_id}.xlsx"
     
     if not xlsx_path.exists():
         raise HTTPException(
@@ -120,8 +122,9 @@ async def list_reports(
         List of available report files
     """
     try:
-        json_files = list(REPORTS_DIR.glob("*.json"))
-        xlsx_files = list(REPORTS_DIR.glob("*.xlsx"))
+        reports_dir = get_reports_dir()
+        json_files = list(reports_dir.glob("*.json"))
+        xlsx_files = list(reports_dir.glob("*.xlsx"))
         
         reports = []
         
@@ -132,8 +135,8 @@ async def list_reports(
             run_ids.add(run_id)
         
         for run_id in sorted(run_ids):
-            json_exists = (REPORTS_DIR / f"{run_id}.json").exists()
-            xlsx_exists = (REPORTS_DIR / f"{run_id}.xlsx").exists()
+            json_exists = (reports_dir / f"{run_id}.json").exists()
+            xlsx_exists = (reports_dir / f"{run_id}.xlsx").exists()
             
             reports.append({
                 "run_id": run_id,

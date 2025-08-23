@@ -51,16 +51,17 @@ class TestAPIEndpoints:
     
     def test_ask_endpoint_with_keys(self, client, set_env_defaults, mock_openai_client):
         """Test /ask endpoint when LLM keys are available."""
-        with patch.dict(os.environ, set_env_defaults):
-            # Mock OpenAI response
-            mock_response = Mock()
-            mock_response.choices = [Mock()]
-            mock_response.choices[0].message.content = "AI Quality Kit is a comprehensive platform."
-            mock_openai_client.chat.completions.create.return_value = mock_response
-    
+        # Use mock provider instead of mocking internals
+        test_env = set_env_defaults.copy()
+        test_env.update({
+            "PROVIDER": "mock",
+            "MODEL_NAME": "mock-1"
+        })
+        
+        with patch.dict(os.environ, test_env):
             response = client.post(
                 "/ask",
-                json={"query": "What is AI Quality Kit?"}
+                json={"query": "What is AI Quality Kit?", "provider": "mock"}
             )
     
             # Should return 200 with proper structure

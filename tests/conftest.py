@@ -69,18 +69,15 @@ def client(monkeypatch):
             "context": ["Mock context 1", "Mock context 2"]
         })
         
+        # Mock the answer method to return a string
+        mock_rag_pipeline.answer = Mock(return_value="This is a mock answer from the RAG pipeline.")
+        
         # Set the global variable directly in the main module
         import apps.rag_service.main as main_module
         main_module.rag_pipeline = mock_rag_pipeline
         
-        # Try to clear startup handlers safely without triggering Pylance errors
-        try:
-            # Use setattr to avoid Pylance attribute access issues
-            if hasattr(app.router, 'startup_handlers'):
-                setattr(app.router, 'startup_handlers', [])
-        except Exception:
-            # If we can't clear startup handlers, that's OK - our mock should handle it
-            pass
+        # Setup routers manually since we're bypassing startup
+        main_module.setup_routers()
         
         return TestClient(app)
     except Exception as e:

@@ -720,3 +720,62 @@ class TestRunner:
             # In a real implementation, you'd use a task queue like Celery
             # For now, just log the intention
             print(f"Artifacts for {self.run_id} scheduled for deletion in {auto_delete_minutes} minutes")
+    
+    def _anonymize_data(self, data):
+        """Anonymize sensitive data in test results."""
+        from apps.utils.pii_redaction import mask_text
+        
+        if isinstance(data, dict):
+            anonymized = {}
+            for key, value in data.items():
+                if isinstance(value, str):
+                    anonymized[key] = mask_text(value)
+                elif isinstance(value, (list, dict)):
+                    anonymized[key] = self._anonymize_data(value)
+                else:
+                    anonymized[key] = value
+            return anonymized
+        elif isinstance(data, list):
+            return [self._anonymize_data(item) for item in data]
+        elif isinstance(data, str):
+            return mask_text(data)
+        else:
+            return data
+    
+    def _generate_coverage_data(self, red_team_rows):
+        """Generate coverage data for red team tests."""
+        if not red_team_rows:
+            return []
+        
+        # Group by attack categories
+        categories = {}
+        for row in red_team_rows:
+            # Extract category from query (simple heuristic)
+            query_lower = row.query.lower()
+            if "hack" in query_lower or "exploit" in query_lower:
+                category = "System Exploitation"
+            elif "illegal" in query_lower or "criminal" in query_lower:
+                category = "Illegal Activities"
+            elif "harm" in query_lower or "violence" in query_lower:
+                category = "Violence/Harm"
+            else:
+                category = "General Adversarial"
+            
+            if category not in categories:
+                categories[category] = {"total": 0, "successful_attacks": 0}
+            
+            categories[category]["total"] += 1
+            if row.attack_success:
+                categories[category]["successful_attacks"] += 1
+        
+        # Convert to coverage data format
+        coverage_data = []
+        for category, stats in categories.items():
+            coverage_data.append({
+                "category": category,
+                "total_tests": stats["total"],
+                "successful_attacks": stats["successful_attacks"],
+                "success_rate": stats["successful_attacks"] / stats["total"] if stats["total"] > 0 else 0.0
+            })
+        
+        return coverage_data
