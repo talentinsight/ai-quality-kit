@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* base tweaks */
+:root { --radius: 12px; }
+html, body, #root { height: 100%; }
+body { @apply bg-slate-50 text-slate-900 antialiased; }
+.dark body { @apply bg-slate-900 text-slate-100; }
+
+/* helpers */
+.card { @apply bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-card; }
+.btn  { @apply inline-flex items-center gap-2 rounded-xl px-4 py-2 font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed; }
+.btn-primary { @apply bg-brand-600 text-white hover:bg-brand-700; }
+.btn-ghost   { @apply bg-slate-100 dark:bg-slate-700/60 text-slate-900 dark:text-slate-50 hover:bg-slate-200 dark:hover:bg-slate-700; }
+.input { @apply w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-brand-500; }
+.label { @apply block text-sm font-semibold mb-1; }
+.pill  { @apply inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm bg-slate-50 border-slate-200 dark:bg-slate-800 dark:border-slate-700; }
+.badge { @apply inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold bg-brand-50 border-brand-100 text-brand-700; }
+
+.kpi { @apply grid gap-1 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800; }
+.kpi .title { @apply text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400; }
+.kpi .value { @apply text-2xl font-bold; }

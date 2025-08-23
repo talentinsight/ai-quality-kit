@@ -199,3 +199,7 @@ yarl==1.18.3
 zope.interface==7.2
 zstandard==0.23.0
 freezegun==1.2.2
+openpyxl==3.1.2
+mcp==0.4.0
+google-generativeai==0.8.3
+langchain-google-genai==2.0.5

@@ -1,18 +1,21 @@
 """FastAPI RAG service main application."""
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Response
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import logging
 import os
 import time
 
 from .rag_pipeline import RAGPipeline
-from .config import config
+from .config import config, resolve_provider_and_model, ALLOWED_PROVIDERS
 from apps.utils.hash_utils import query_hash
 from apps.cache.cache_store import get_cached, set_cache, get_cache_ttl, get_context_version
-from apps.observability.log_service import start_log, finish_log, log_eval_metrics
+from apps.observability.log_service import start_log, finish_log, log_eval_metrics, audit_start, audit_finish
 from apps.observability.live_eval import evaluate_comprehensive
+from apps.observability.perf import decide_phase_and_latency
+from apps.security.auth import get_principal, require_user_or_admin, Principal
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -25,18 +28,31 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],  # Frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Request/Response models
 class QueryRequest(BaseModel):
     """Request model for /ask endpoint."""
     query: str
+    provider: Optional[str] = None
+    model: Optional[str] = None
 
 class QueryResponse(BaseModel):
     """Response model for /ask endpoint."""
     answer: str
     context: List[str]
+    provider: str
+    model: str
 
 # Global RAG pipeline instance
-rag_pipeline: RAGPipeline = None
+rag_pipeline: Optional[RAGPipeline] = None
 
 
 @app.on_event("startup")
@@ -74,6 +90,20 @@ async def root():
     return {"message": "AI Quality Kit RAG Service is running"}
 
 
+@app.get("/healthz")
+async def healthz():
+    """Kubernetes-style health check."""
+    return {"status": "ok"}
+
+
+@app.get("/readyz")
+async def readyz():
+    """Kubernetes-style readiness check."""
+    if not rag_pipeline:
+        raise HTTPException(status_code=503, detail="RAG pipeline not ready")
+    return {"status": "ready"}
+
+
 @app.get("/health")
 async def health():
     """Detailed health check."""
@@ -82,17 +112,24 @@ async def health():
         "model": config.model_name,
         "provider": config.provider,
         "top_k": config.rag_top_k,
+        "allowed_providers": list(ALLOWED_PROVIDERS),
         "index_size": len(rag_pipeline.passages) if rag_pipeline else 0
     }
 
 
 @app.post("/ask", response_model=QueryResponse)
-async def ask(request: QueryRequest) -> QueryResponse:
+async def ask(
+    request: QueryRequest, 
+    response: Response,
+    principal: Optional[Principal] = Depends(require_user_or_admin())
+) -> QueryResponse:
     """
     Answer a question using RAG pipeline with caching, logging, and live evaluation.
     
     Args:
-        request: Query request containing the question
+        request: Query request containing the question and optional provider/model
+        response: FastAPI response object for setting headers
+        principal: Authenticated principal (if auth enabled)
         
     Returns:
         Response with answer and context passages
@@ -103,17 +140,33 @@ async def ask(request: QueryRequest) -> QueryResponse:
             detail="RAG pipeline not initialized"
         )
     
-    start_time = time.time()
+    start_time = time.perf_counter()
     log_id = None
+    audit_id = None
     
     try:
+        # Validate and resolve provider/model
+        try:
+            provider, model = resolve_provider_and_model(request.provider, request.model)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        
+        # Start audit logging if enabled
+        audit_id = audit_start(
+            "/ask", 
+            "POST", 
+            principal.role if principal else None,
+            principal.token_hash_prefix if principal else None
+        )
+        
         # Normalize and hash query
         query_text = request.query
         query_hash_value = query_hash(query_text)
         context_version = get_context_version()
         
-        # Check cache first
-        cached_response = get_cached(query_hash_value, context_version)
+        # Check cache first (cache key includes provider/model for consistency)
+        cache_key = f"{query_hash_value}_{provider}_{model}"
+        cached_response = get_cached(cache_key, context_version)
         
         if cached_response:
             # Cache HIT
@@ -125,10 +178,19 @@ async def ask(request: QueryRequest) -> QueryResponse:
             if log_id is None:
                 log_id = start_log(query_text, query_hash_value, context, source)
             
-            latency_ms = int((time.time() - start_time) * 1000)
+            # Set performance headers
+            phase, latency_ms = decide_phase_and_latency(start_time)
+            response.headers["X-Source"] = source
+            response.headers["X-Perf-Phase"] = phase
+            response.headers["X-Latency-MS"] = str(latency_ms)
+            
             finish_log(log_id, answer, latency_ms)
             
-            return QueryResponse(answer=answer, context=context)
+            # Complete audit logging
+            if audit_id:
+                audit_finish(audit_id, 200, latency_ms, phase == "cold")
+            
+            return QueryResponse(answer=answer, context=context, provider=provider, model=model)
         
         # Cache MISS - generate live response
         source = "live"
@@ -139,18 +201,13 @@ async def ask(request: QueryRequest) -> QueryResponse:
         # Retrieve context
         contexts = rag_pipeline.retrieve(query_text)
         
-        # Generate answer
-        generation_start = time.time()
-        result = rag_pipeline.query(query_text)
-        generation_time = time.time() - generation_start
-        
-        answer = result["answer"]
-        context = result["context"]
+        # Generate answer with provider/model override
+        answer = rag_pipeline.answer(query_text, contexts, provider, model)
         
         # Cache the response if enabled
         try:
             ttl_seconds = get_cache_ttl()
-            set_cache(query_hash_value, context_version, answer, context, ttl_seconds)
+            set_cache(cache_key, context_version, answer, contexts, ttl_seconds)
         except Exception as e:
             logger.warning(f"Failed to cache response: {e}")
         
@@ -162,23 +219,61 @@ async def ask(request: QueryRequest) -> QueryResponse:
         except Exception as e:
             logger.warning(f"Live evaluation failed: {e}")
         
+        # Set performance headers
+        phase, latency_ms = decide_phase_and_latency(start_time)
+        response.headers["X-Source"] = source
+        response.headers["X-Perf-Phase"] = phase
+        response.headers["X-Latency-MS"] = str(latency_ms)
+        
         # Complete logging
-        latency_ms = int((time.time() - start_time) * 1000)
         finish_log(log_id, answer, latency_ms)
         
-        return QueryResponse(answer=answer, context=context)
+        # Complete audit logging
+        if audit_id:
+            audit_finish(audit_id, 200, latency_ms, phase == "cold")
         
+        return QueryResponse(answer=answer, context=contexts, provider=provider, model=model)
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
         # Log error if logging enabled
         if log_id:
-            latency_ms = int((time.time() - start_time) * 1000)
+            phase, latency_ms = decide_phase_and_latency(start_time)
             finish_log(log_id, "", latency_ms, "error", str(e))
+        
+        # Complete audit logging with error
+        if audit_id:
+            phase, latency_ms = decide_phase_and_latency(start_time)
+            audit_finish(audit_id, 500, latency_ms, phase == "cold")
         
         logger.error(f"Error processing query: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Error processing query: {str(e)}"
         )
+
+
+# Include routers
+def setup_routers():
+    """Setup additional routers based on feature flags."""
+    # Always include orchestrator
+    from apps.orchestrator.router import router as orchestrator_router
+    app.include_router(orchestrator_router)
+    
+    # Include A2A if enabled
+    a2a_enabled = os.getenv("A2A_ENABLED", "true").lower() == "true"
+    if a2a_enabled:
+        from apps.a2a.api import router as a2a_router
+        app.include_router(a2a_router)
+
+
+# Setup routers on startup
+@app.on_event("startup")
+async def setup_additional_routers():
+    """Setup additional routers after main startup."""
+    setup_routers()
 
 
 if __name__ == "__main__":

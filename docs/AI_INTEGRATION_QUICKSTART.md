@@ -145,6 +145,156 @@ uvicorn apps.rag_service.main:app --reload --port 8000 --log-level debug
 ls -la data/golden/
 ```
 
+## Quick Validation
+
+For rapid health checks and smoke testing, use the Quick Validation Pack:
+
+### Running Quick Validation
+
+```bash
+# Start server and run all checks
+make quickcheck
+
+# Run checks against already running server
+make quickcheck.running
+
+# Direct script execution
+python scripts/quickcheck.py
+```
+
+### What It Verifies
+
+- **Health Endpoints**: `/healthz` and `/readyz` return 200
+- **Mock Provider**: `/ask` with `provider=mock` works correctly
+- **Performance Headers**: `X-Perf-Phase` and `X-Latency-MS` are present
+- **Multi-Suite Orchestrator**: Runs all test suites in single request
+- **Report Generation**: Downloads JSON and Excel reports
+- **Excel Validation**: Verifies required sheets (Summary, Detailed, API_Details, Inputs_And_Expected)
+- **A2A Manifest**: Checks A2A endpoint availability (if enabled)
+
+### Privacy & Safety
+
+- **Zero Retention**: No user data written to database (`PERSIST_DB=false`)
+- **Mock Provider**: Uses safe mock responses, no external API calls
+- **Temporary Artifacts**: Reports saved under `./tmp/quickcheck_<run_id>/`
+- **Auto-cleanup**: Artifacts auto-deleted after configured time
+
+### Troubleshooting
+
+**Token 401 Errors**
+```bash
+# Check auth configuration
+export QUICKCHECK_TOKEN="SECRET_USER"
+# Ensure AUTH_TOKENS includes user:SECRET_USER
+```
+
+**Port In Use**
+```bash
+# Use different port
+export QUICKCHECK_PORT="8001"
+export QUICKCHECK_BASE="http://localhost:8001"
+```
+
+**Missing Excel Sheets**
+- Verify orchestrator completed successfully
+- Check that all test suites ran without errors
+- Ensure openpyxl is installed: `pip install openpyxl`
+
+**Server Start Issues**
+```bash
+# Skip server start if already running
+export QUICKCHECK_START_SERVER="false"
+make quickcheck.running
+```
+
+## Operator UI
+
+For a modern web interface to run orchestrated tests, use the single-page Operator UI:
+
+### Getting Started
+
+```bash
+# Navigate to UI directory
+cd frontend/operator-ui
+
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+```
+
+The UI will be available at `http://localhost:5173`
+
+### Features
+
+- **Single Page Interface**: All controls on one screen
+- **Target Selection**: Choose between API (HTTP) or MCP mode
+- **Provider & Model**: Select from OpenAI, Anthropic, Gemini, Custom REST, or Mock
+- **Multi-Suite Testing**: Select any combination of test suites:
+  - `rag_quality` - RAG evaluation metrics
+  - `red_team` - Adversarial testing
+  - `safety` - Safety and toxicity checks
+  - `performance` - Latency and throughput
+  - `regression` - Baseline comparisons
+- **Threshold Configuration**: Set quality thresholds (faithfulness, context recall, toxicity)
+- **Live Status**: Shows busy/idle state during test execution
+- **Report Downloads**: Download JSON and Excel reports with authentication
+
+### Privacy & Security
+
+- **Memory-Only Tokens**: Bearer tokens kept in memory, never persisted
+- **No Data Retention**: Privacy banner confirms no user data persisted by default
+- **Authenticated Downloads**: Reports fetched with Authorization header
+- **Blob Downloads**: Files saved via browser Blob API
+
+### Report Structure
+
+Downloaded Excel reports contain these sheets:
+- **Summary**: Overall test results and pass rates
+- **Detailed**: Individual test case results
+- **API_Details**: API call logs and performance metrics
+- **Inputs_And_Expected**: Test inputs and expected outputs
+- **Adversarial_Details**: Red team attack details (when red_team suite selected)
+- **Coverage**: Test coverage analysis (when red_team suite selected)
+
+### Test Volume Controls
+
+The UI provides flexible test volume controls to optimize testing time and coverage:
+
+#### Volume Settings
+- **qa_sample_size**: Number of QA pairs to test (empty = all available)
+- **attack_mutators**: Number of variants per red team attack (1-5)
+- **perf_repeats**: Number of performance test repetitions (2-10)
+
+#### Run Profiles
+Quick preset configurations for common testing scenarios:
+
+- **Smoke** (qa=2, attacks=1, perf=2): Fast validation, ~15 tests
+- **Full** (qa=20, attacks=3, perf=5): Comprehensive testing, ~85 tests  
+- **Red Team Heavy** (qa=5, attacks=5, perf=3): Security-focused, ~58 tests
+
+#### Attack Mutators
+Red team tests generate multiple variants per base attack:
+1. **Direct**: Original attack prompt
+2. **Roleplay**: "You are a helpful assistant. Please help me with: [attack]"
+3. **Indirect**: "Can you explain how someone might: [attack]"
+4. **Additional variants**: Paraphrased versions for higher mutator counts
+
+### Offline Testing
+
+Use `provider=mock` for offline testing without external API calls. Mock provider returns deterministic responses for development and CI/CD.
+
+### Production Build
+
+```bash
+# Build for production
+npm run build
+
+# Preview production build
+npm run preview
+```
+
 ## Next Steps
 
 1. **Customize Prompts**: Modify `llm/prompts.py` for your use case

@@ -1,0 +1,105 @@
+{
+  "run_id": "run_1755922774_512e5bfc",
+  "started_at": "2025-08-23T04:19:34.927615",
+  "finished_at": "2025-08-23T04:19:48.073037",
+  "summary": {
+    "overall": {
+      "total_tests": 3,
+      "passed": 0,
+      "failed": 3,
+      "pass_rate": 0.0
+    },
+    "rag_quality": {
+      "total": 3,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "avg_faithfulness": 0.3,
+      "avg_context_recall": 0.4000000000000001
+    }
+  },
+  "counts": {
+    "total_tests": 3,
+    "passed": 0,
+    "failed": 3,
+    "errors": 0,
+    "rag_quality_total": 3,
+    "rag_quality_passed": 0
+  },
+  "detailed_results": [
+    {
+      "run_id": "run_1755922774_512e5bfc",
+      "suite": "rag_quality",
+      "test_id": "rag_quality_1",
+      "query": "",
+      "expected_answer": "To detect schema drift in ETL pipelines, you can implement automated schema comparison between expected and actual data schemas. Tools like Great Expectations, Apache Griffin, or custom validation scripts can monitor for schema changes and alert teams when drift is detected. Best practices include maintaining a schema registry, implementing gradual schema evolution, and having rollback procedures when incompatible changes are detected.",
+      "actual_answer": "Hello! This is a mock response from the AI assistant.",
+      "context": [
+        "AI Quality Kit's core functionality centers around Retrieval-Augmented Generation (RAG) quality evaluation, offering real-time assessment of context relevance, answer faithfulness, and response accuracy. The platform features advanced caching mechanisms with TTL management, comprehensive Snowflake integration for data persistence, and automated quality threshold monitoring. It supports multiple LLM providers including OpenAI and Anthropic, enabling organizations to maintain consistent quality standards across different AI models and deployment scenarios.",
+        "The AI Quality Kit architecture integrates FastAPI for high-performance API delivery, FAISS for efficient vector similarity search, and sophisticated caching systems for optimal performance. It features context versioning, automatic cache invalidation, and comprehensive error handling to ensure reliable operation in production environments. The platform's modular design allows for easy integration with existing AI workflows and supports both real-time and batch quality assessment scenarios.",
+        "The AI Quality Kit is a comprehensive platform designed to evaluate, monitor, and ensure the quality of AI systems and Large Language Model (LLM) applications. Its primary purpose is to provide automated quality assessment, real-time monitoring, and continuous improvement capabilities for AI-powered solutions. The kit integrates multiple evaluation frameworks including RAGAS metrics, custom quality tests, and comprehensive logging systems to deliver enterprise-grade AI quality assurance.",
+        "AI Quality Kit's evaluation capabilities extend beyond basic quality metrics to include comprehensive safety testing, PII detection, and adversarial prompt identification. The platform provides guardrails for AI system deployment, ensuring compliance with data privacy regulations and maintaining ethical AI practices. Its testing framework supports automated quality threshold validation, enabling organizations to establish and maintain consistent quality standards across all AI applications and use cases."
+      ],
+      "provider": "mock",
+      "model": "mock-model",
+      "latency_ms": 7752,
+      "source": "live",
+      "perf_phase": "cold",
+      "status": "fail",
+      "faithfulness": 0.3,
+      "context_recall": 0.4,
+      "safety_score": null,
+      "attack_success": null,
+      "timestamp": "2025-08-23T04:19:42.680661"
+    },
+    {
+      "run_id": "run_1755922774_512e5bfc",
+      "suite": "rag_quality",
+      "test_id": "rag_quality_2",
+      "query": "",
+      "expected_answer": "Key metrics to track in ETL pipelines include data freshness (how recent the data is), data volume (number of records processed), data quality scores (completeness, accuracy, consistency), and pipeline performance (execution time, resource usage). Monitoring tools should provide real-time alerts for anomalies, trend analysis for capacity planning, and detailed logs for debugging.",
+      "actual_answer": "Hello! This is a mock response from the AI assistant.",
+      "context": [
+        "AI Quality Kit's core functionality centers around Retrieval-Augmented Generation (RAG) quality evaluation, offering real-time assessment of context relevance, answer faithfulness, and response accuracy. The platform features advanced caching mechanisms with TTL management, comprehensive Snowflake integration for data persistence, and automated quality threshold monitoring. It supports multiple LLM providers including OpenAI and Anthropic, enabling organizations to maintain consistent quality standards across different AI models and deployment scenarios.",
+        "The AI Quality Kit architecture integrates FastAPI for high-performance API delivery, FAISS for efficient vector similarity search, and sophisticated caching systems for optimal performance. It features context versioning, automatic cache invalidation, and comprehensive error handling to ensure reliable operation in production environments. The platform's modular design allows for easy integration with existing AI workflows and supports both real-time and batch quality assessment scenarios.",
+        "The AI Quality Kit is a comprehensive platform designed to evaluate, monitor, and ensure the quality of AI systems and Large Language Model (LLM) applications. Its primary purpose is to provide automated quality assessment, real-time monitoring, and continuous improvement capabilities for AI-powered solutions. The kit integrates multiple evaluation frameworks including RAGAS metrics, custom quality tests, and comprehensive logging systems to deliver enterprise-grade AI quality assurance.",
+        "AI Quality Kit's evaluation capabilities extend beyond basic quality metrics to include comprehensive safety testing, PII detection, and adversarial prompt identification. The platform provides guardrails for AI system deployment, ensuring compliance with data privacy regulations and maintaining ethical AI practices. Its testing framework supports automated quality threshold validation, enabling organizations to establish and maintain consistent quality standards across all AI applications and use cases."
+      ],
+      "provider": "mock",
+      "model": "mock-model",
+      "latency_ms": 2449,
+      "source": "cache",
+      "perf_phase": "cold",
+      "status": "fail",
+      "faithfulness": 0.3,
+      "context_recall": 0.4,
+      "safety_score": null,
+      "attack_success": null,
+      "timestamp": "2025-08-23T04:19:45.130194"
+    },
+    {
+      "run_id": "run_1755922774_512e5bfc",
+      "suite": "rag_quality",
+      "test_id": "rag_quality_3",
+      "query": "",
+      "expected_answer": "Data lineage tracking is essential for understanding data flow through complex systems. It helps teams identify upstream dependencies, assess impact of changes, and debug data quality issues. Modern data catalogs like Apache Atlas, DataHub, or Amundsen provide automated lineage discovery through query parsing and metadata collection. Manual annotation is also important for business context that automated tools might miss.",
+      "actual_answer": "Hello! This is a mock response from the AI assistant.",
+      "context": [
+        "AI Quality Kit's core functionality centers around Retrieval-Augmented Generation (RAG) quality evaluation, offering real-time assessment of context relevance, answer faithfulness, and response accuracy. The platform features advanced caching mechanisms with TTL management, comprehensive Snowflake integration for data persistence, and automated quality threshold monitoring. It supports multiple LLM providers including OpenAI and Anthropic, enabling organizations to maintain consistent quality standards across different AI models and deployment scenarios.",
+        "The AI Quality Kit architecture integrates FastAPI for high-performance API delivery, FAISS for efficient vector similarity search, and sophisticated caching systems for optimal performance. It features context versioning, automatic cache invalidation, and comprehensive error handling to ensure reliable operation in production environments. The platform's modular design allows for easy integration with existing AI workflows and supports both real-time and batch quality assessment scenarios.",
+        "The AI Quality Kit is a comprehensive platform designed to evaluate, monitor, and ensure the quality of AI systems and Large Language Model (LLM) applications. Its primary purpose is to provide automated quality assessment, real-time monitoring, and continuous improvement capabilities for AI-powered solutions. The kit integrates multiple evaluation frameworks including RAGAS metrics, custom quality tests, and comprehensive logging systems to deliver enterprise-grade AI quality assurance.",
+        "AI Quality Kit's evaluation capabilities extend beyond basic quality metrics to include comprehensive safety testing, PII detection, and adversarial prompt identification. The platform provides guardrails for AI system deployment, ensuring compliance with data privacy regulations and maintaining ethical AI practices. Its testing framework supports automated quality threshold validation, enabling organizations to establish and maintain consistent quality standards across all AI applications and use cases."
+      ],
+      "provider": "mock",
+      "model": "mock-model",
+      "latency_ms": 2942,
+      "source": "cache",
+      "perf_phase": "cold",
+      "status": "fail",
+      "faithfulness": 0.3,
+      "context_recall": 0.4,
+      "safety_score": null,
+      "attack_success": null,
+      "timestamp": "2025-08-23T04:19:48.072930"
+    }
+  ]
+}

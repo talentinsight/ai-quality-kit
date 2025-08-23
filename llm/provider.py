@@ -1,6 +1,7 @@
 """LLM provider abstraction layer."""
 
 import os
+import json
 from typing import List, Callable, Optional
 import openai
 import anthropic
@@ -19,22 +20,47 @@ def get_chat() -> Callable[[List[str]], str]:
         Callable that takes a list of messages and returns a response string.
     """
     provider = os.getenv("PROVIDER", "openai").lower()
+    return get_chat_for(provider)
+
+
+def get_chat_for(provider: Optional[str] = None, model: Optional[str] = None) -> Callable[[List[str]], str]:
+    """
+    Factory function that returns a chat callable for specific provider/model.
+    
+    Args:
+        provider: Provider name (openai, anthropic, gemini, custom_rest, mock)
+        model: Model name (overrides environment default)
+        
+    Returns:
+        Callable that takes a list of messages and returns a response string.
+    """
+    # Resolve provider from parameter or environment
+    if provider is None:
+        provider = os.getenv("PROVIDER", "openai").lower()
+    else:
+        provider = provider.lower()
     
     if provider == "openai":
-        return _get_openai_chat()
+        return _get_openai_chat(model)
     elif provider == "anthropic":
-        return _get_anthropic_chat()
+        return _get_anthropic_chat(model)
+    elif provider == "gemini":
+        return _get_gemini_chat(model)
+    elif provider == "custom_rest":
+        return _get_custom_rest_chat(model)
+    elif provider == "mock":
+        return _get_mock_chat(model)
     else:
         raise ValueError(f"Unsupported provider: {provider}")
 
 
-def _get_openai_chat() -> Callable[[List[str]], str]:
+def _get_openai_chat(model_override: Optional[str] = None) -> Callable[[List[str]], str]:
     """Get OpenAI chat function."""
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        raise ValueError("OPENAI_API_KEY environment variable is required")
+        raise ValueError("OPENAI_API_KEY environment variable is required for OpenAI provider")
     
-    model_name = os.getenv("MODEL_NAME", "gpt-4o-mini")
+    model_name = model_override or os.getenv("MODEL_NAME", "gpt-4o-mini")
     client = openai.OpenAI(api_key=api_key)
     
     def chat(messages: List[str]) -> str:
@@ -55,13 +81,13 @@ def _get_openai_chat() -> Callable[[List[str]], str]:
     return chat
 
 
-def _get_anthropic_chat() -> Callable[[List[str]], str]:
+def _get_anthropic_chat(model_override: Optional[str] = None) -> Callable[[List[str]], str]:
     """Get Anthropic chat function."""
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
-        raise ValueError("ANTHROPIC_API_KEY environment variable is required")
+        raise ValueError("ANTHROPIC_API_KEY environment variable is required for Anthropic provider")
     
-    model_name = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet")
+    model_name = model_override or os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet")
     client = Anthropic(api_key=api_key)
     
     def chat(messages: List[str]) -> str:
@@ -79,7 +105,110 @@ def _get_anthropic_chat() -> Callable[[List[str]], str]:
             temperature=0.0,  # Deterministic as much as possible
             max_tokens=1000
         )
-        return response.content[0].text if response.content else ""
+        # Handle different response types from Anthropic API
+        if response.content and len(response.content) > 0:
+            content_block = response.content[0]
+            # Use getattr with default to safely access text attribute
+            return getattr(content_block, 'text', str(content_block))
+        return ""
+    
+    return chat
+
+
+def _get_gemini_chat(model_override: Optional[str] = None) -> Callable[[List[str]], str]:
+    """Get Google Gemini chat function."""
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY environment variable is required for Gemini provider")
+    
+    model_name = model_override or os.getenv("GEMINI_MODEL", "gemini-1.5-pro")
+    
+    try:
+        import google.generativeai as genai  # type: ignore
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(model_name)
+    except ImportError:
+        raise ValueError("google-generativeai package is required for Gemini provider")
+    
+    def chat(messages: List[str]) -> str:
+        """Call Gemini API with messages."""
+        # Combine all messages into a single prompt for Gemini
+        combined_prompt = "\n\n".join(messages)
+        
+        response = model.generate_content(
+            combined_prompt,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.0,
+                max_output_tokens=1000
+            )
+        )
+        return response.text if response.text else ""
+    
+    return chat
+
+
+def _get_custom_rest_chat(model_override: Optional[str] = None) -> Callable[[List[str]], str]:
+    """Get custom REST API chat function."""
+    base_url = os.getenv("CUSTOM_LLM_BASE_URL")
+    if not base_url:
+        raise ValueError("CUSTOM_LLM_BASE_URL environment variable is required for custom_rest provider")
+    
+    model_name = model_override or os.getenv("CUSTOM_MODEL_NAME", "custom-model")
+    
+    try:
+        import httpx
+    except ImportError:
+        raise ValueError("httpx package is required for custom_rest provider")
+    
+    def chat(messages: List[str]) -> str:
+        """Call custom REST API with messages."""
+        # Format messages for generic REST API
+        formatted_messages = []
+        for i, msg in enumerate(messages):
+            role = "system" if i == 0 else "user"
+            formatted_messages.append({"role": role, "content": msg})
+        
+        payload = {
+            "model": model_name,
+            "messages": formatted_messages,
+            "temperature": 0.0,
+            "max_tokens": 1000
+        }
+        
+        with httpx.Client() as client:
+            response = client.post(
+                f"{base_url.rstrip('/')}/v1/chat/completions",
+                json=payload,
+                timeout=30.0
+            )
+            response.raise_for_status()
+            
+            result = response.json()
+            return result.get("choices", [{}])[0].get("message", {}).get("content", "")
+    
+    return chat
+
+
+def _get_mock_chat(model_override: Optional[str] = None) -> Callable[[List[str]], str]:
+    """Get mock chat function for testing."""
+    model_name = model_override or "mock-model"
+    
+    def chat(messages: List[str]) -> str:
+        """Mock chat function that returns deterministic responses."""
+        if not messages:
+            return "Mock response: No input provided"
+        
+        # Simple deterministic response based on input
+        last_message = messages[-1].lower()
+        
+        if "hello" in last_message or "hi" in last_message:
+            return "Hello! This is a mock response from the AI assistant."
+        elif "question" in last_message or "?" in last_message:
+            return "This is a mock answer to your question. The mock provider is working correctly."
+        elif "error" in last_message or "fail" in last_message:
+            return "Mock error response: Something went wrong in the mock provider."
+        else:
+            return f"Mock response: I received your message '{messages[-1][:50]}...' and processed it with model {model_name}."
     
     return chat
 
@@ -122,18 +251,4 @@ def _get_ollama_chat() -> Callable[[List[str]], str]:
     raise NotImplementedError("Ollama support - see comments for implementation pattern")
 
 
-def _get_custom_rest_chat() -> Callable[[List[str]], str]:
-    """
-    Example extension for custom REST endpoint.
-    
-    Set environment variables:
-    - CUSTOM_API_ENDPOINT
-    - CUSTOM_API_KEY
-    - CUSTOM_MODEL_NAME
-    """
-    # import httpx
-    # endpoint = os.getenv("CUSTOM_API_ENDPOINT")
-    # api_key = os.getenv("CUSTOM_API_KEY")
-    # model = os.getenv("CUSTOM_MODEL_NAME")
-    # ... implement REST API calls to custom endpoint
-    raise NotImplementedError("Custom REST API support - see comments for implementation pattern")
+# Custom REST implementation is above in the main function

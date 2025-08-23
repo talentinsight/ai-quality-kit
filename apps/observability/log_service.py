@@ -61,7 +61,7 @@ def start_log(query_text: str, query_hash: str, context: List[str], source: str)
     
     try:
         provider_info = _get_provider_info()
-        run_id = get_run_id() if get_run_id() else f"run_{int(time.time())}"
+        run_id = get_run_id() if get_run_id is not None and get_run_id() else f"run_{int(time.time())}"
         
         with snowflake_cursor() as cursor:
             # Truncate long text to avoid SQL issues
@@ -102,7 +102,7 @@ def start_log(query_text: str, query_hash: str, context: List[str], source: str)
         return f"error_{int(time.time())}"
 
 
-def finish_log(log_id: str, answer: str, latency_ms: int, status: str = "ok", error_msg: str = None) -> None:
+def finish_log(log_id: str, answer: str, latency_ms: int, status: str = "ok", error_msg: Optional[str] = None) -> None:
     """
     Complete logging an API request.
     
@@ -136,7 +136,7 @@ def finish_log(log_id: str, answer: str, latency_ms: int, status: str = "ok", er
         print(f"Warning: Failed to complete logging: {str(e)}")
 
 
-def log_eval_metrics(log_id: str, metric_group: str, metrics: Dict[str, float], extra: Dict = None) -> None:
+def log_eval_metrics(log_id: str, metric_group: str, metrics: Dict[str, float], extra: Optional[Dict] = None) -> None:
     """
     Log evaluation metrics for an API request.
     
@@ -150,7 +150,7 @@ def log_eval_metrics(log_id: str, metric_group: str, metrics: Dict[str, float], 
         return
     
     try:
-        extra_json = safe_json_serialize(extra) if extra else None
+        extra_json = safe_json_serialize(extra) if extra and safe_json_serialize is not None else None
         
         with snowflake_cursor() as cursor:
             for metric_name, metric_value in metrics.items():
@@ -167,3 +167,91 @@ def log_eval_metrics(log_id: str, metric_group: str, metrics: Dict[str, float], 
     except Exception as e:
         # Log error without exposing secrets
         print(f"Warning: Failed to log evaluation metrics: {str(e)}")
+
+
+# Audit logging functions
+def is_audit_enabled() -> bool:
+    """Check if audit logging is enabled."""
+    return os.getenv("AUDIT_LOG_ENABLED", "false").lower() == "true"
+
+
+def is_persist_enabled() -> bool:
+    """Check if database persistence is enabled."""
+    return os.getenv("PERSIST_DB", "false").lower() == "true"
+
+
+def audit_start(path: str, method: str, role: Optional[str], token_hash_prefix: Optional[str]) -> Optional[str]:
+    """
+    Start audit logging for a request.
+    
+    Args:
+        path: Request path
+        method: HTTP method
+        role: User role (if authenticated)
+        token_hash_prefix: Short hash prefix of token (never full token)
+        
+    Returns:
+        Audit ID for tracking, None if audit disabled or no Snowflake
+    """
+    if not is_audit_enabled() or not is_persist_enabled() or snowflake_cursor is None:
+        return None
+    
+    try:
+        audit_id = f"audit_{int(time.time() * 1000)}"
+        
+        with snowflake_cursor() as cursor:
+            insert_sql = """
+                INSERT INTO API_AUDIT_LOGS (
+                    AUDIT_ID, REQUEST_PATH, HTTP_METHOD, USER_ROLE, 
+                    TOKEN_HASH_PREFIX, STARTED_AT
+                ) VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP())
+            """
+            
+            cursor.execute(insert_sql, (
+                audit_id,
+                path,
+                method,
+                role,
+                token_hash_prefix
+            ))
+            
+        return audit_id
+        
+    except Exception as e:
+        print(f"Warning: Failed to start audit logging: {str(e)}")
+        return None
+
+
+def audit_finish(audit_id: Optional[str], status_code: int, latency_ms: int, is_cold: bool) -> None:
+    """
+    Complete audit logging for a request.
+    
+    Args:
+        audit_id: Audit ID from audit_start
+        status_code: HTTP status code
+        latency_ms: Request latency in milliseconds
+        is_cold: Whether this was a cold start
+    """
+    if not audit_id or not is_audit_enabled() or not is_persist_enabled() or snowflake_cursor is None:
+        return
+    
+    try:
+        with snowflake_cursor() as cursor:
+            update_sql = """
+                UPDATE API_AUDIT_LOGS 
+                SET FINISHED_AT = CURRENT_TIMESTAMP(),
+                    STATUS_CODE = %s,
+                    LATENCY_MS = %s,
+                    IS_COLD_START = %s
+                WHERE AUDIT_ID = %s
+            """
+            
+            cursor.execute(update_sql, (
+                status_code,
+                latency_ms,
+                is_cold,
+                audit_id
+            ))
+            
+    except Exception as e:
+        print(f"Warning: Failed to complete audit logging: {str(e)}")

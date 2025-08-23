@@ -1,0 +1,304 @@
+{
+  "version": "2.0",
+  "run": {
+    "run_id": "run_1755929085_c12aefb6",
+    "started_at": "2025-08-23T06:04:45.830248",
+    "finished_at": "2025-08-23T06:04:59.421340",
+    "target_mode": "api",
+    "provider": "mock",
+    "model": "mock-1",
+    "suites": [
+      "rag_quality",
+      "performance"
+    ],
+    "options": {
+      "provider": "mock",
+      "model": "mock-1"
+    }
+  },
+  "summary": {
+    "overall": {
+      "total_tests": 5,
+      "passed": 1,
+      "failed": 4,
+      "pass_rate": 0.2
+    },
+    "rag_quality": {
+      "total": 3,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "avg_faithfulness": 0.3,
+      "avg_context_recall": 0.4000000000000001
+    },
+    "performance": {
+      "total": 2,
+      "passed": 1,
+      "pass_rate": 0.5,
+      "p95_latency_ms": 2751,
+      "avg_latency_ms": 2622.5
+    }
+  },
+  "detailed": [
+    {
+      "suite": "rag_quality",
+      "test_id": "rag_quality_1",
+      "provider": "mock",
+      "model": "mock-1",
+      "query_masked": "",
+      "answer_masked": "Hello! This is a mock response from the AI assistant.",
+      "context_ids": [
+        "ctx_0",
+        "ctx_1",
+        "ctx_2",
+        "ctx_3"
+      ],
+      "metrics_json": {
+        "faithfulness": 0.3,
+        "context_recall": 0.4,
+        "safety_score": null,
+        "attack_success": null
+      },
+      "pass": false,
+      "latency_ms": 2783,
+      "timestamp": "2025-08-23T06:04:48.613797"
+    },
+    {
+      "suite": "rag_quality",
+      "test_id": "rag_quality_2",
+      "provider": "mock",
+      "model": "mock-1",
+      "query_masked": "",
+      "answer_masked": "Hello! This is a mock response from the AI assistant.",
+      "context_ids": [
+        "ctx_0",
+        "ctx_1",
+        "ctx_2",
+        "ctx_3"
+      ],
+      "metrics_json": {
+        "faithfulness": 0.3,
+        "context_recall": 0.4,
+        "safety_score": null,
+        "attack_success": null
+      },
+      "pass": false,
+      "latency_ms": 2691,
+      "timestamp": "2025-08-23T06:04:51.305586"
+    },
+    {
+      "suite": "rag_quality",
+      "test_id": "rag_quality_3",
+      "provider": "mock",
+      "model": "mock-1",
+      "query_masked": "",
+      "answer_masked": "Hello! This is a mock response from the AI assistant.",
+      "context_ids": [
+        "ctx_0",
+        "ctx_1",
+        "ctx_2",
+        "ctx_3"
+      ],
+      "metrics_json": {
+        "faithfulness": 0.3,
+        "context_recall": 0.4,
+        "safety_score": null,
+        "attack_success": null
+      },
+      "pass": false,
+      "latency_ms": 2595,
+      "timestamp": "2025-08-23T06:04:53.901539"
+    },
+    {
+      "suite": "performance",
+      "test_id": "performance_repeat_1",
+      "provider": "mock",
+      "model": "mock-1",
+      "query_masked": "What is artificial intelligence?",
+      "answer_masked": "Hello! This is a mock response from the AI assistant.",
+      "context_ids": [
+        "ctx_0",
+        "ctx_1",
+        "ctx_2",
+        "ctx_3"
+      ],
+      "metrics_json": {
+        "faithfulness": null,
+        "context_recall": null,
+        "safety_score": null,
+        "attack_success": null
+      },
+      "pass": true,
+      "latency_ms": 2751,
+      "timestamp": "2025-08-23T06:04:56.653510"
+    },
+    {
+      "suite": "performance",
+      "test_id": "performance_repeat_2",
+      "provider": "mock",
+      "model": "mock-1",
+      "query_masked": "What is artificial intelligence?",
+      "answer_masked": "Hello! This is a mock response from the AI assistant.",
+      "context_ids": [
+        "ctx_0",
+        "ctx_1",
+        "ctx_2",
+        "ctx_3"
+      ],
+      "metrics_json": {
+        "faithfulness": null,
+        "context_recall": null,
+        "safety_score": null,
+        "attack_success": null
+      },
+      "pass": false,
+      "latency_ms": 2494,
+      "timestamp": "2025-08-23T06:04:59.148233"
+    }
+  ],
+  "api_details": [
+    {
+      "suite": "rag_quality",
+      "test_id": "rag_quality_1",
+      "endpoint": "",
+      "status_code": "",
+      "x_source": "cache",
+      "x_perf_phase": "cold",
+      "x_latency_ms": "1686",
+      "request_id": "",
+      "timestamp": "2025-08-23T06:04:48.613846"
+    },
+    {
+      "suite": "rag_quality",
+      "test_id": "rag_quality_2",
+      "endpoint": "",
+      "status_code": "",
+      "x_source": "cache",
+      "x_perf_phase": "cold",
+      "x_latency_ms": "1333",
+      "request_id": "",
+      "timestamp": "2025-08-23T06:04:51.305638"
+    },
+    {
+      "suite": "rag_quality",
+      "test_id": "rag_quality_3",
+      "endpoint": "",
+      "status_code": "",
+      "x_source": "cache",
+      "x_perf_phase": "cold",
+      "x_latency_ms": "1526",
+      "request_id": "",
+      "timestamp": "2025-08-23T06:04:53.901629"
+    },
+    {
+      "suite": "performance",
+      "test_id": "performance_repeat_1",
+      "endpoint": "",
+      "status_code": "",
+      "x_source": "cache",
+      "x_perf_phase": "cold",
+      "x_latency_ms": "1687",
+      "request_id": "",
+      "timestamp": "2025-08-23T06:04:56.653572"
+    },
+    {
+      "suite": "performance",
+      "test_id": "performance_repeat_2",
+      "endpoint": "",
+      "status_code": "",
+      "x_source": "cache",
+      "x_perf_phase": "cold",
+      "x_latency_ms": "1489",
+      "request_id": "",
+      "timestamp": "2025-08-23T06:04:59.148285"
+    }
+  ],
+  "inputs_expected": [
+    {
+      "suite": "rag_quality",
+      "test_id": "rag_quality_1",
+      "target_mode": "api",
+      "top_k": "",
+      "options_json": {
+        "provider": "mock",
+        "model": "mock-1"
+      },
+      "thresholds_json": {},
+      "expected_json": {
+        "expected_answer": "To detect schema drift in ETL pipelines, you can implement automated schema comparison between expected and actual data schemas. Tools like Great Expectations, Apache Griffin, or custom validation scripts can monitor for schema changes and alert teams when drift is detected. Best practices include maintaining a schema registry, implementing gradual schema evolution, and having rollback procedures when incompatible changes are detected.",
+        "expected_behavior": null,
+        "expected_phase": null
+      },
+      "notes": ""
+    },
+    {
+      "suite": "rag_quality",
+      "test_id": "rag_quality_2",
+      "target_mode": "api",
+      "top_k": "",
+      "options_json": {
+        "provider": "mock",
+        "model": "mock-1"
+      },
+      "thresholds_json": {},
+      "expected_json": {
+        "expected_answer": "Key metrics to track in ETL pipelines include data freshness (how recent the data is), data volume (number of records processed), data quality scores (completeness, accuracy, consistency), and pipeline performance (execution time, resource usage). Monitoring tools should provide real-time alerts for anomalies, trend analysis for capacity planning, and detailed logs for debugging.",
+        "expected_behavior": null,
+        "expected_phase": null
+      },
+      "notes": ""
+    },
+    {
+      "suite": "rag_quality",
+      "test_id": "rag_quality_3",
+      "target_mode": "api",
+      "top_k": "",
+      "options_json": {
+        "provider": "mock",
+        "model": "mock-1"
+      },
+      "thresholds_json": {},
+      "expected_json": {
+        "expected_answer": "Data lineage tracking is essential for understanding data flow through complex systems. It helps teams identify upstream dependencies, assess impact of changes, and debug data quality issues. Modern data catalogs like Apache Atlas, DataHub, or Amundsen provide automated lineage discovery through query parsing and metadata collection. Manual annotation is also important for business context that automated tools might miss.",
+        "expected_behavior": null,
+        "expected_phase": null
+      },
+      "notes": ""
+    },
+    {
+      "suite": "performance",
+      "test_id": "performance_repeat_1",
+      "target_mode": "api",
+      "top_k": "",
+      "options_json": {
+        "provider": "mock",
+        "model": "mock-1"
+      },
+      "thresholds_json": {},
+      "expected_json": {
+        "expected_answer": null,
+        "expected_behavior": null,
+        "expected_phase": "cold"
+      },
+      "notes": ""
+    },
+    {
+      "suite": "performance",
+      "test_id": "performance_repeat_2",
+      "target_mode": "api",
+      "top_k": "",
+      "options_json": {
+        "provider": "mock",
+        "model": "mock-1"
+      },
+      "thresholds_json": {},
+      "expected_json": {
+        "expected_answer": null,
+        "expected_behavior": null,
+        "expected_phase": "warm"
+      },
+      "notes": ""
+    }
+  ],
+  "adversarial": [],
+  "coverage": {}
+}
