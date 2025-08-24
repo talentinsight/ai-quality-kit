@@ -84,17 +84,9 @@ def _get_openai_chat(model_override: Optional[str] = None) -> Callable[[List[str
             )
             return response.choices[0].message.content or ""
         
-        try:
-            # Use asyncio.run to handle the async resilient call
-            return asyncio.run(resilient_client.call_with_resilience(
-                _make_openai_call, f"openai_{model_name}"
-            ))
-        except CircuitBreakerError:
-            raise HTTPException(
-                status_code=503, 
-                detail="Service temporarily unavailable due to circuit breaker",
-                headers={"X-Circuit-Open": "true"}
-            )
+        # For now, just call the function directly without resilience
+        # TODO: Make this properly async-compatible  
+        return _make_openai_call()
     
     return chat
 
@@ -219,16 +211,9 @@ def _get_custom_rest_chat(model_override: Optional[str] = None) -> Callable[[Lis
                 result = response.json()
                 return result.get("choices", [{}])[0].get("message", {}).get("content", "")
         
-        try:
-            return asyncio.run(resilient_client.call_with_resilience(
-                _make_custom_rest_call, f"custom_rest_{model_name}"
-            ))
-        except CircuitBreakerError:
-            raise HTTPException(
-                status_code=503, 
-                detail="Service temporarily unavailable due to circuit breaker",
-                headers={"X-Circuit-Open": "true"}
-            )
+        # For now, just call the function directly without resilience
+        # TODO: Make this properly async-compatible
+        return _make_custom_rest_call()
     
     return chat
 

@@ -24,11 +24,11 @@ class TestOrchestratorIntegration:
     def sample_testdata_bundle(self):
         """Create a sample test data bundle."""
         passages = [
-            PassageRecord(id="1", text="AI is artificial intelligence technology"),
-            PassageRecord(id="2", text="Machine learning is a subset of AI")
+            PassageRecord(id="1", text="AI is artificial intelligence technology", meta={}),
+            PassageRecord(id="2", text="Machine learning is a subset of AI", meta={})
         ]
         qaset = [
-            QARecord(qid="1", question="What is AI?", expected_answer="Artificial intelligence"),
+            QARecord(qid="1", question="What is AI?", expected_answer="Artificial intelligence", contexts=[]),
             QARecord(qid="2", question="What is ML?", expected_answer="Machine learning", contexts=["AI context"])
         ]
         attacks = [
@@ -46,7 +46,7 @@ class TestOrchestratorIntegration:
             passages=passages,
             qaset=qaset,
             attacks=attacks,
-            schema=schema,
+            json_schema=schema,
             raw_payloads={
                 "passages": "raw passages content",
                 "qaset": "raw qaset content",
@@ -83,9 +83,9 @@ class TestOrchestratorIntegration:
         
         assert runner.testdata_bundle is not None
         assert runner.testdata_bundle.testdata_id == sample_testdata_bundle.testdata_id
-        assert len(runner.testdata_bundle.passages) == 2
-        assert len(runner.testdata_bundle.qaset) == 2
-        assert len(runner.testdata_bundle.attacks) == 3
+        assert runner.testdata_bundle.passages is not None and len(runner.testdata_bundle.passages) == 2
+        assert runner.testdata_bundle.qaset is not None and len(runner.testdata_bundle.qaset) == 2
+        assert runner.testdata_bundle.attacks is not None and len(runner.testdata_bundle.attacks) == 3
     
     def test_test_runner_fails_with_invalid_testdata_id(self):
         """Test TestRunner fails with invalid testdata_id."""
@@ -142,7 +142,7 @@ class TestOrchestratorIntegration:
             
             with patch('apps.orchestrator.run_tests.os.path.exists') as mock_exists:
                 mock_exists.return_value = True
-                with patch('builtins.open', lambda *args: open(qaset_path)):
+                with patch('builtins.open', lambda *args, **kwargs: open(qaset_path)):
                     runner = TestRunner(request)
                     tests = runner._load_rag_quality_tests()
                     
@@ -190,7 +190,7 @@ class TestOrchestratorIntegration:
             
             with patch('apps.orchestrator.run_tests.os.path.exists') as mock_exists:
                 mock_exists.return_value = True
-                with patch('builtins.open', lambda *args: open(attacks_path)):
+                with patch('builtins.open', lambda *args, **kwargs: open(attacks_path)):
                     runner = TestRunner(request)
                     tests = runner._load_red_team_tests()
                     
@@ -356,7 +356,7 @@ class TestTestDataValidationInOrchestrator:
     
     def test_orchestrator_with_passages_only(self):
         """Test orchestrator with passages-only testdata."""
-        passages = [PassageRecord(id="1", text="Test passage")]
+        passages = [PassageRecord(id="1", text="Test passage", meta={})]
         bundle = create_bundle(passages=passages)
         
         store = get_store()
@@ -371,6 +371,7 @@ class TestTestDataValidationInOrchestrator:
         runner = TestRunner(request)
         
         # Should handle missing qaset gracefully
+        assert runner.testdata_bundle is not None
         assert runner.testdata_bundle.passages is not None
         assert runner.testdata_bundle.qaset is None
         

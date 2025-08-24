@@ -9,8 +9,11 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/orchestrator": "http://localhost:8000",
-      "/a2a": "http://localhost:8000",
-      "/ask": "http://localhost:8000"
+      "/a2a": "http://localhost:8000", 
+      "/ask": "http://localhost:8000",
+      "/testdata": "http://localhost:8000",
+      "/healthz": "http://localhost:8000",
+      "/readyz": "http://localhost:8000"
     }
   }
 });
