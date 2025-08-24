@@ -15,7 +15,18 @@ load_dotenv()
 
 # Type definitions
 TargetMode = Literal["api", "mcp"]
-TestSuiteName = Literal["rag_quality", "red_team", "safety", "performance", "regression", "gibberish"]
+TestSuiteName = Literal["rag_quality", "red_team", "safety", "performance", "regression", "gibberish", "resilience"]
+
+
+class ResilienceOptions(BaseModel):
+    """Options for resilience test suite."""
+    mode: Literal["synthetic", "passive"] = "passive"
+    samples: int = 10
+    timeout_ms: int = 20000
+    retries: int = 0
+    concurrency: int = 10
+    queue_depth: int = 50
+    circuit: Dict[str, Any] = {"fails": 5, "reset_s": 30}
 
 
 class OrchestratorRequest(BaseModel):
@@ -79,6 +90,8 @@ class TestRunner:
         self.inputs_rows: List[Dict[str, Any]] = []
         self.adversarial_rows: List[Dict[str, Any]] = []
         self.coverage_data: Dict[str, Dict[str, Any]] = {}
+        self.resilience_details: List[Dict[str, Any]] = []
+        self.deprecated_suites: List[str] = []
         
         # Load test data bundle if testdata_id is provided
         self.testdata_bundle = None
@@ -93,7 +106,19 @@ class TestRunner:
         """Load test items for each requested suite."""
         suite_data = {}
         
+        # Handle backward compatibility: gibberish -> resilience alias
+        processed_suites = []
         for suite in self.request.suites:
+            if suite == "gibberish":
+                # Map gibberish to resilience
+                if "resilience" not in processed_suites:
+                    processed_suites.append("resilience")
+                    self.deprecated_suites.append("gibberish")
+                    print("Deprecated suite alias applied: gibberish → resilience")
+            else:
+                processed_suites.append(suite)
+        
+        for suite in processed_suites:
             if suite == "rag_quality":
                 suite_data[suite] = self._load_rag_quality_tests()
             elif suite == "red_team":
@@ -104,8 +129,8 @@ class TestRunner:
                 suite_data[suite] = self._load_performance_tests()
             elif suite == "regression":
                 suite_data[suite] = self._load_regression_tests()
-            elif suite == "gibberish":
-                suite_data[suite] = self._load_gibberish_tests()
+            elif suite == "resilience":
+                suite_data[suite] = self._load_resilience_tests()
         
         return suite_data
     
@@ -296,6 +321,43 @@ class TestRunner:
         
         return tests
     
+    def _load_resilience_tests(self) -> List[Dict[str, Any]]:
+        """Load resilience tests (provider robustness testing)."""
+        options = self.request.options or {}
+        resilience_opts = options.get("resilience", {})
+        
+        # Get resilience options with defaults
+        mode = resilience_opts.get("mode", "passive")
+        samples = resilience_opts.get("samples", 10)
+        timeout_ms = resilience_opts.get("timeout_ms", 20000)
+        retries = resilience_opts.get("retries", 0)  # Default 0 for resilience testing
+        concurrency = resilience_opts.get("concurrency", 10)
+        queue_depth = resilience_opts.get("queue_depth", 50)
+        circuit = resilience_opts.get("circuit", {"fails": 5, "reset_s": 30})
+        
+        tests = []
+        base_query = "What is the AI Quality Kit?"
+        
+        for i in range(samples):
+            test_config = {
+                "mode": mode,
+                "timeout_ms": timeout_ms,
+                "retries": retries,
+                "concurrency": concurrency,
+                "queue_depth": queue_depth,
+                "circuit": circuit
+            }
+            
+            tests.append({
+                "test_id": f"resilience_probe_{i+1}",
+                "query": base_query,
+                "test_type": "resilience",
+                "category": "robustness",
+                "resilience_config": test_config
+            })
+        
+        return tests
+    
     async def run_case(self, suite: str, item: Dict[str, Any]) -> DetailedRow:
         """Run a single test case."""
         start_time = time.time()
@@ -306,7 +368,9 @@ class TestRunner:
         model = options.get("model", "mock-model")
         
         try:
-            if self.request.target_mode == "api":
+            if suite == "resilience":
+                result = await self._run_resilience_case(item, provider, model)
+            elif self.request.target_mode == "api":
                 result = await self._run_api_case(item, provider, model)
             else:  # mcp
                 result = await self._run_mcp_case(item, provider, model)
@@ -422,6 +486,51 @@ class TestRunner:
                 "perf_phase": "warm"
             }
     
+    async def _run_resilience_case(self, item: Dict[str, Any], provider: str, model: str) -> Dict[str, Any]:
+        """Run resilience test case."""
+        from .resilient_client import ResilientClient
+        
+        config = item.get("resilience_config", {})
+        client = ResilientClient()
+        
+        # Execute the resilience test
+        resilience_result = await client.call_with_resilience(
+            query=item.get("query", ""),
+            provider=provider,
+            model=model,
+            config=config
+        )
+        
+        # Store resilience details for reporting
+        detail_record = {
+            "run_id": self.run_id,
+            "timestamp": resilience_result.started_at,
+            "provider": provider,
+            "model": model,
+            "request_id": resilience_result.request_id,
+            "outcome": resilience_result.outcome,
+            "attempts": resilience_result.attempts,
+            "latency_ms": resilience_result.latency_ms,
+            "error_class": resilience_result.error_class,
+            "mode": resilience_result.mode
+        }
+        self.resilience_details.append(detail_record)
+        
+        # Convert to standard result format
+        result = {
+            "answer": f"Resilience test result: {resilience_result.outcome}",
+            "context": [],
+            "provider": provider,
+            "model": model,
+            "source": "resilience_test",
+            "perf_phase": "resilience",
+            "resilience_outcome": resilience_result.outcome,
+            "resilience_latency_ms": resilience_result.latency_ms,
+            "resilience_attempts": resilience_result.attempts
+        }
+        
+        return result
+    
     def _evaluate_result(self, suite: str, item: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
         """Evaluate test result based on suite type."""
         evaluation: Dict[str, Any] = {"passed": False}
@@ -491,6 +600,19 @@ class TestRunner:
                 (0.2 if not_echoing else 0)
             )
             evaluation["passed"] = evaluation["robustness_score"] >= 0.5
+        
+        elif suite == "resilience":
+            # Evaluate resilience test outcome
+            outcome = result.get("resilience_outcome", "unknown")
+            latency_ms = result.get("resilience_latency_ms", 0)
+            attempts = result.get("resilience_attempts", 1)
+            
+            # Success criteria for resilience tests
+            evaluation["outcome"] = outcome
+            evaluation["latency_ms"] = latency_ms
+            evaluation["attempts"] = attempts
+            evaluation["availability_impact"] = 1.0 if outcome == "success" else 0.0
+            evaluation["passed"] = outcome in ["success", "upstream_429"]  # 429 is expected behavior
         
         return evaluation
     
@@ -663,6 +785,42 @@ class TestRunner:
                 if latencies:
                     summary[suite]["p95_latency_ms"] = sorted(latencies)[int(len(latencies) * 0.95)]
                     summary[suite]["avg_latency_ms"] = sum(latencies) / len(latencies)
+            
+            elif suite == "resilience":
+                # Compute resilience summary from detailed records
+                if self.resilience_details:
+                    total_samples = len(self.resilience_details)
+                    successful_samples = len([d for d in self.resilience_details if d["outcome"] == "success"])
+                    
+                    # Count outcomes
+                    outcome_counts = {}
+                    for detail in self.resilience_details:
+                        outcome = detail["outcome"]
+                        outcome_counts[outcome] = outcome_counts.get(outcome, 0) + 1
+                    
+                    # Compute latency percentiles from successful attempts only
+                    successful_latencies = [d["latency_ms"] for d in self.resilience_details if d["outcome"] == "success"]
+                    
+                    summary[suite].update({
+                        "samples": total_samples,
+                        "success_rate": successful_samples / total_samples if total_samples > 0 else 0,
+                        "timeouts": outcome_counts.get("timeout", 0),
+                        "upstream_5xx": outcome_counts.get("upstream_5xx", 0),
+                        "upstream_429": outcome_counts.get("upstream_429", 0),
+                        "circuit_open_events": outcome_counts.get("circuit_open", 0),
+                        "client_4xx": outcome_counts.get("client_4xx", 0)
+                    })
+                    
+                    if successful_latencies:
+                        successful_latencies.sort()
+                        p50_idx = int(len(successful_latencies) * 0.5)
+                        p95_idx = int(len(successful_latencies) * 0.95)
+                        summary[suite]["p50_ms"] = successful_latencies[p50_idx]
+                        summary[suite]["p95_ms"] = successful_latencies[p95_idx]
+        
+        # Add deprecation note if applicable
+        if self.deprecated_suites:
+            summary["_deprecated_note"] = f"Deprecated suite alias applied: {', '.join(self.deprecated_suites)} → resilience"
         
         return summary
     
@@ -736,6 +894,7 @@ class TestRunner:
             inputs_rows=self.inputs_rows,
             adv_rows=self.adversarial_rows if self.adversarial_rows else None,
             coverage=coverage if coverage else None,
+            resilience_details=self.resilience_details if self.resilience_details else None,
             anonymize=anonymize
         )
         

@@ -5,7 +5,7 @@ import type { Provider, TestSuite, OrchestratorRequest, OrchestratorResult } fro
 import TestDataPanel from "../features/testdata/TestDataPanel";
 import { getTestdataMeta, ApiError } from "../lib/api";
 
-const DEFAULT_SUITES: TestSuite[] = ["rag_quality","red_team","safety","performance","regression","gibberish"];
+const DEFAULT_SUITES: TestSuite[] = ["rag_quality","red_team","safety","performance","regression","resilience"];
 const REQUIRED_SHEETS = ["Summary","Detailed","API_Details","Inputs_And_Expected"];
 
 export default function App() {
@@ -35,6 +35,17 @@ export default function App() {
   const [qaSampleSize, setQaSampleSize] = useState<string>("");
   const [attackMutators, setAttackMutators] = useState<string>("1");
   const [perfRepeats, setPerfRepeats] = useState<string>("2");
+
+  // Resilience options
+  const [resilienceExpanded, setResilienceExpanded] = useState(false);
+  const [resilienceMode, setResilienceMode] = useState<"synthetic" | "passive">("passive");
+  const [resilienceSamples, setResilienceSamples] = useState<string>("10");
+  const [resilienceTimeout, setResilienceTimeout] = useState<string>("20000");
+  const [resilienceRetries, setResilienceRetries] = useState<string>("0");
+  const [resilienceConcurrency, setResilienceConcurrency] = useState<string>("10");
+  const [resilienceQueueDepth, setResilienceQueueDepth] = useState<string>("50");
+  const [resilienceCircuitFails, setResilienceCircuitFails] = useState<string>("5");
+  const [resilienceCircuitReset, setResilienceCircuitReset] = useState<string>("30");
 
   // Run status
   const [busy, setBusy] = useState(false);
@@ -97,7 +108,21 @@ export default function App() {
           model,
           qa_sample_size: qaSampleSize ? parseInt(qaSampleSize) : undefined,
           attack_mutators: parseInt(attackMutators),
-          perf_repeats: parseInt(perfRepeats)
+          perf_repeats: parseInt(perfRepeats),
+          ...(suites.includes("resilience") ? {
+            resilience: {
+              mode: resilienceMode,
+              samples: parseInt(resilienceSamples),
+              timeout_ms: parseInt(resilienceTimeout),
+              retries: parseInt(resilienceRetries),
+              concurrency: parseInt(resilienceConcurrency),
+              queue_depth: parseInt(resilienceQueueDepth),
+              circuit: {
+                fails: parseInt(resilienceCircuitFails),
+                reset_s: parseInt(resilienceCircuitReset)
+              }
+            }
+          } : {})
         }
       };
       const res = await postJSON(`${baseUrl}/orchestrator/run_tests`, payload);
@@ -169,10 +194,10 @@ export default function App() {
     if (suites.includes("safety")) total += 5 * attacks; // ~5 safety tests
     if (suites.includes("performance")) total += perf;
     if (suites.includes("regression")) total += qaSize;
-    if (suites.includes("gibberish")) total += 15; // 15 gibberish tests
+    if (suites.includes("resilience")) total += parseInt(resilienceSamples) || 10; // Resilience samples
     
     return total;
-  }, [suites, qaSampleSize, attackMutators, perfRepeats]);
+  }, [suites, qaSampleSize, attackMutators, perfRepeats, resilienceSamples]);
 
   // --- downloads: compute robust paths ---
   const hasRun = !!run?.run_id;
@@ -315,6 +340,62 @@ export default function App() {
               </div>
             </div>
           </div>
+
+          {/* Resilience Options Panel */}
+          {suites.includes("resilience") && (
+            <div className="mt-4">
+              <div 
+                className="flex items-center gap-2 cursor-pointer label" 
+                onClick={() => setResilienceExpanded(!resilienceExpanded)}
+              >
+                {resilienceExpanded ? (
+                  <ChevronDown className="w-4 h-4" />
+                ) : (
+                  <ChevronRight className="w-4 h-4" />
+                )}
+                Resilience Options
+              </div>
+              {resilienceExpanded && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mt-3">
+                  <div>
+                    <small className="block text-slate-500 dark:text-slate-400 mb-1">mode (default passive)</small>
+                    <select className="input" value={resilienceMode} onChange={e=>setResilienceMode(e.target.value as "synthetic" | "passive")}>
+                      <option value="passive">passive</option>
+                      <option value="synthetic">synthetic</option>
+                    </select>
+                  </div>
+                  <div>
+                    <small className="block text-slate-500 dark:text-slate-400 mb-1">samples (default 10)</small>
+                    <input className="input" value={resilienceSamples} onChange={e=>setResilienceSamples(e.target.value)} />
+                  </div>
+                  <div>
+                    <small className="block text-slate-500 dark:text-slate-400 mb-1">timeout_ms (default 20000)</small>
+                    <input className="input" value={resilienceTimeout} onChange={e=>setResilienceTimeout(e.target.value)} />
+                  </div>
+                  <div>
+                    <small className="block text-slate-500 dark:text-slate-400 mb-1">retries (default 0)</small>
+                    <input className="input" value={resilienceRetries} onChange={e=>setResilienceRetries(e.target.value)} />
+                  </div>
+                  <div>
+                    <small className="block text-slate-500 dark:text-slate-400 mb-1">concurrency (default 10)</small>
+                    <input className="input" value={resilienceConcurrency} onChange={e=>setResilienceConcurrency(e.target.value)} />
+                  </div>
+                  <div>
+                    <small className="block text-slate-500 dark:text-slate-400 mb-1">queue_depth (default 50)</small>
+                    <input className="input" value={resilienceQueueDepth} onChange={e=>setResilienceQueueDepth(e.target.value)} />
+                  </div>
+                  <div>
+                    <small className="block text-slate-500 dark:text-slate-400 mb-1">circuit.fails (default 5)</small>
+                    <input className="input" value={resilienceCircuitFails} onChange={e=>setResilienceCircuitFails(e.target.value)} />
+                  </div>
+                  <div>
+                    <small className="block text-slate-500 dark:text-slate-400 mb-1">circuit.reset_s (default 30)</small>
+                    <input className="input" value={resilienceCircuitReset} onChange={e=>setResilienceCircuitReset(e.target.value)} />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Test Data ID Section */}
           <div className="mt-4 p-4 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800/50">

@@ -6,7 +6,20 @@ export type TestSuite =
   | "safety"
   | "performance"
   | "regression"
-  | "gibberish";
+  | "resilience";
+
+export interface ResilienceOptions {
+  mode: "synthetic" | "passive";
+  samples: number;
+  timeout_ms: number;
+  retries: number;
+  concurrency: number;
+  queue_depth: number;
+  circuit: {
+    fails: number;
+    reset_s: number;
+  };
+}
 
 export interface OrchestratorRequest {
   target_mode: "api"|"mcp";
@@ -21,6 +34,7 @@ export interface OrchestratorRequest {
     qa_sample_size?: number;
     attack_mutators?: number;
     perf_repeats?: number;
+    resilience?: ResilienceOptions;
   };
   testdata_id?: string;
 }

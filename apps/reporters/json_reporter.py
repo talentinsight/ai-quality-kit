@@ -13,6 +13,7 @@ def build_json(
     inputs_rows: List[Dict[str, Any]],
     adv_rows: Optional[List[Dict[str, Any]]] = None,
     coverage: Optional[Dict[str, Any]] = None,
+    resilience_details: Optional[List[Dict[str, Any]]] = None,
     anonymize: bool = True
 ) -> Dict[str, Any]:
     """Build comprehensive JSON report from orchestrator data.
@@ -25,6 +26,7 @@ def build_json(
         inputs_rows: Test inputs and expected values
         adv_rows: Adversarial test details (optional)
         coverage: Coverage analysis (optional)
+        resilience_details: Resilience test detail records (optional)
         anonymize: Whether to mask PII in text fields
         
     Returns:
@@ -37,7 +39,17 @@ def build_json(
         if adv_rows:
             adv_rows = _mask_adversarial_rows(adv_rows)
     
-    return {
+    # Build resilience section if data exists
+    resilience_section = None
+    if resilience_details:
+        # Extract resilience summary from overall summary if present
+        resilience_summary = summary.get("resilience", {})
+        resilience_section = {
+            "summary": resilience_summary,
+            "details": resilience_details
+        }
+    
+    report = {
         "version": "2.0",
         "run": run_meta,
         "summary": summary,
@@ -48,6 +60,12 @@ def build_json(
         "adversarial_details": adv_rows or [],  # New structured format
         "coverage": coverage or {}
     }
+    
+    # Add resilience section if present
+    if resilience_section:
+        report["resilience"] = resilience_section
+    
+    return report
 
 
 def _mask_detailed_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

@@ -556,6 +556,46 @@ The UI reads configuration from environment variables:
 export VITE_API_BASE=http://localhost:8000
 ```
 
+## Test Suites
+
+AI Quality Kit supports multiple test suites for comprehensive evaluation:
+
+### Available Suites
+
+| Suite | Purpose | What it measures |
+|-------|---------|-----------------|
+| **rag_quality** | RAG system quality | Faithfulness, context recall, answer accuracy |
+| **red_team** | Adversarial testing | Attack success rates, prompt injection resistance |  
+| **safety** | Content safety | Safety violations, harmful content detection |
+| **performance** | Response latency | Cold/warm performance, p95 latency tracking |
+| **regression** | Change detection | Baseline comparison, quality drift |
+| **resilience** | Provider robustness | Availability, timeouts, circuit breaker behavior |
+
+### Resilience Testing
+
+The `resilience` suite measures SUT (System Under Test) availability and robustness, distinct from latency testing:
+
+**Passive Mode** (default): Tests real provider behavior with retries=0 to measure true reliability:
+```bash
+curl -X POST http://localhost:8000/orchestrator/run_tests \
+  -H "Content-Type: application/json" \
+  -d '{"suites":["resilience"],"options":{"resilience":{"mode":"passive","samples":10}}}'
+```
+
+**Synthetic Mode**: Injects controlled failures for testing circuit breaker and retry logic:
+```bash
+curl -X POST http://localhost:8000/orchestrator/run_tests \
+  -H "Content-Type: application/json" \
+  -d '{"suites":["resilience"],"options":{"resilience":{"mode":"synthetic","samples":20,"timeout_ms":10000}}}'
+```
+
+**Resilience Metrics**:
+- **Success Rate**: Percentage of successful requests
+- **Timeout Events**: Requests exceeding timeout threshold
+- **5xx/429 Errors**: Upstream service errors and rate limits
+- **Circuit Open Events**: Circuit breaker activations
+- **P50/P95 Latency**: Response time percentiles (successful attempts only)
+
 ## Quality Thresholds
 
 | Metric | Threshold | Purpose |

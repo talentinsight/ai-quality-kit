@@ -34,6 +34,10 @@ def write_excel(path: str, data: Dict[str, Any]) -> None:
     if data.get("coverage") and data["coverage"]:
         _create_coverage_sheet(wb, data)
     
+    # Optional sheet for resilience results
+    if data.get("resilience") and data["resilience"].get("details"):
+        _create_resilience_details_sheet(wb, data)
+    
     # Save workbook
     wb.save(path)
 
@@ -47,6 +51,13 @@ def _create_summary_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
         "pass_rate", "faithfulness_avg", "context_recall_avg", 
         "attack_success_rate", "warm_p95_ms", "provider", "model"
     ]
+    
+    # Add resilience headers if resilience data exists
+    if data.get("resilience") and data["resilience"].get("summary"):
+        headers.extend([
+            "resilience_samples", "resilience_success_rate", "resilience_timeouts",
+            "resilience_5xx", "resilience_429", "resilience_circuit_open", "resilience_p50_ms", "resilience_p95_ms"
+        ])
     
     # Write headers
     for col, header in enumerate(headers, 1):
@@ -63,18 +74,38 @@ def _create_summary_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
         run_meta.get("started_at", ""),
         run_meta.get("finished_at", ""),
         ",".join(run_meta.get("suites", [])),
-        summary.get("total_tests", 0),
-        summary.get("pass_rate", 0.0),
-        summary.get("faithfulness_avg", 0.0),
-        summary.get("context_recall_avg", 0.0),
-        summary.get("attack_success_rate", 0.0),
-        summary.get("warm_p95_ms", 0),
+        summary.get("overall", {}).get("total_tests", 0),
+        summary.get("overall", {}).get("pass_rate", 0.0),
+        summary.get("rag_quality", {}).get("avg_faithfulness", 0.0),
+        summary.get("rag_quality", {}).get("avg_context_recall", 0.0),
+        summary.get("safety", {}).get("attack_success_rate", 0.0),
+        summary.get("performance", {}).get("p95_latency_ms", 0),
         run_meta.get("provider", ""),
         run_meta.get("model", "")
     ]
     
+    # Add resilience data if available
+    if data.get("resilience") and data["resilience"].get("summary"):
+        resilience_summary = data["resilience"]["summary"]
+        row_data.extend([
+            resilience_summary.get("samples", 0),
+            resilience_summary.get("success_rate", 0.0),
+            resilience_summary.get("timeouts", 0),
+            resilience_summary.get("upstream_5xx", 0),
+            resilience_summary.get("upstream_429", 0),
+            resilience_summary.get("circuit_open_events", 0),
+            resilience_summary.get("p50_ms", 0),
+            resilience_summary.get("p95_ms", 0)
+        ])
+    
     for col, value in enumerate(row_data, 1):
         ws.cell(row=2, column=col, value=value)  # type: ignore
+    
+    # Add deprecation note if applicable
+    if summary.get("_deprecated_note"):
+        ws.cell(row=4, column=1, value="Note:")  # type: ignore
+        ws.cell(row=4, column=2, value=summary["_deprecated_note"])  # type: ignore
+        ws.cell(row=4, column=1).font = Font(bold=True)  # type: ignore
     
     # Freeze panes and format
     ws.freeze_panes = "A2"  # type: ignore
@@ -295,6 +326,49 @@ def _create_coverage_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
             module_data.get("brpart", 0),
             module_data.get("cover_percent", 0.0),
             module_data.get("total_lines", 0)
+        ]
+        
+        for col, value in enumerate(values, 1):
+            cell = ws.cell(row=row_idx, column=col, value=value)  # type: ignore
+    
+    ws.freeze_panes = "A2"  # type: ignore
+
+
+def _create_resilience_details_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
+    """Create Resilience_Details sheet for resilience test results."""
+    ws = wb.create_sheet("Resilience_Details")
+    
+    # Required column order as specified in requirements
+    headers = [
+        "run_id", "timestamp", "provider", "model", "request_id", 
+        "outcome", "attempts", "latency_ms", "error_class", "mode"
+    ]
+    
+    # Write headers with styling
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)  # type: ignore
+        cell.font = Font(bold=True)  # type: ignore
+        cell.alignment = Alignment(wrap_text=True)  # type: ignore
+    
+    # Auto-size columns
+    for col in range(1, len(headers) + 1):
+        ws.column_dimensions[get_column_letter(col)].width = 16  # type: ignore
+    
+    # Write resilience detail records
+    resilience_details = data.get("resilience", {}).get("details", [])
+    
+    for row_idx, detail in enumerate(resilience_details, 2):
+        values = [
+            detail.get("run_id", ""),
+            detail.get("timestamp", ""),
+            detail.get("provider", ""),
+            detail.get("model", ""),
+            detail.get("request_id", ""),
+            detail.get("outcome", ""),
+            detail.get("attempts", 0),
+            detail.get("latency_ms", 0),
+            detail.get("error_class", ""),
+            detail.get("mode", "")
         ]
         
         for col, value in enumerate(values, 1):
