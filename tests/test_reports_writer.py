@@ -134,7 +134,13 @@ def test_anonymization_applied_when_enabled(temp_reports_dir):
         "REPORTS_DIR": str(temp_reports_dir),
         "ANONYMIZE_REPORTS": "true"
     }):
-        runner = TestRunner(MagicMock())
+        # Create a mock request with proper testdata_id
+        mock_request = MagicMock()
+        mock_request.testdata_id = None  # No testdata bundle
+        mock_request.suites = ["rag_quality"]
+        mock_request.target_mode = "api"
+        mock_request.use_expanded = False
+        runner = TestRunner(mock_request)
         
         # Test data with PII
         test_data = {
@@ -163,7 +169,13 @@ def test_summary_generation():
     """Test summary statistics generation."""
     from apps.orchestrator.run_tests import TestRunner, DetailedRow
     
-    runner = TestRunner(MagicMock())
+    # Create a mock request with proper testdata_id
+    mock_request = MagicMock()
+    mock_request.testdata_id = None  # No testdata bundle
+    mock_request.suites = ["rag_quality"]
+    mock_request.target_mode = "api"
+    mock_request.use_expanded = False
+    runner = TestRunner(mock_request)
     
     # Create mock detailed rows
     runner.detailed_rows = [
@@ -229,7 +241,13 @@ def test_counts_generation():
     """Test count statistics generation."""
     from apps.orchestrator.run_tests import TestRunner, DetailedRow
     
-    runner = TestRunner(MagicMock())
+    # Create a mock request with proper testdata_id
+    mock_request = MagicMock()
+    mock_request.testdata_id = None  # No testdata bundle
+    mock_request.suites = ["rag_quality"]
+    mock_request.target_mode = "api"
+    mock_request.use_expanded = False
+    runner = TestRunner(mock_request)
     
     # Create mock detailed rows with different statuses
     runner.detailed_rows = [
@@ -272,7 +290,13 @@ def test_coverage_data_generation():
     """Test coverage data generation for red team tests."""
     from apps.orchestrator.run_tests import TestRunner, DetailedRow
     
-    runner = TestRunner(MagicMock())
+    # Create a mock request with proper testdata_id
+    mock_request = MagicMock()
+    mock_request.testdata_id = None  # No testdata bundle
+    mock_request.suites = ["rag_quality"]
+    mock_request.target_mode = "api"
+    mock_request.use_expanded = False
+    runner = TestRunner(mock_request)
     
     # Create red team rows with different categories
     red_team_rows = [

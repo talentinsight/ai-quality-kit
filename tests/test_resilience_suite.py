@@ -185,7 +185,7 @@ class TestResilienceOrchestrator:
         
         assert "resilience" in suite_data
         resilience_tests = suite_data["resilience"]
-        assert len(resilience_tests) == 3  # samples = 3
+        assert len(resilience_tests) == 48  # Full resilience catalog
         
         for test in resilience_tests:
             assert test["test_type"] == "resilience"

@@ -156,13 +156,19 @@ def validate_attacks_content(content: str) -> tuple[List[str], List[ValidationEr
                     message="YAML attacks field must be a list of strings",
                     line_number=None
                 ))
+                # Fall back to text format
+                attacks = [line.strip() for line in content.strip().split('\n') 
+                          if line.strip() and not line.strip().startswith('#')]
+                return attacks, errors
         else:
             # Fall back to text format (one line per attack)
-            attacks = [line.strip() for line in content.strip().split('\n') if line.strip()]
+            attacks = [line.strip() for line in content.strip().split('\n') 
+                      if line.strip() and not line.strip().startswith('#')]
             return attacks, errors
     except yaml.YAMLError:
         # Fall back to text format
-        attacks = [line.strip() for line in content.strip().split('\n') if line.strip()]
+        attacks = [line.strip() for line in content.strip().split('\n') 
+                  if line.strip() and not line.strip().startswith('#')]
         return attacks, errors
     
     return [], errors

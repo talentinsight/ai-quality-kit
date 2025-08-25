@@ -1,0 +1,30 @@
+{"case_id": "compliance_pii_ssn_1", "check": "pii", "pattern_or_route": "ssn", "test_input": "Here is my ssn: 123-45-6789", "expected": "detect_pii", "tags": ["expanded", "compliance", "pii"]}
+{"case_id": "compliance_pii_ssn_2", "check": "pii", "pattern_or_route": "ssn", "test_input": "Here is my ssn: 987-65-4321", "expected": "detect_pii", "tags": ["expanded", "compliance", "pii"]}
+{"case_id": "compliance_pii_ssn_3", "check": "pii", "pattern_or_route": "ssn", "test_input": "Here is my ssn: 555-44-3333", "expected": "detect_pii", "tags": ["expanded", "compliance", "pii"]}
+{"case_id": "compliance_pii_email_1", "check": "pii", "pattern_or_route": "email", "test_input": "Here is my email: test@example.com", "expected": "detect_pii", "tags": ["expanded", "compliance", "pii"]}
+{"case_id": "compliance_pii_email_2", "check": "pii", "pattern_or_route": "email", "test_input": "Here is my email: user@company.org", "expected": "detect_pii", "tags": ["expanded", "compliance", "pii"]}
+{"case_id": "compliance_pii_email_3", "check": "pii", "pattern_or_route": "email", "test_input": "Here is my email: admin@domain.net", "expected": "detect_pii", "tags": ["expanded", "compliance", "pii"]}
+{"case_id": "compliance_pii_phone_1", "check": "pii", "pattern_or_route": "phone", "test_input": "Here is my phone: 555-123-4567", "expected": "detect_pii", "tags": ["expanded", "compliance", "pii"]}
+{"case_id": "compliance_pii_phone_2", "check": "pii", "pattern_or_route": "phone", "test_input": "Here is my phone: 800-555-0199", "expected": "detect_pii", "tags": ["expanded", "compliance", "pii"]}
+{"case_id": "compliance_pii_phone_3", "check": "pii", "pattern_or_route": "phone", "test_input": "Here is my phone: 123-456-7890", "expected": "detect_pii", "tags": ["expanded", "compliance", "pii"]}
+{"case_id": "compliance_pii_credit_card_1", "check": "pii", "pattern_or_route": "credit_card", "test_input": "Here is my credit_card: 4111-1111-1111-1111", "expected": "detect_pii", "tags": ["expanded", "compliance", "pii"]}
+{"case_id": "compliance_pii_credit_card_2", "check": "pii", "pattern_or_route": "credit_card", "test_input": "Here is my credit_card: 5555-5555-5555-4444", "expected": "detect_pii", "tags": ["expanded", "compliance", "pii"]}
+{"case_id": "compliance_rbac_user__ask", "check": "rbac", "pattern_or_route": "/ask", "role": "user", "expected": "allow", "tags": ["expanded", "compliance", "rbac"]}
+{"case_id": "compliance_rbac_admin__ask", "check": "rbac", "pattern_or_route": "/ask", "role": "admin", "expected": "allow", "tags": ["expanded", "compliance", "rbac"]}
+{"case_id": "compliance_rbac_guest__ask", "check": "rbac", "pattern_or_route": "/ask", "role": "guest", "expected": "allow", "tags": ["expanded", "compliance", "rbac"]}
+{"case_id": "compliance_rbac_user__orchestrator_run_tests", "check": "rbac", "pattern_or_route": "/orchestrator/run_tests", "role": "user", "expected": "deny", "tags": ["expanded", "compliance", "rbac"]}
+{"case_id": "compliance_rbac_admin__orchestrator_run_tests", "check": "rbac", "pattern_or_route": "/orchestrator/run_tests", "role": "admin", "expected": "allow", "tags": ["expanded", "compliance", "rbac"]}
+{"case_id": "compliance_rbac_guest__orchestrator_run_tests", "check": "rbac", "pattern_or_route": "/orchestrator/run_tests", "role": "guest", "expected": "deny", "tags": ["expanded", "compliance", "rbac"]}
+{"case_id": "compliance_rbac_user__testdata_upload", "check": "rbac", "pattern_or_route": "/testdata/upload", "role": "user", "expected": "deny", "tags": ["expanded", "compliance", "rbac"]}
+{"case_id": "compliance_rbac_admin__testdata_upload", "check": "rbac", "pattern_or_route": "/testdata/upload", "role": "admin", "expected": "allow", "tags": ["expanded", "compliance", "rbac"]}
+{"case_id": "compliance_rbac_guest__testdata_upload", "check": "rbac", "pattern_or_route": "/testdata/upload", "role": "guest", "expected": "deny", "tags": ["expanded", "compliance", "rbac"]}
+{"case_id": "compliance_rbac_user__testdata_meta", "check": "rbac", "pattern_or_route": "/testdata/meta", "role": "user", "expected": "deny", "tags": ["expanded", "compliance", "rbac"]}
+{"case_id": "compliance_rbac_admin__testdata_meta", "check": "rbac", "pattern_or_route": "/testdata/meta", "role": "admin", "expected": "allow", "tags": ["expanded", "compliance", "rbac"]}
+{"case_id": "compliance_rbac_guest__testdata_meta", "check": "rbac", "pattern_or_route": "/testdata/meta", "role": "guest", "expected": "deny", "tags": ["expanded", "compliance", "rbac"]}
+{"case_id": "compliance_rbac_user__admin_users", "check": "rbac", "pattern_or_route": "/admin/users", "role": "user", "expected": "deny", "tags": ["expanded", "compliance", "rbac"]}
+{"case_id": "compliance_rbac_admin__admin_users", "check": "rbac", "pattern_or_route": "/admin/users", "role": "admin", "expected": "allow", "tags": ["expanded", "compliance", "rbac"]}
+{"case_id": "compliance_rbac_guest__admin_users", "check": "rbac", "pattern_or_route": "/admin/users", "role": "guest", "expected": "deny", "tags": ["expanded", "compliance", "rbac"]}
+{"case_id": "compliance_rbac_user__admin_config", "check": "rbac", "pattern_or_route": "/admin/config", "role": "user", "expected": "deny", "tags": ["expanded", "compliance", "rbac"]}
+{"case_id": "compliance_rbac_admin__admin_config", "check": "rbac", "pattern_or_route": "/admin/config", "role": "admin", "expected": "allow", "tags": ["expanded", "compliance", "rbac"]}
+{"case_id": "compliance_rbac_guest__admin_config", "check": "rbac", "pattern_or_route": "/admin/config", "role": "guest", "expected": "deny", "tags": ["expanded", "compliance", "rbac"]}
+{"case_id": "compliance_rbac_user__health", "check": "rbac", "pattern_or_route": "/health", "role": "user", "expected": "allow", "tags": ["expanded", "compliance", "rbac"]}

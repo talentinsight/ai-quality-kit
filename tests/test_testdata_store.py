@@ -20,12 +20,12 @@ class TestTestDataStore:
     def sample_bundle(self):
         """Create a sample test data bundle."""
         passages = [
-            PassageRecord(id="1", text="First passage"),
-            PassageRecord(id="2", text="Second passage")
+            PassageRecord(id="1", text="First passage", meta=None),
+            PassageRecord(id="2", text="Second passage", meta=None)
         ]
         qaset = [
-            QARecord(qid="1", question="What is AI?", expected_answer="Technology"),
-            QARecord(qid="2", question="What is ML?", expected_answer="Machine Learning")
+            QARecord(qid="1", question="What is AI?", expected_answer="Technology", contexts=None),
+            QARecord(qid="2", question="What is ML?", expected_answer="Machine Learning", contexts=None)
         ]
         return create_bundle(
             passages=passages,
@@ -108,14 +108,14 @@ class TestTestDataStore:
         """Test cleanup of expired bundles."""
         # Create an expired bundle
         expired_bundle = create_bundle(
-            passages=[PassageRecord(id="1", text="test")]
+            passages=[PassageRecord(id="1", text="test", meta=None)]
         )
         # Manually set expiration to past
         expired_bundle.expires_at = datetime.utcnow() - timedelta(hours=1)
         
         # Create a valid bundle
         valid_bundle = create_bundle(
-            qaset=[QARecord(qid="1", question="test?", expected_answer="yes")]
+            qaset=[QARecord(qid="1", question="test?", expected_answer="yes", contexts=None)]
         )
         
         # Store both
@@ -139,7 +139,7 @@ class TestTestDataStore:
         """Test that getting an expired bundle returns None and removes it."""
         # Create an expired bundle
         expired_bundle = create_bundle(
-            passages=[PassageRecord(id="1", text="test")]
+            passages=[PassageRecord(id="1", text="test", meta=None)]
         )
         expired_bundle.expires_at = datetime.utcnow() - timedelta(hours=1)
         
@@ -159,7 +159,7 @@ class TestTestDataStore:
         
         # Test with known content
         content = "test content"
-        expected_hash = "1eebdf4fdc9fc7bf283031b93f9aef3338de9052c1b9e98daafb9c4bad2e0e49"
+        expected_hash = "6ae8a75555209fd6c44157c0aed8016e763ff435a19cf186f76863140143ff72"
         
         result = TestDataStore._get_sha256(content)
         assert result == expected_hash
@@ -199,12 +199,12 @@ class TestBundleCreation:
         assert bundle.passages is None
         assert bundle.qaset is None
         assert bundle.attacks is None
-        assert bundle.schema is None
+        assert bundle.json_schema is None
     
     def test_create_bundle_with_data(self):
         """Test creating a bundle with data."""
-        passages = [PassageRecord(id="1", text="test")]
-        qaset = [QARecord(qid="1", question="test?", expected_answer="yes")]
+        passages = [PassageRecord(id="1", text="test", meta=None)]
+        qaset = [QARecord(qid="1", question="test?", expected_answer="yes", contexts=None)]
         attacks = ["attack1", "attack2"]
         schema = {"type": "object"}
         raw_payloads = {"passages": "raw"}
@@ -213,14 +213,14 @@ class TestBundleCreation:
             passages=passages,
             qaset=qaset,
             attacks=attacks,
-            schema=schema,
+            json_schema=schema,
             raw_payloads=raw_payloads
         )
         
         assert bundle.passages == passages
         assert bundle.qaset == qaset
         assert bundle.attacks == attacks
-        assert bundle.schema == schema
+        assert bundle.json_schema == schema
         assert bundle.raw_payloads == raw_payloads
     
     def test_create_bundle_id_uniqueness(self):
@@ -261,7 +261,14 @@ class TestGlobalStore:
     
     def test_store_configuration(self):
         """Test store uses environment configuration."""
+        # Import after setting environment to ensure config is read correctly
         with patch.dict('os.environ', {'TESTDATA_TTL_HOURS': '48'}):
+            # Force reimport to pick up the new environment variable
+            import importlib
+            import apps.testdata.store
+            importlib.reload(apps.testdata.store)
+            from apps.testdata.store import create_bundle
+            
             bundle = create_bundle()
             expected_expiry = bundle.created_at + timedelta(hours=48)
             

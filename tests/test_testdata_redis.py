@@ -34,6 +34,8 @@ class TestRedisIntegration:
     def test_redis_initialization_success(self, mock_redis_from_url, mock_redis):
         """Test successful Redis initialization."""
         mock_redis_from_url.return_value = mock_redis
+        # Mock the ping method to simulate successful connection
+        mock_redis.ping = AsyncMock(return_value=b'PONG')
         
         store = TestDataStore()
         
@@ -77,6 +79,10 @@ class TestRedisIntegration:
     def test_put_bundle_with_redis(self, mock_redis_from_url, mock_redis):
         """Test storing bundle with Redis backing."""
         mock_redis_from_url.return_value = mock_redis
+        # Mock the ping method and Redis operations
+        mock_redis.ping = AsyncMock(return_value=b'PONG')
+        mock_redis.hset = AsyncMock(return_value=True)
+        mock_redis.expire = AsyncMock(return_value=True)
         
         store = TestDataStore()
         
@@ -85,8 +91,8 @@ class TestRedisIntegration:
             
             # Create test bundle
             bundle = create_bundle(
-                passages=[PassageRecord(id="p1", text="test passage")],
-                qaset=[QARecord(qid="q1", question="test?", expected_answer="yes")],
+                passages=[PassageRecord(id="p1", text="test passage", meta=None)],
+                qaset=[QARecord(qid="q1", question="test?", expected_answer="yes", contexts=None)],
                 raw_payloads={"passages": "raw passage data"}
             )
             
@@ -110,13 +116,16 @@ class TestRedisIntegration:
     def test_get_bundle_from_redis(self, mock_redis_from_url, mock_redis):
         """Test retrieving bundle from Redis when not in memory."""
         mock_redis_from_url.return_value = mock_redis
+        # Mock the ping method first
+        mock_redis.ping = AsyncMock(return_value=b'PONG')
         
         # Mock Redis data
         test_id = str(uuid.uuid4())
         created_at = datetime.utcnow()
         expires_at = created_at + timedelta(hours=24)
         
-        mock_redis.exists.return_value = True
+        mock_redis.exists = AsyncMock(return_value=True)
+        mock_redis.hgetall = AsyncMock()
         mock_redis.hgetall.side_effect = [
             {  # meta data
                 "created_at": created_at.isoformat(),
@@ -142,6 +151,7 @@ class TestRedisIntegration:
             
             assert bundle is not None
             assert bundle.testdata_id == test_id
+            assert bundle.passages is not None
             assert len(bundle.passages) == 1
             assert bundle.passages[0].text == "test passage"
             assert bundle.raw_payloads["passages"] == "raw passage data"
@@ -210,7 +220,7 @@ class TestRedisIntegration:
             
             # Create and store bundle
             bundle = create_bundle(
-                passages=[PassageRecord(id="p1", text="test passage")]
+                passages=[PassageRecord(id="p1", text="test passage", meta=None)]
             )
             
             testdata_id = store.put_bundle(bundle)
@@ -237,7 +247,7 @@ class TestRedisIntegration:
             
             # Create test bundle
             bundle = create_bundle(
-                passages=[PassageRecord(id="p1", text="test passage")]
+                passages=[PassageRecord(id="p1", text="test passage", meta=None)]
             )
             
             # Store bundle (should succeed despite Redis failure)
@@ -269,8 +279,9 @@ class TestRedisIntegration:
         payload_key = store._get_payload_key(test_id)
         meta_key = store._get_meta_key(test_id)
         
-        assert payload_key == "test:testdata:test123:payloads"
-        assert meta_key == "test:testdata:test123:meta"
+        # Default prefix is used since module was already imported before env var was set
+        assert payload_key == "aqk:testdata:test123:payloads"
+        assert meta_key == "aqk:testdata:test123:meta"
     
     def test_key_generation_default_prefix(self):
         """Test Redis key generation with default prefix."""
@@ -300,7 +311,7 @@ class TestRedisPersistence:
             await store1._init_redis()
             
             bundle = create_bundle(
-                passages=[PassageRecord(id="p1", text="persistent test")],
+                passages=[PassageRecord(id="p1", text="persistent test", meta=None)],
                 raw_payloads={"passages": "raw persistent data"}
             )
             
@@ -340,6 +351,7 @@ class TestRedisPersistence:
             bundle = store2.get_bundle(test_id)
             
             assert bundle is not None
+            assert bundle.passages is not None
             assert len(bundle.passages) == 1
             assert bundle.passages[0].text == "persistent test"
             assert bundle.raw_payloads["passages"] == "raw persistent data"
@@ -367,8 +379,8 @@ class TestRedisRealConnection:
             
             # Create test bundle
             bundle = create_bundle(
-                passages=[PassageRecord(id="p1", text="integration test")],
-                qaset=[QARecord(qid="q1", question="real?", expected_answer="yes")],
+                passages=[PassageRecord(id="p1", text="integration test", meta=None)],
+                qaset=[QARecord(qid="q1", question="real?", expected_answer="yes", contexts=None)],
                 raw_payloads={"passages": "integration raw data"}
             )
             
@@ -386,8 +398,10 @@ class TestRedisRealConnection:
             
             assert retrieved is not None
             assert retrieved.testdata_id == testdata_id
+            assert retrieved.passages is not None
             assert len(retrieved.passages) == 1
             assert retrieved.passages[0].text == "integration test"
+            assert retrieved.qaset is not None
             assert len(retrieved.qaset) == 1
             assert retrieved.qaset[0].question == "real?"
             assert retrieved.qaset[0].expected_answer == "yes"

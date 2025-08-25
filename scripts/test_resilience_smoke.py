@@ -41,24 +41,25 @@ def test_resilience_passive_mode():
     assert "summary" in result
     assert "counts" in result
     
-    # Check counts
+    # Check counts - resilience now uses catalog with 48 scenarios
     counts = result["counts"]
-    assert counts.get("total_tests", 0) == 3  # samples = 3
-    assert counts.get("resilience_total", 0) == 3
+    # Resilience suite uses the full catalog (48 scenarios) regardless of samples parameter
+    assert counts.get("total_tests", 0) == 48  # Full catalog
+    assert counts.get("resilience_total", 0) == 48
     
     # Check summary has resilience data
     summary = result["summary"]
     assert "resilience" in summary
     
     resilience_summary = summary["resilience"]
-    assert resilience_summary["samples"] == 3
+    assert resilience_summary["samples"] == 48  # Full catalog executed
     assert "success_rate" in resilience_summary
     assert "timeouts" in resilience_summary
     assert "upstream_5xx" in resilience_summary
     assert "upstream_429" in resilience_summary
     assert "circuit_open_events" in resilience_summary
     
-    print(f"  ✅ Passive mode test completed: {resilience_summary['samples']} samples, "
+    print(f"  ✅ Passive mode test completed: {resilience_summary['samples']} scenarios, "
           f"{resilience_summary['success_rate']:.2f} success rate")
     
     return result["run_id"]
@@ -91,14 +92,14 @@ def test_resilience_synthetic_mode():
     
     result = response.json()
     
-    # Check counts
+    # Check counts - resilience now uses catalog with 48 scenarios
     counts = result["counts"]
-    assert counts.get("total_tests", 0) == 10
-    assert counts.get("resilience_total", 0) == 10
+    assert counts.get("total_tests", 0) == 48  # Full catalog
+    assert counts.get("resilience_total", 0) == 48
     
     # Check summary
     resilience_summary = result["summary"]["resilience"]
-    assert resilience_summary["samples"] == 10
+    assert resilience_summary["samples"] == 48  # Full catalog executed
     
     # In synthetic mode, should have some variety of outcomes
     total_failures = (
@@ -112,7 +113,7 @@ def test_resilience_synthetic_mode():
     assert resilience_summary["success_rate"] > 0, "Should have some successes"
     assert total_failures > 0, "Should have some failures in synthetic mode"
     
-    print(f"  ✅ Synthetic mode test completed: {resilience_summary['samples']} samples, "
+    print(f"  ✅ Synthetic mode test completed: {resilience_summary['samples']} scenarios, "
           f"success_rate={resilience_summary['success_rate']:.2f}, "
           f"timeouts={resilience_summary['timeouts']}, "
           f"5xx={resilience_summary['upstream_5xx']}, "
@@ -235,9 +236,10 @@ def test_mixed_suites():
     assert "performance" in summary, "Should have performance results"
     
     counts = result["counts"]
-    assert counts.get("resilience_total", 0) == 2, "Should have 2 resilience tests"
+    # Resilience uses full catalog (48), performance uses perf_repeats (2)
+    assert counts.get("resilience_total", 0) == 48, "Should have 48 resilience tests (full catalog)"
     assert counts.get("performance_total", 0) == 2, "Should have 2 performance tests"
-    assert counts.get("total_tests", 0) == 4, "Should have 4 total tests"
+    assert counts.get("total_tests", 0) == 50, "Should have 50 total tests"
     
     print(f"  ✅ Mixed suites test completed: resilience + performance")
 

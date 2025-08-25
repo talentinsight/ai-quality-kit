@@ -347,7 +347,12 @@ def test_jwt_mode_expired_token(mock_env_jwt_hs256, expired_jwt_token):
     with pytest.raises(HTTPException) as exc_info:
         get_principal(mock_credentials)
     assert exc_info.value.status_code == 401
-    assert "expired" in exc_info.value.detail.lower()
+    # Detail is now a dict with error and message fields
+    detail = exc_info.value.detail
+    if isinstance(detail, dict):
+        assert "expired" in detail.get("message", "").lower() or "expired" in detail.get("error", "").lower()
+    else:
+        assert "expired" in detail.lower()
 
 
 def test_jwt_mode_wrong_issuer(mock_env_jwt_hs256, jwt_token_wrong_issuer):
@@ -361,7 +366,12 @@ def test_jwt_mode_wrong_issuer(mock_env_jwt_hs256, jwt_token_wrong_issuer):
     with pytest.raises(HTTPException) as exc_info:
         get_principal(mock_credentials)
     assert exc_info.value.status_code == 401
-    assert "issuer" in exc_info.value.detail.lower()
+    # Detail is now a dict with error and message fields
+    detail = exc_info.value.detail
+    if isinstance(detail, dict):
+        assert "issuer" in detail.get("message", "").lower() or "issuer" in detail.get("error", "").lower()
+    else:
+        assert "issuer" in detail.lower()
 
 
 def test_jwt_mode_invalid_token(mock_env_jwt_hs256):
@@ -375,7 +385,12 @@ def test_jwt_mode_invalid_token(mock_env_jwt_hs256):
     with pytest.raises(HTTPException) as exc_info:
         get_principal(mock_credentials)
     assert exc_info.value.status_code == 401
-    assert "invalid" in exc_info.value.detail.lower()
+    # Detail is now a dict with error and message fields
+    detail = exc_info.value.detail
+    if isinstance(detail, dict):
+        assert "invalid" in detail.get("message", "").lower() or "invalid" in detail.get("error", "").lower()
+    else:
+        assert "invalid" in detail.lower()
 
 
 def test_jwt_scope_roles(mock_env_jwt_hs256, jwt_token_scope_roles):
@@ -390,9 +405,10 @@ def test_jwt_scope_roles(mock_env_jwt_hs256, jwt_token_scope_roles):
     assert principal.role == "user"  # First role from scope
 
 
-def test_jwt_no_roles_defaults_to_user(mock_env_jwt_hs256, jwt_secret):
-    """Test JWT without roles defaults to user role."""
+def test_jwt_no_roles_rejects_token(mock_env_jwt_hs256, jwt_secret):
+    """Test JWT without roles gets rejected."""
     from apps.security.auth import get_principal
+    from fastapi import HTTPException
     
     # Create token without roles
     payload = {
@@ -407,9 +423,15 @@ def test_jwt_no_roles_defaults_to_user(mock_env_jwt_hs256, jwt_secret):
     mock_credentials = MagicMock()
     mock_credentials.credentials = token
     
-    principal = get_principal(mock_credentials)
-    assert principal is not None
-    assert principal.role == "user"
+    # Should reject tokens with no roles
+    with pytest.raises(HTTPException) as exc_info:
+        get_principal(mock_credentials)
+    assert exc_info.value.status_code == 401
+    detail = exc_info.value.detail
+    if isinstance(detail, dict):
+        assert "no roles" in detail.get("message", "").lower() or "insufficient" in detail.get("error", "").lower()
+    else:
+        assert "no roles" in detail.lower()
 
 
 def test_auth_mode_invalid():
@@ -427,7 +449,12 @@ def test_auth_mode_invalid():
         with pytest.raises(HTTPException) as exc_info:
             get_principal(mock_credentials)
         assert exc_info.value.status_code == 401
-        assert "authentication mode" in exc_info.value.detail.lower()
+        # Detail is now a dict with error and message fields
+        detail = exc_info.value.detail
+        if isinstance(detail, dict):
+            assert "authentication mode" in detail.get("message", "").lower() or "mode" in detail.get("error", "").lower()
+        else:
+            assert "authentication mode" in detail.lower()
 
 
 def test_token_mode_still_works():
@@ -544,7 +571,12 @@ def test_jwt_missing_kid_in_header(mock_env_jwt_rs256):
     with pytest.raises(HTTPException) as exc_info:
         get_principal(mock_credentials)
     assert exc_info.value.status_code == 401
-    assert "kid" in exc_info.value.detail.lower()
+    # Detail is now a dict with error and message fields
+    detail = exc_info.value.detail
+    if isinstance(detail, dict):
+        assert "kid" in detail.get("message", "").lower() or "kid" in detail.get("error", "").lower()
+    else:
+        assert "kid" in detail.lower()
 
 
 def test_jwt_configuration_functions():

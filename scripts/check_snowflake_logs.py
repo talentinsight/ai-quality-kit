@@ -100,7 +100,8 @@ def check_api_logs():
         with snowflake_cursor() as cursor:
             # Check total count
             cursor.execute("SELECT COUNT(*) FROM LLM_API_LOGS_PROD")
-            total_count = cursor.fetchone()[0]
+            result = cursor.fetchone()
+            total_count = result[0] if result else 0
             print(f"📊 Total API logs: {total_count}")
             
             if total_count > 0:
@@ -140,7 +141,8 @@ def check_evaluation_results():
         with snowflake_cursor() as cursor:
             # Check total count
             cursor.execute("SELECT COUNT(*) FROM LLM_API_EVAL_RESULTS_PROD")
-            total_count = cursor.fetchone()[0]
+            result = cursor.fetchone()
+            total_count = result[0] if result else 0
             print(f"📊 Total evaluation results: {total_count}")
             
             if total_count > 0:
@@ -177,7 +179,8 @@ def check_cache():
         with snowflake_cursor() as cursor:
             # Check total count
             cursor.execute("SELECT COUNT(*) FROM LLM_RESPONSE_CACHE_PROD")
-            total_count = cursor.fetchone()[0]
+            result = cursor.fetchone()
+            total_count = result[0] if result else 0
             print(f"📊 Total cached responses: {total_count}")
             
             if total_count > 0:

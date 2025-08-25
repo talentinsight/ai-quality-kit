@@ -218,7 +218,7 @@ class TestReportFormat:
             "detailed": [],
             "api_details": [],
             "inputs_expected": [],
-            "adversarial": [
+            "adversarial_details": [
                 {
                     "attack_id": "red_team_1",
                     "variant_id": "direct",

@@ -41,7 +41,7 @@ class TestQuantityGenerator:
         assert not gen.check_existing_output()
         
         # Directory exists but no manifest
-        mock_exists.side_effect = lambda path: "expanded/20250101" in str(path)
+        mock_exists.side_effect = lambda path=None: "expanded/20250101" in str(path) if path else False
         assert not gen.check_existing_output()
     
     def test_deterministic_generation(self):
@@ -92,7 +92,7 @@ class TestDatasetSelection:
             use_expanded=True
         )
         
-        with patch('apps.orchestrator.run_tests.get_store') as mock_store:
+        with patch('apps.testdata.store.get_store') as mock_store:
             mock_bundle = Mock()
             mock_store.return_value.get_bundle.return_value = mock_bundle
             
@@ -127,10 +127,14 @@ class TestDatasetSelection:
             # Mock expanded directory with versions
             mock_expanded_dir = Mock()
             mock_expanded_dir.exists.return_value = True
-            mock_expanded_dir.iterdir.return_value = [
-                Mock(name="20250101", is_dir=lambda: True),
-                Mock(name="20250102", is_dir=lambda: True)
-            ]
+            # Create mock directories with names
+            mock_dir1 = Mock()
+            mock_dir1.name = "20250101"
+            mock_dir1.is_dir.return_value = True
+            mock_dir2 = Mock()
+            mock_dir2.name = "20250102"
+            mock_dir2.is_dir.return_value = True
+            mock_expanded_dir.iterdir.return_value = [mock_dir1, mock_dir2]
             mock_path.return_value = mock_expanded_dir
             
             runner = TestRunner(request)
@@ -221,10 +225,16 @@ class TestReportingMetadata:
             dataset_version="20250101"
         )
         
-        runner = TestRunner(request)
-        runner.detailed_rows = []  # Empty for summary generation
-        
-        summary = runner._generate_summary()
+        with patch('apps.orchestrator.run_tests.Path') as mock_path:
+            # Mock that the expanded directory exists
+            mock_expanded_dir = Mock()
+            mock_expanded_dir.exists.return_value = True
+            mock_path.return_value = mock_expanded_dir
+            
+            runner = TestRunner(request)
+            runner.detailed_rows = []  # Empty for summary generation
+            
+            summary = runner._generate_summary()
         
         assert summary["dataset_source"] == "expanded"
         assert summary["dataset_version"] == "20250101"
