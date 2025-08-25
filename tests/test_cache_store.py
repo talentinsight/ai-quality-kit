@@ -7,6 +7,7 @@ import time
 import os
 
 
+@pytest.mark.snowflake  
 class TestCacheStore:
     """Test cache store operations."""
     

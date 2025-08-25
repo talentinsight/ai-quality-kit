@@ -150,6 +150,7 @@ class TestEvalLogger:
             captured = capsys.readouterr()
             assert "Skipping Snowflake logging for test-group metrics" in captured.out
     
+    @pytest.mark.snowflake
     def test_log_evaluation_results_no_snowflake_client(self, capsys):
         """Test that logging is skipped when snowflake client is not available."""
         with patch.dict(os.environ, {
@@ -172,6 +173,7 @@ class TestEvalLogger:
                 assert "snowflake client not available" in captured.out
     
     @patch('apps.db.eval_logger.snowflake_cursor')
+    @pytest.mark.snowflake
     def test_log_evaluation_results_exception_handling(self, mock_snowflake_cursor, capsys):
         """Test that exceptions during logging are handled gracefully."""
         # Mock the cursor to raise an exception
@@ -198,6 +200,7 @@ class TestEvalLogger:
             assert "Failed to log test-group metrics to Snowflake" in captured.out
     
     @patch('apps.db.eval_logger.snowflake_cursor')
+    @pytest.mark.snowflake
     def test_log_evaluation_results_empty_metrics(self, mock_snowflake_cursor, capsys):
         """Test logging with empty metrics dictionary."""
         # Mock the cursor

@@ -15,6 +15,7 @@ from apps.db.snowflake_client import snowflake_cursor, env_summary
 load_dotenv()
 
 
+@pytest.mark.snowflake
 class TestSnowflakeConnection:
     """Test class for Snowflake connectivity."""
     

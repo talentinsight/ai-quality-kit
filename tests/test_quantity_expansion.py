@@ -232,7 +232,28 @@ class TestReportingMetadata:
             mock_path.return_value = mock_expanded_dir
             
             runner = TestRunner(request)
-            runner.detailed_rows = []  # Empty for summary generation
+            # Add at least one detailed row so summary is generated
+            from apps.orchestrator.run_tests import DetailedRow
+            runner.detailed_rows = [DetailedRow(
+                run_id="test",
+                suite="rag_quality", 
+                test_id="test1",
+                status="pass",
+                timestamp="2024-01-01T00:00:00",
+                provider="mock",
+                model="test",
+                query="test",
+                expected_answer="test",
+                actual_answer="test",
+                context=["test"],
+                source="test",
+                perf_phase="test",
+                faithfulness=1.0,
+                context_recall=1.0,
+                safety_score=1.0,
+                attack_success=False,
+                latency_ms=100
+            )]
             
             summary = runner._generate_summary()
         

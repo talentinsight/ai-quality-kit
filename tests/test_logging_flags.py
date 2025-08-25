@@ -32,6 +32,7 @@ class TestLoggingFlags:
             assert "answer" in data
             assert "context" in data
     
+    @pytest.mark.snowflake
     def test_api_logging_without_snowflake_env(self, client, set_env_defaults, mock_openai_client):
         """Test graceful degradation when API logging enabled but Snowflake env missing."""
         # Mock OpenAI response

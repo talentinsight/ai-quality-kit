@@ -5,6 +5,7 @@ from unittest.mock import patch, Mock
 import os
 
 
+@pytest.mark.snowflake
 class TestLogService:
     """Test logging service operations."""
     

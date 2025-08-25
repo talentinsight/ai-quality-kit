@@ -231,12 +231,26 @@ class TestReportFormat:
                 }
             ],
             "coverage": {
-                "security": {
-                    "attempts": 1,
-                    "successes": 0,
-                    "success_rate": 0.0,
-                    "avg_latency_ms": 150
-                }
+                "modules": [
+                    {
+                        "module": "security",
+                        "stmts": 10,
+                        "miss": 2,
+                        "branch": 5,
+                        "brpart": 1,
+                        "cover_percent": 80.0,
+                        "total_lines": 12
+                    },
+                    {
+                        "module": "red_team",
+                        "stmts": 15,
+                        "miss": 3,
+                        "branch": 8,
+                        "brpart": 2,
+                        "cover_percent": 85.0,
+                        "total_lines": 18
+                    }
+                ]
             }
         }
         
