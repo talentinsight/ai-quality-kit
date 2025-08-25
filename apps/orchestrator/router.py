@@ -3,13 +3,58 @@
 import os
 import time
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, Response, BackgroundTasks
 from fastapi.responses import FileResponse
 from typing import Optional
 
 from .run_tests import OrchestratorRequest, OrchestratorResult, TestRunner
 from apps.security.auth import require_user_or_admin, Principal, _get_client_ip
 from apps.audit import audit_orchestrator_run_started, audit_orchestrator_run_finished, audit_request_accepted
+from pydantic import BaseModel
+
+class OrchestratorStartResponse(BaseModel):
+    """Immediate response when test starts."""
+    run_id: str
+    status: str
+    message: str
+
+async def run_tests_background(runner: TestRunner, actor: str):
+    """Background task to run tests."""
+    try:
+        # Run the actual tests
+        result = await runner.run_all_tests()
+        
+        # Audit completion
+        audit_orchestrator_run_finished(
+            run_id=runner.run_id,
+            suites=list(runner.request.suites),
+            provider=runner.request.provider,
+            model=runner.request.model,
+            actor=actor,
+            duration_ms=(time.time() - _running_tests[runner.run_id]["start_time"]) * 1000,
+            success=True,
+            testdata_id=runner.request.testdata_id
+        )
+        
+        print(f"✅ BACKGROUND: Test {runner.run_id} completed successfully")
+        
+    except Exception as e:
+        print(f"❌ BACKGROUND: Test {runner.run_id} failed: {e}")
+        audit_orchestrator_run_finished(
+            run_id=runner.run_id,
+            suites=list(runner.request.suites),
+            provider=runner.request.provider,
+            model=runner.request.model,
+            actor=actor,
+            duration_ms=(time.time() - _running_tests[runner.run_id]["start_time"]) * 1000,
+            success=False,
+            testdata_id=runner.request.testdata_id,
+            error=str(e)
+        )
+    finally:
+        # Clean up
+        if runner.run_id in _running_tests:
+            del _running_tests[runner.run_id]
 
 # Create router
 router = APIRouter(prefix="/orchestrator", tags=["orchestrator"])
@@ -53,6 +98,15 @@ async def run_tests(
         # Create and run test runner
         runner = TestRunner(request)
         
+        # Register running test
+        _running_tests[runner.run_id] = {
+            "cancelled": False,
+            "start_time": start_time,
+            "runner": runner
+        }
+        
+        print(f"🆔 BACKEND: Starting test {runner.run_id}")
+        
         # Audit run start
         audit_orchestrator_run_started(
             run_id=runner.run_id,
@@ -63,28 +117,77 @@ async def run_tests(
             testdata_id=request.testdata_id
         )
         
-        result = await runner.run_all_tests()
-        
-        # Audit successful completion
-        duration_ms = (time.time() - start_time) * 1000
-        audit_orchestrator_run_finished(
-            run_id=runner.run_id,
-            suites=list(request.suites),
-            provider=request.provider,
-            model=request.model,
-            actor=actor,
-            duration_ms=duration_ms,
-            success=True,
-            testdata_id=request.testdata_id
-        )
-        
-        return result
-        
+        # Run tests synchronously with cancel support
+        try:
+            result = await runner.run_all_tests()
+            
+            # Audit successful completion
+            duration_ms = (time.time() - start_time) * 1000
+            audit_orchestrator_run_finished(
+                run_id=runner.run_id,
+                suites=list(request.suites),
+                provider=request.provider,
+                model=request.model,
+                actor=actor,
+                duration_ms=duration_ms,
+                success=True,
+                testdata_id=request.testdata_id
+            )
+            
+            return result
+            
+        except Exception as inner_e:
+            error_msg = str(inner_e)
+            
+            # Check if this was a cancellation (graceful)
+            if "CANCELLED:" in error_msg:
+                print(f"✅ Graceful cancellation detected: {error_msg}")
+                
+                # Generate cancelled result instead of error
+                result = runner._generate_cancelled_result()
+                
+                # Audit as successful cancellation
+                duration_ms = (time.time() - start_time) * 1000
+                audit_orchestrator_run_finished(
+                    run_id=runner.run_id,
+                    suites=list(request.suites),
+                    provider=request.provider,
+                    model=request.model,
+                    actor=actor,
+                    duration_ms=duration_ms,
+                    success=True,  # Cancellation is success!
+                    testdata_id=request.testdata_id
+                )
+                
+                return result
+            else:
+                # Real error - audit as failure
+                duration_ms = (time.time() - start_time) * 1000
+                audit_orchestrator_run_finished(
+                    run_id=runner.run_id,
+                    suites=list(request.suites),
+                    provider=request.provider,
+                    model=request.model,
+                    actor=actor,
+                    duration_ms=duration_ms,
+                    success=False,
+                    testdata_id=request.testdata_id,
+                    error=error_msg
+                )
+                raise inner_e
+        finally:
+            # Clean up
+            _running_tests.pop(runner.run_id, None)
+            
     except Exception as e:
+        # Remove from running tests on outer error  
+        if 'runner' in locals():
+            _running_tests.pop(getattr(runner, 'run_id', None), None)
+            
         # Audit failed completion
         duration_ms = (time.time() - start_time) * 1000
         audit_orchestrator_run_finished(
-            run_id=getattr(runner, 'run_id', 'unknown'),
+            run_id=getattr(runner, 'run_id', 'unknown') if 'runner' in locals() else 'unknown',
             suites=list(request.suites),
             provider=request.provider,
             model=request.model,
@@ -209,3 +312,40 @@ async def list_reports(
             status_code=500,
             detail=f"Failed to list reports: {str(e)}"
         )
+
+
+# Global registry to track running tests
+_running_tests = {}
+
+@router.get("/running-tests")
+async def list_running_tests(
+    principal: Optional[Principal] = Depends(require_user_or_admin())
+) -> dict:
+    """Debug endpoint to list running tests."""
+    return {
+        "running_tests": list(_running_tests.keys()),
+        "count": len(_running_tests),
+        "details": {k: {"cancelled": v["cancelled"], "start_time": v["start_time"]} for k, v in _running_tests.items()}
+    }
+
+@router.post("/cancel/{run_id}")
+async def cancel_test_run(
+    run_id: str,
+    principal: Optional[Principal] = Depends(require_user_or_admin())
+) -> dict:
+    """Cancel a running test execution."""
+    if run_id not in _running_tests:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Test run {run_id} not found or already completed. Running tests: {list(_running_tests.keys())}"
+        )
+    
+    # Mark for cancellation
+    _running_tests[run_id]["cancelled"] = True
+    print(f"🔥 CANCEL ENDPOINT: Marked {run_id} for cancellation")
+    
+    return {
+        "message": f"Test run {run_id} marked for cancellation",
+        "run_id": run_id,
+        "status": "cancelling"
+    }

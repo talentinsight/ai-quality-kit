@@ -51,6 +51,7 @@ export interface OrchestratorRequest {
   target_mode: "api"|"mcp";
   api_base_url?: string;
   api_bearer_token?: string;
+  mcp_server_url?: string;
   suites: TestSuite[];
   thresholds?: Record<string, number|string|boolean>;
   options?: { 
@@ -65,6 +66,8 @@ export interface OrchestratorRequest {
     bias_smoke?: BiasSmokeOptions;
   };
   testdata_id?: string;
+  use_expanded?: boolean;
+  run_id?: string;  // For cancel functionality
   shards?: number;
   shard_id?: number;
 }

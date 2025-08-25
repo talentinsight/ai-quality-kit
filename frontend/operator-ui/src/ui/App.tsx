@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Download, Play, ShieldCheck, Settings2, MoonStar, Sun, Server, CheckCircle2, XCircle, Rocket, ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
+import { Download, Play, ShieldCheck, Settings2, MoonStar, Sun, Server, CheckCircle2, XCircle, Rocket, ChevronDown, ChevronRight, RefreshCw, X } from "lucide-react";
 import clsx from "clsx";
 import type { Provider, TestSuite, OrchestratorRequest, OrchestratorResult } from "../types";
 import TestDataPanel from "../features/testdata/TestDataPanel";
@@ -17,13 +17,14 @@ export default function App() {
   }, [dark]);
 
   // Back-end configuration
-  const [baseUrl, setBaseUrl] = useState("http://localhost:8000");
+  const [apiBaseUrl, setApiBaseUrl] = useState("http://localhost:8000");
+  const [mcpServerUrl, setMcpServerUrl] = useState("stdio:///path/to/mcp-server");
   const [token, setToken] = useState("");
   const [targetMode, setTargetMode] = useState<"api"|"mcp">("api");
 
   // Provider & model
-  const [provider, setProvider] = useState<Provider>("mock");
-  const [model, setModel] = useState("mock-1");
+  const [provider, setProvider] = useState<Provider>("openai");
+  const [model, setModel] = useState("gpt-4");
 
   // Suites & thresholds
   const [suites, setSuites] = useState<TestSuite[]>([...DEFAULT_SUITES]);
@@ -69,6 +70,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>("");
   const [run, setRun] = useState<OrchestratorResult | null>(null);
+  const [currentRunId, setCurrentRunId] = useState<string | null>(null);
 
   // Test data state
   const [testDataExpanded, setTestDataExpanded] = useState(false);
@@ -111,16 +113,56 @@ export default function App() {
     return fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
   }
 
+  async function cancelTests() {
+    console.log("🔥 CANCEL: currentRunId =", currentRunId);
+    if (!currentRunId) {
+      console.log("❌ CANCEL: No currentRunId!");
+      return;
+    }
+    
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      
+      console.log("📡 CANCEL: Sending request to:", `${apiBaseUrl}/orchestrator/cancel/${currentRunId}`);
+      const res = await fetch(`${apiBaseUrl}/orchestrator/cancel/${currentRunId}`, {
+        method: "POST",
+        headers
+      });
+      
+      if (res.ok) {
+        setMessage("Test cancelled successfully");
+        setBusy(false);
+        setCurrentRunId(null);
+      } else {
+        setMessage("Failed to cancel test");
+      }
+    } catch (e: any) {
+      console.error("Cancel error:", e);
+      setMessage("Cancel failed - refreshing page...");
+      setTimeout(() => window.location.reload(), 2000);
+    }
+  }
+
   async function runTests() {
-    setBusy(true); setMessage("");
+    setBusy(true); setMessage(""); 
+    
+    // Generate run_id immediately for cancel functionality
+    const tempRunId = `run_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    setCurrentRunId(tempRunId);
+    console.log("🆔 UI: Generated temp run_id for cancel:", tempRunId);
+    
     try {
       const payload: OrchestratorRequest = {
         target_mode: targetMode,
-        api_base_url: targetMode === "api" ? baseUrl : undefined,
+        api_base_url: targetMode === "api" ? apiBaseUrl : undefined,
         api_bearer_token: targetMode === "api" ? token : undefined,
+        mcp_server_url: targetMode === "mcp" ? mcpServerUrl : undefined,
         suites,
         thresholds,
         testdata_id: testdataId.trim() || undefined,
+        use_expanded: true,  // Enable expanded dataset by default
+        run_id: tempRunId,  // Send our generated run_id for cancel
         options: { 
           provider, 
           model,
@@ -173,13 +215,24 @@ export default function App() {
           } : {})
         }
       };
-      const res = await postJSON(`${baseUrl}/orchestrator/run_tests`, payload);
+      // Make request and extract run_id from logs/response
+      const res = await postJSON(`${apiBaseUrl}/orchestrator/run_tests`, payload);
+      
+      // Try to extract run_id from response headers if available
+      const runIdHeader = res.headers.get('X-Run-ID');
+      console.log("🆔 HEADER: X-Run-ID =", runIdHeader);
+      if (runIdHeader) {
+        console.log("✅ HEADER: Setting currentRunId to", runIdHeader);
+        setCurrentRunId(runIdHeader);
+      }
+      
       if (!res.ok) {
         console.log(`run_tests failed: ${res.status} ${res.statusText}`);
         throw new Error(`run_tests failed: ${res.status}`);
       }
       const data: OrchestratorResult = await res.json();
       setRun(data);
+      setCurrentRunId(null); // Clear after completion
       setMessage("Run completed. Download your reports below.");
     } catch (e: any) {
       console.error("Run tests error:", e);
@@ -228,7 +281,7 @@ export default function App() {
     }
   }, [testdataId]);
 
-  const canRun = !!baseUrl && suites.length > 0 && !busy && (testdataId.trim() === '' || testdataValid !== false);
+  const canRun = !!(targetMode === "api" ? apiBaseUrl : mcpServerUrl) && suites.length > 0 && !busy && (testdataId.trim() === '' || testdataValid !== false);
 
   // Estimated test count calculation
   const estimatedTests = useMemo(() => {
@@ -239,7 +292,7 @@ export default function App() {
     
     if (suites.includes("rag_quality")) total += qaSize;
     if (suites.includes("red_team")) total += 10 * attacks; // ~10 base attacks
-    if (suites.includes("safety")) total += 5 * attacks; // ~5 safety tests
+    if (suites.includes("safety")) total += Math.min(50, Math.max(5, attacks * 5)); // 5-50 safety tests based on attack_mutators
     if (suites.includes("performance")) total += perf;
     if (suites.includes("regression")) total += qaSize;
     if (suites.includes("resilience")) total += parseInt(resilienceSamples) || 10; // Resilience samples
@@ -265,7 +318,7 @@ export default function App() {
       if (token) headers["Authorization"] = `Bearer ${token}`;
       
       // Build proper URL - if href starts with /, it's relative to baseUrl
-      const downloadUrl = href.startsWith('/') ? `${baseUrl}${href}` : href;
+      const downloadUrl = href.startsWith('/') ? `${apiBaseUrl}${href}` : href;
       
       const res = await fetch(downloadUrl, { headers });
       if (!res.ok) throw new Error(`download failed: ${res.status}`);
@@ -310,10 +363,17 @@ export default function App() {
               </select>
             </div>
 
-            <div>
-              <label className="label">Backend Base URL</label>
-              <input className="input" placeholder="http://localhost:8000" value={baseUrl} onChange={e=>setBaseUrl(e.target.value)} />
-            </div>
+            {targetMode === "api" ? (
+              <div>
+                <label className="label">API Base URL</label>
+                <input className="input" placeholder="http://localhost:8000" value={apiBaseUrl} onChange={e=>setApiBaseUrl(e.target.value)} />
+              </div>
+            ) : (
+              <div>
+                <label className="label">MCP Server URL</label>
+                <input className="input" placeholder="stdio:///path/to/mcp-server" value={mcpServerUrl} onChange={e=>setMcpServerUrl(e.target.value)} />
+              </div>
+            )}
 
             <div>
               <label className="label">Bearer Token (kept in memory)</label>
@@ -324,7 +384,16 @@ export default function App() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
             <div>
               <label className="label">Provider</label>
-              <select className="input" value={provider} onChange={e=>setProvider(e.target.value as Provider)}>
+              <select className="input" value={provider} onChange={e=>{
+                const newProvider = e.target.value as Provider;
+                setProvider(newProvider);
+                // Auto-update model based on provider
+                if (newProvider === "openai") setModel("gpt-4");
+                else if (newProvider === "anthropic") setModel("claude-3-5-sonnet");
+                else if (newProvider === "gemini") setModel("gemini-1.5-pro");
+                else if (newProvider === "mock") setModel("mock-1");
+                else setModel("custom-model");
+              }}>
                 <option value="openai">OpenAI</option>
                 <option value="anthropic">Anthropic</option>
                 <option value="gemini">Gemini</option>
@@ -657,6 +726,11 @@ export default function App() {
             <button className="btn btn-primary" onClick={runTests} disabled={!canRun}>
               {busy ? <span className="animate-pulse">Running…</span> : <><Play size={16}/> Run tests</>}
             </button>
+            {busy && (
+              <button className="btn btn-secondary" onClick={cancelTests}>
+                <X size={16}/> Cancel Test
+              </button>
+            )}
             {message && <span className="text-sm text-slate-600 dark:text-slate-300">{message}</span>}
             {testdataId.trim() && testdataValid === false && (
               <span className="text-sm text-red-600 dark:text-red-400">
@@ -725,7 +799,7 @@ export default function App() {
                 <Download size={16}/> Download Excel
               </button>
               <div className="ml-auto flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-                <Server size={16}/> Backend: {baseUrl}
+                <Server size={16}/> Backend: {targetMode === "api" ? apiBaseUrl : mcpServerUrl}
               </div>
             </div>
             {run?.summary && (

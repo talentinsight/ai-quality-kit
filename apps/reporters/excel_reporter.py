@@ -46,6 +46,10 @@ def write_excel(path: str, data: Dict[str, Any]) -> None:
     if data.get("bias_smoke") and data["bias_smoke"].get("details"):
         _create_bias_details_sheet(wb, data)
     
+    # Optional sheet for logs
+    if data.get("logs") and data["logs"].get("entries"):
+        _create_logs_sheet(wb, data)
+    
     # Save workbook
     wb.save(path)
 
@@ -539,3 +543,57 @@ def _create_bias_details_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
             cell = ws.cell(row=row_idx, column=col, value=value)
     
     ws.freeze_panes = "A2"
+
+def _create_logs_sheet(wb, data):
+    """Create Logs sheet with terminal log entries."""
+    from openpyxl.worksheet.worksheet import Worksheet
+    from openpyxl.styles import Font, Alignment
+    from openpyxl.utils import get_column_letter
+    from typing import cast
+    
+    ws = cast(Worksheet, wb.create_sheet("Logs"))
+    
+    headers = [
+        "timestamp", "run_id", "level", "component", "message", 
+        "event", "test_id", "provider", "model", "suites"
+    ]
+    
+    # Write headers with styling
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(wrap_text=True)
+        
+        # Set column widths
+        if header == "message":
+            ws.column_dimensions[get_column_letter(col)].width = 60  # Wide for messages
+        elif header in ["timestamp", "component"]:
+            ws.column_dimensions[get_column_letter(col)].width = 20
+        elif header == "suites":
+            ws.column_dimensions[get_column_letter(col)].width = 25
+        else:
+            ws.column_dimensions[get_column_letter(col)].width = 15
+    
+    # Write log entries
+    log_entries = data.get("logs", {}).get("entries", [])
+    for row_idx, log_entry in enumerate(log_entries, 2):
+        values = [
+            log_entry.get("timestamp", ""),
+            log_entry.get("run_id", ""),
+            log_entry.get("level", ""),
+            log_entry.get("component", ""),
+            log_entry.get("message", ""),
+            log_entry.get("event", ""),
+            log_entry.get("test_id", ""),
+            log_entry.get("provider", ""),
+            log_entry.get("model", ""),
+            ",".join(log_entry.get("suites", [])) if isinstance(log_entry.get("suites"), list) else str(log_entry.get("suites", ""))
+        ]
+        
+        for col, value in enumerate(values, 1):
+            cell = ws.cell(row=row_idx, column=col, value=value)
+            if col == 5:  # message column
+                cell.alignment = Alignment(wrap_text=True)
+    
+    ws.freeze_panes = "A2"
+

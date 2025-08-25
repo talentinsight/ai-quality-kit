@@ -39,6 +39,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Run-ID"],  # Allow frontend to read this header
 )
 
 # Request/Response models

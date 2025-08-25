@@ -16,6 +16,7 @@ def build_json(
     resilience_details: Optional[List[Dict[str, Any]]] = None,
     compliance_smoke_details: Optional[List[Dict[str, Any]]] = None,
     bias_smoke_details: Optional[List[Dict[str, Any]]] = None,
+    logs: Optional[List[Dict[str, Any]]] = None,
     anonymize: bool = True
 ) -> Dict[str, Any]:
     """Build comprehensive JSON report from orchestrator data.
@@ -71,6 +72,14 @@ def build_json(
             "details": bias_smoke_details
         }
     
+    # Build logs section if data exists
+    logs_section = None
+    if logs:
+        logs_section = {
+            "count": len(logs),
+            "entries": logs
+        }
+    
     report = {
         "version": "2.0",
         "run": run_meta,
@@ -90,6 +99,8 @@ def build_json(
         report["compliance_smoke"] = compliance_smoke_section
     if bias_smoke_section:
         report["bias_smoke"] = bias_smoke_section
+    if logs_section:
+        report["logs"] = logs_section
     
     return report
 

@@ -1,0 +1,60 @@
+# Core FastAPI and web framework
+fastapi==0.116.1
+uvicorn==0.35.0
+pydantic==2.11.7
+
+# HTTP and async
+httpx==0.28.1
+aiohttp==3.9.1
+requests==2.32.3
+
+# Environment and configuration
+python-dotenv==1.0.1
+
+# AI/ML Libraries
+openai==1.54.5
+anthropic==0.40.0
+langchain==0.3.9
+langchain-openai==0.2.10
+langchain-community==0.3.9
+faiss-cpu==1.9.0
+numpy==1.26.4
+
+# Database and caching
+snowflake-connector-python==3.12.3
+redis==5.2.0
+
+# Authentication and security
+pyjwt==2.9.0
+cryptography==44.0.2
+passlib==1.7.4
+
+# Data processing and utilities
+pandas==2.2.3
+pyyaml==6.0.2
+jsonschema==4.23.0
+python-multipart==0.0.20
+
+# Testing and quality
+pytest==8.3.4
+pytest-asyncio==0.25.0
+coverage==7.8.0
+
+# Development tools
+black==24.1.1
+flake8==7.0.0
+
+# Math and scientific computing
+# scipy==1.13.1  # Removed due to Fortran compiler requirement
+
+# Date and time utilities
+python-dateutil==2.9.0
+
+# Text processing
+beautifulsoup4==4.13.3
+
+# Monitoring and observability
+structlog==24.4.0
+
+# Type hints
+typing-extensions==4.14.1
