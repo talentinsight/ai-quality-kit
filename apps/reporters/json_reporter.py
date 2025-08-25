@@ -14,6 +14,8 @@ def build_json(
     adv_rows: Optional[List[Dict[str, Any]]] = None,
     coverage: Optional[Dict[str, Any]] = None,
     resilience_details: Optional[List[Dict[str, Any]]] = None,
+    compliance_smoke_details: Optional[List[Dict[str, Any]]] = None,
+    bias_smoke_details: Optional[List[Dict[str, Any]]] = None,
     anonymize: bool = True
 ) -> Dict[str, Any]:
     """Build comprehensive JSON report from orchestrator data.
@@ -27,6 +29,8 @@ def build_json(
         adv_rows: Adversarial test details (optional)
         coverage: Coverage analysis (optional)
         resilience_details: Resilience test detail records (optional)
+        compliance_smoke_details: Compliance smoke test detail records (optional)
+        bias_smoke_details: Bias smoke test detail records (optional)
         anonymize: Whether to mask PII in text fields
         
     Returns:
@@ -49,6 +53,24 @@ def build_json(
             "details": resilience_details
         }
     
+    # Build compliance_smoke section if data exists
+    compliance_smoke_section = None
+    if compliance_smoke_details:
+        compliance_smoke_summary = summary.get("compliance_smoke", {})
+        compliance_smoke_section = {
+            "summary": compliance_smoke_summary,
+            "details": compliance_smoke_details
+        }
+    
+    # Build bias_smoke section if data exists
+    bias_smoke_section = None
+    if bias_smoke_details:
+        bias_smoke_summary = summary.get("bias_smoke", {})
+        bias_smoke_section = {
+            "summary": bias_smoke_summary,
+            "details": bias_smoke_details
+        }
+    
     report = {
         "version": "2.0",
         "run": run_meta,
@@ -61,9 +83,13 @@ def build_json(
         "coverage": coverage or {}
     }
     
-    # Add resilience section if present
+    # Add new sections if present
     if resilience_section:
         report["resilience"] = resilience_section
+    if compliance_smoke_section:
+        report["compliance_smoke"] = compliance_smoke_section
+    if bias_smoke_section:
+        report["bias_smoke"] = bias_smoke_section
     
     return report
 

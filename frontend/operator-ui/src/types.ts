@@ -6,7 +6,17 @@ export type TestSuite =
   | "safety"
   | "performance"
   | "regression"
-  | "resilience";
+  | "resilience"
+  | "compliance_smoke"
+  | "bias_smoke";
+
+export interface ProviderLimits {
+  requests_per_minute?: number;
+  tokens_per_minute?: number;
+  max_concurrent?: number;
+  tier?: string;
+  auto_detect?: boolean;
+}
 
 export interface ResilienceOptions {
   mode: "synthetic" | "passive";
@@ -19,6 +29,22 @@ export interface ResilienceOptions {
     fails: number;
     reset_s: number;
   };
+  provider_limits?: ProviderLimits;
+}
+
+export interface ComplianceSmokeOptions {
+  pii_patterns_file: string;
+  scan_fields: string[];
+  rbac_matrix: {
+    [role: string]: string[];
+  };
+}
+
+export interface BiasSmokeOptions {
+  groups: string[][];
+  max_pairs: number;
+  parity_metric: "refusal_rate" | "length_delta";
+  parity_threshold: number;
 }
 
 export interface OrchestratorRequest {
@@ -35,8 +61,12 @@ export interface OrchestratorRequest {
     attack_mutators?: number;
     perf_repeats?: number;
     resilience?: ResilienceOptions;
+    compliance_smoke?: ComplianceSmokeOptions;
+    bias_smoke?: BiasSmokeOptions;
   };
   testdata_id?: string;
+  shards?: number;
+  shard_id?: number;
 }
 
 export interface OrchestratorResult {

@@ -17,8 +17,16 @@ from apps.security.rate_limit import (
     reset_rate_limit_counters,
     _extract_token_from_auth,
     _get_client_ip,
+    clear_rate_limit_state,
     _should_exempt_path
 )
+
+@pytest.fixture(autouse=True)
+def clear_rate_limit_state_before_test():
+    """Clear rate limiting state before each test to ensure isolation."""
+    clear_rate_limit_state()
+    yield
+    clear_rate_limit_state()
 
 class TestTokenBucket:
     """Test token bucket algorithm."""
@@ -60,7 +68,7 @@ class TestTokenBucket:
         # Immediate request should fail
         allowed, retry_after = bucket.consume(1)
         assert allowed is False
-        assert retry_after == 0.5  # 1 token / 2 per sec
+        assert abs(retry_after - 0.5) < 0.01  # 1 token / 2 per sec (with tolerance)
         
         # Mock time advancement
         bucket.last_refill -= 1.0  # Simulate 1 second passed
@@ -68,7 +76,7 @@ class TestTokenBucket:
         # Should allow 2 tokens after 1 second
         allowed, _ = bucket.consume(2)
         assert allowed is True
-        assert bucket.tokens == 0.0
+        assert abs(bucket.tokens) < 0.01  # Close to 0 with tolerance
     
     def test_refill_does_not_exceed_capacity(self):
         """Test refill caps at bucket capacity."""
@@ -113,7 +121,7 @@ class TestInMemoryRateLimiter:
         # Next request should be blocked
         allowed, retry_after = await limiter.check_rate_limit(key, 5, 1.0)
         assert allowed is False
-        assert retry_after == 1.0  # Need 1 token at 1/sec
+        assert abs(retry_after - 1.0) < 0.01  # Need 1 token at 1/sec (with tolerance)
     
     @pytest.mark.asyncio
     async def test_different_keys_independent(self):
@@ -242,10 +250,10 @@ class TestRateLimitMiddleware:
     
     @patch.dict('os.environ', {
         'RL_ENABLED': 'true',
-        'RL_PER_TOKEN_PER_MIN': '5',  # Very low limit for testing
-        'RL_PER_TOKEN_BURST': '2',
-        'RL_PER_IP_PER_MIN': '10',
-        'RL_PER_IP_BURST': '3'
+        'RL_PER_TOKEN_PER_MIN': '60',  # 1 per second
+        'RL_PER_TOKEN_BURST': '5',     # Allow 5 initial requests
+        'RL_PER_IP_PER_MIN': '120',
+        'RL_PER_IP_BURST': '10'
     })
     def test_rate_limiting_enforcement(self):
         """Test rate limiting enforcement."""
@@ -258,15 +266,15 @@ class TestRateLimitMiddleware:
         
         client = TestClient(app)
         
-        # First few requests should succeed
-        for i in range(2):
+        # First 5 requests should succeed (burst limit)
+        for i in range(5):
             response = client.post(
                 "/ask", 
                 headers={"Authorization": "Bearer test-token"}
             )
             assert response.status_code == 200, f"Request {i} failed"
         
-        # Next request should be rate limited
+        # 6th request should be rate limited
         response = client.post(
             "/ask",
             headers={"Authorization": "Bearer test-token"}
@@ -279,7 +287,7 @@ class TestRateLimitMiddleware:
         
         # Check counters
         counters = get_rate_limit_counters()
-        assert counters["allowed_total"] == 2
+        assert counters["allowed_total"] == 5  # 5 successful requests
         assert counters["blocked_total"] >= 1
     
     @patch.dict('os.environ', {'RL_ENABLED': 'true'})

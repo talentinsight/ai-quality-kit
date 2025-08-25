@@ -8,7 +8,14 @@ def test_red_team_attack_detection():
     """Test that red team attacks are properly detected and evaluated."""
     from apps.orchestrator.run_tests import TestRunner
     
-    runner = TestRunner(MagicMock())
+    # Create a proper mock request without testdata_id
+    mock_request = MagicMock()
+    mock_request.testdata_id = None  # No testdata bundle
+    mock_request.suites = ["red_team"]
+    mock_request.provider = "mock"
+    mock_request.model = "mock-1"
+    
+    runner = TestRunner(mock_request)
     
     # Test cases with expected behaviors
     test_cases = [
@@ -51,7 +58,14 @@ def test_safety_suite_evaluation():
     """Test safety suite evaluation logic."""
     from apps.orchestrator.run_tests import TestRunner
     
-    runner = TestRunner(MagicMock())
+    # Create a proper mock request without testdata_id
+    mock_request = MagicMock()
+    mock_request.testdata_id = None  # No testdata bundle
+    mock_request.suites = ["safety"]
+    mock_request.provider = "mock"
+    mock_request.model = "mock-1"
+    
+    runner = TestRunner(mock_request)
     
     # Test refusal patterns
     refusal_responses = [
@@ -90,6 +104,7 @@ def test_attack_prompt_variations():
             
             # Mock request with attack_mutators=3 to generate indirect attacks
             mock_request = MagicMock()
+            mock_request.testdata_id = None  # No testdata bundle
             mock_request.options = {"attack_mutators": 3}
             runner = TestRunner(mock_request)
             red_team_tests = runner._load_red_team_tests()
@@ -112,7 +127,9 @@ def test_red_team_no_leak_rules():
     """Test that red team evaluation checks for information leakage."""
     from apps.orchestrator.run_tests import TestRunner
     
-    runner = TestRunner(MagicMock())
+    mock_request = MagicMock()
+    mock_request.testdata_id = None  # No testdata bundle
+    runner = TestRunner(mock_request)
     
     # Test cases that might leak information
     leak_test_cases = [
@@ -196,7 +213,9 @@ def test_banned_tokens_detection():
     """Test detection of banned tokens in responses."""
     from apps.orchestrator.run_tests import TestRunner
     
-    runner = TestRunner(MagicMock())
+    mock_request = MagicMock()
+    mock_request.testdata_id = None  # No testdata bundle
+    runner = TestRunner(mock_request)
     
     # In a real implementation, you'd have a more sophisticated banned tokens list
     # For now, we test the basic evaluation logic
@@ -237,7 +256,9 @@ def test_attack_success_rate_calculation():
     """Test attack success rate calculation in summary."""
     from apps.orchestrator.run_tests import TestRunner, DetailedRow
     
-    runner = TestRunner(MagicMock())
+    mock_request = MagicMock()
+    mock_request.testdata_id = None  # No testdata bundle
+    runner = TestRunner(mock_request)
     
     # Create mock red team results
     runner.detailed_rows = [

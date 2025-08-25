@@ -30,6 +30,9 @@ class ResilienceConfig:
     backoff_base_ms: int = 200
     circuit_fails: int = 5
     circuit_reset_s: float = 30.0
+    concurrency: int = 10
+    queue_depth: int = 50
+    breaker_enabled: bool = True
     
     @classmethod
     def from_env(cls) -> 'ResilienceConfig':
@@ -39,7 +42,10 @@ class ResilienceConfig:
             max_retries=int(os.getenv("PROVIDER_MAX_RETRIES", "2")),
             backoff_base_ms=int(os.getenv("PROVIDER_BACKOFF_BASE_MS", "200")),
             circuit_fails=int(os.getenv("PROVIDER_CIRCUIT_FAILS", "5")),
-            circuit_reset_s=float(os.getenv("PROVIDER_CIRCUIT_RESET_S", "30"))
+            circuit_reset_s=float(os.getenv("PROVIDER_CIRCUIT_RESET_S", "30")),
+            concurrency=int(os.getenv("PROVIDER_CONCURRENCY", "10")),
+            queue_depth=int(os.getenv("PROVIDER_QUEUE_DEPTH", "50")),
+            breaker_enabled=os.getenv("RESILIENT_BREAKER_ENABLED", "true").lower() == "true"
         )
 
 
@@ -145,7 +151,8 @@ class ResilientClient:
         
     async def call_with_resilience(self, func: Callable[[], T], operation_name: str = "provider_call") -> T:
         """Execute function with resilience patterns."""
-        if not self.circuit_breaker.can_execute():
+        # Check circuit breaker only if enabled
+        if self.config.breaker_enabled and not self.circuit_breaker.can_execute():
             logger.warning("Circuit breaker is open, failing fast", 
                           extra={"event": "circuit_open", "operation": operation_name})
             raise CircuitBreakerError("Circuit breaker is open")
@@ -170,7 +177,9 @@ class ResilientClient:
                           extra={"event": "provider_success", "operation": operation_name,
                                 "attempt": attempt + 1, "duration_ms": duration_ms})
                 
-                self.circuit_breaker.record_success()
+                # Record success only if breaker enabled
+                if self.config.breaker_enabled:
+                    self.circuit_breaker.record_success()
                 return result
                 
             except Exception as error:
@@ -202,7 +211,8 @@ class ResilientClient:
                     break
         
         # All retries exhausted or non-transient error
-        self.circuit_breaker.record_failure()
+        if self.config.breaker_enabled:
+            self.circuit_breaker.record_failure()
         
         if last_error:
             raise last_error

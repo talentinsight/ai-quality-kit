@@ -2,8 +2,9 @@
 
 import json
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, cast
 from openpyxl import Workbook
+from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.styles import Font, Alignment
 from openpyxl.utils import get_column_letter
 
@@ -38,13 +39,20 @@ def write_excel(path: str, data: Dict[str, Any]) -> None:
     if data.get("resilience") and data["resilience"].get("details"):
         _create_resilience_details_sheet(wb, data)
     
+    # Optional sheets for new smoke suites
+    if data.get("compliance_smoke") and data["compliance_smoke"].get("details"):
+        _create_compliance_details_sheet(wb, data)
+    
+    if data.get("bias_smoke") and data["bias_smoke"].get("details"):
+        _create_bias_details_sheet(wb, data)
+    
     # Save workbook
     wb.save(path)
 
 
 def _create_summary_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     """Create Summary sheet with run overview."""
-    ws = wb.create_sheet("Summary", 0)
+    ws = cast(Worksheet, wb.create_sheet("Summary", 0))
     
     headers = [
         "run_id", "started_at", "finished_at", "suites", "total_tests", 
@@ -59,11 +67,31 @@ def _create_summary_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
             "resilience_5xx", "resilience_429", "resilience_circuit_open", "resilience_p50_ms", "resilience_p95_ms"
         ])
     
+    # Add compliance_smoke headers if data exists
+    if data.get("compliance_smoke") and data["compliance_smoke"].get("summary"):
+        headers.extend([
+            "compliance_cases_scanned", "compliance_pii_hits", "compliance_rbac_checks", 
+            "compliance_rbac_violations", "compliance_pass"
+        ])
+    
+    # Add bias_smoke headers if data exists
+    if data.get("bias_smoke") and data["bias_smoke"].get("summary"):
+        headers.extend([
+            "bias_pairs", "bias_metric", "bias_fails", "bias_fail_ratio", "bias_pass"
+        ])
+    
+    # Add dataset metadata headers (additive)
+    summary = data.get("summary", {})
+    if summary.get("dataset_source"):
+        headers.extend([
+            "dataset_source", "dataset_version", "estimated_tests"
+        ])
+    
     # Write headers
     for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=header)  # type: ignore
+        cell = ws.cell(row=1, column=col, value=header)
         cell.font = Font(bold=True)  # type: ignore
-        ws.column_dimensions[get_column_letter(col)].width = 16  # type: ignore
+        ws.column_dimensions[get_column_letter(col)].width = 16
     
     # Write data row
     run_meta = data.get("run", {})
@@ -98,22 +126,53 @@ def _create_summary_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
             resilience_summary.get("p95_ms", 0)
         ])
     
+    # Add compliance_smoke data if available
+    if data.get("compliance_smoke") and data["compliance_smoke"].get("summary"):
+        compliance_summary = data["compliance_smoke"]["summary"]
+        row_data.extend([
+            compliance_summary.get("cases_scanned", 0),
+            compliance_summary.get("pii_hits", 0),
+            compliance_summary.get("rbac_checks", 0),
+            compliance_summary.get("rbac_violations", 0),
+            compliance_summary.get("pass", False)
+        ])
+    
+    # Add bias_smoke data if available
+    if data.get("bias_smoke") and data["bias_smoke"].get("summary"):
+        bias_summary = data["bias_smoke"]["summary"]
+        row_data.extend([
+            bias_summary.get("pairs", 0),
+            bias_summary.get("metric", "unknown"),
+            bias_summary.get("fails", 0),
+            bias_summary.get("fail_ratio", 0.0),
+            bias_summary.get("pass", False)
+        ])
+    
+    # Add dataset metadata if available (additive)
+    summary = data.get("summary", {})
+    if summary.get("dataset_source"):
+        row_data.extend([
+            summary.get("dataset_source", "unknown"),
+            summary.get("dataset_version", "n/a"),
+            summary.get("estimated_tests", 0)
+        ])
+    
     for col, value in enumerate(row_data, 1):
-        ws.cell(row=2, column=col, value=value)  # type: ignore
+        ws.cell(row=2, column=col, value=value)
     
     # Add deprecation note if applicable
     if summary.get("_deprecated_note"):
-        ws.cell(row=4, column=1, value="Note:")  # type: ignore
-        ws.cell(row=4, column=2, value=summary["_deprecated_note"])  # type: ignore
-        ws.cell(row=4, column=1).font = Font(bold=True)  # type: ignore
+        ws.cell(row=4, column=1, value="Note:")
+        ws.cell(row=4, column=2, value=summary["_deprecated_note"])
+        ws.cell(row=4, column=1).font = Font(bold=True)
     
     # Freeze panes and format
-    ws.freeze_panes = "A2"  # type: ignore
+    ws.freeze_panes = "A2"
 
 
 def _create_detailed_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     """Create Detailed sheet with per-test results."""
-    ws = wb.create_sheet("Detailed")
+    ws = cast(Worksheet, wb.create_sheet("Detailed"))
     
     headers = [
         "suite", "test_id", "provider", "model", "query_masked", 
@@ -123,9 +182,9 @@ def _create_detailed_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     
     # Write headers with styling
     for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=header)  # type: ignore
-        cell.font = Font(bold=True)  # type: ignore
-        cell.alignment = Alignment(wrap_text=True)  # type: ignore
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(wrap_text=True)
         
         # Set column widths
         if header in ["query_masked", "answer_masked"]:
@@ -133,7 +192,7 @@ def _create_detailed_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
         elif header in ["metrics_json", "context_ids"]:
             ws.column_dimensions[get_column_letter(col)].width = 30  # type: ignore
         else:
-            ws.column_dimensions[get_column_letter(col)].width = 16  # type: ignore
+            ws.column_dimensions[get_column_letter(col)].width = 16
     
     # Write data rows
     detailed_rows = data.get("detailed", [])
@@ -153,16 +212,16 @@ def _create_detailed_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
         ]
         
         for col, value in enumerate(values, 1):
-            cell = ws.cell(row=row_idx, column=col, value=value)  # type: ignore
+            cell = ws.cell(row=row_idx, column=col, value=value)
             if col in [5, 6]:  # query_masked, answer_masked
                 cell.alignment = Alignment(wrap_text=True)  # type: ignore
     
-    ws.freeze_panes = "A2"  # type: ignore
+    ws.freeze_panes = "A2"
 
 
 def _create_api_details_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     """Create API_Details sheet with API call information."""
-    ws = wb.create_sheet("API_Details")
+    ws = cast(Worksheet, wb.create_sheet("API_Details"))
     
     headers = [
         "suite", "test_id", "endpoint", "status_code", "x_source", 
@@ -171,9 +230,9 @@ def _create_api_details_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     
     # Write headers
     for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=header)  # type: ignore
+        cell = ws.cell(row=1, column=col, value=header)
         cell.font = Font(bold=True)  # type: ignore
-        ws.column_dimensions[get_column_letter(col)].width = 16  # type: ignore
+        ws.column_dimensions[get_column_letter(col)].width = 16
     
     # Write data rows
     api_rows = data.get("api_details", [])
@@ -193,12 +252,12 @@ def _create_api_details_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
         for col, value in enumerate(values, 1):
             ws.cell(row=row_idx, column=col, value=value)  # type: ignore
     
-    ws.freeze_panes = "A2"  # type: ignore
+    ws.freeze_panes = "A2"
 
 
 def _create_inputs_expected_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     """Create Inputs_And_Expected sheet with test configuration."""
-    ws = wb.create_sheet("Inputs_And_Expected")
+    ws = cast(Worksheet, wb.create_sheet("Inputs_And_Expected"))
     
     headers = [
         "suite", "test_id", "target_mode", "top_k", "options_json", 
@@ -207,15 +266,15 @@ def _create_inputs_expected_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     
     # Write headers
     for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=header)  # type: ignore
-        cell.font = Font(bold=True)  # type: ignore
-        cell.alignment = Alignment(wrap_text=True)  # type: ignore
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(wrap_text=True)
         
         # Set column widths for JSON columns
         if "_json" in header:
             ws.column_dimensions[get_column_letter(col)].width = 30  # type: ignore
         else:
-            ws.column_dimensions[get_column_letter(col)].width = 16  # type: ignore
+            ws.column_dimensions[get_column_letter(col)].width = 16
     
     # Write data rows
     inputs_rows = data.get("inputs_expected", [])
@@ -232,16 +291,16 @@ def _create_inputs_expected_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
         ]
         
         for col, value in enumerate(values, 1):
-            cell = ws.cell(row=row_idx, column=col, value=value)  # type: ignore
+            cell = ws.cell(row=row_idx, column=col, value=value)
             if "_json" in headers[col-1]:
                 cell.alignment = Alignment(wrap_text=True)  # type: ignore
     
-    ws.freeze_panes = "A2"  # type: ignore
+    ws.freeze_panes = "A2"
 
 
 def _create_adversarial_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     """Create Adversarial_Details sheet for red team results."""
-    ws = wb.create_sheet("Adversarial_Details")
+    ws = cast(Worksheet, wb.create_sheet("Adversarial_Details"))
     
     # Required column order as specified
     headers = [
@@ -251,9 +310,9 @@ def _create_adversarial_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     
     # Write headers with styling
     for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=header)  # type: ignore
-        cell.font = Font(bold=True)  # type: ignore
-        cell.alignment = Alignment(wrap_text=True)  # type: ignore
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(wrap_text=True)
     
     # Auto-size columns based on content type
     for col, header in enumerate(headers, 1):
@@ -262,7 +321,7 @@ def _create_adversarial_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
         elif header in ["safety_flags", "notes"]:
             ws.column_dimensions[get_column_letter(col)].width = 25  # type: ignore
         else:
-            ws.column_dimensions[get_column_letter(col)].width = 16  # type: ignore
+            ws.column_dimensions[get_column_letter(col)].width = 16
     
     # Write data rows
     adv_rows = data.get("adversarial_details", [])
@@ -283,17 +342,17 @@ def _create_adversarial_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
         ]
         
         for col, value in enumerate(values, 1):
-            cell = ws.cell(row=row_idx, column=col, value=value)  # type: ignore
+            cell = ws.cell(row=row_idx, column=col, value=value)
             # Apply text wrapping for long content fields
             if headers[col-1] in ["attack_text", "response_snippet", "notes"]:
                 cell.alignment = Alignment(wrap_text=True)  # type: ignore
     
-    ws.freeze_panes = "A2"  # type: ignore
+    ws.freeze_panes = "A2"
 
 
 def _create_coverage_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     """Create Coverage sheet for test coverage analysis."""
-    ws = wb.create_sheet("Coverage")
+    ws = cast(Worksheet, wb.create_sheet("Coverage"))
     
     # Required column order as specified
     headers = [
@@ -302,9 +361,9 @@ def _create_coverage_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     
     # Write headers with styling
     for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=header)  # type: ignore
-        cell.font = Font(bold=True)  # type: ignore
-        cell.alignment = Alignment(wrap_text=True)  # type: ignore
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(wrap_text=True)
     
     # Auto-size columns
     for col, header in enumerate(headers, 1):
@@ -329,14 +388,14 @@ def _create_coverage_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
         ]
         
         for col, value in enumerate(values, 1):
-            cell = ws.cell(row=row_idx, column=col, value=value)  # type: ignore
+            cell = ws.cell(row=row_idx, column=col, value=value)
     
-    ws.freeze_panes = "A2"  # type: ignore
+    ws.freeze_panes = "A2"
 
 
 def _create_resilience_details_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     """Create Resilience_Details sheet for resilience test results."""
-    ws = wb.create_sheet("Resilience_Details")
+    ws = cast(Worksheet, wb.create_sheet("Resilience_Details"))
     
     # Required column order as specified in requirements
     headers = [
@@ -344,15 +403,27 @@ def _create_resilience_details_sheet(wb: Workbook, data: Dict[str, Any]) -> None
         "outcome", "attempts", "latency_ms", "error_class", "mode"
     ]
     
+    # Check if we have resilience scenario data to append new columns (additive)
+    resilience_data = data.get("resilience", {})
+    details = resilience_data.get("details", [])
+    has_scenario_data = any(detail.get("scenario_id") for detail in details)
+    
+    # APPEND new scenario columns at the END (non-breaking)
+    if has_scenario_data:
+        headers.extend([
+            "scenario_id", "failure_mode", "payload_size", "target_timeout_ms", 
+            "fail_rate", "circuit_fails", "circuit_reset_s"
+        ])
+    
     # Write headers with styling
     for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=header)  # type: ignore
-        cell.font = Font(bold=True)  # type: ignore
-        cell.alignment = Alignment(wrap_text=True)  # type: ignore
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(wrap_text=True)
     
     # Auto-size columns
     for col in range(1, len(headers) + 1):
-        ws.column_dimensions[get_column_letter(col)].width = 16  # type: ignore
+        ws.column_dimensions[get_column_letter(col)].width = 16
     
     # Write resilience detail records
     resilience_details = data.get("resilience", {}).get("details", [])
@@ -371,7 +442,100 @@ def _create_resilience_details_sheet(wb: Workbook, data: Dict[str, Any]) -> None
             detail.get("mode", "")
         ]
         
+        # APPEND scenario data if present (additive)
+        if has_scenario_data:
+            values.extend([
+                detail.get("scenario_id", ""),
+                detail.get("failure_mode", ""),
+                detail.get("payload_size", ""),
+                detail.get("target_timeout_ms", ""),
+                detail.get("fail_rate", ""),
+                detail.get("circuit_fails", ""),
+                detail.get("circuit_reset_s", "")
+            ])
+        
         for col, value in enumerate(values, 1):
-            cell = ws.cell(row=row_idx, column=col, value=value)  # type: ignore
+            cell = ws.cell(row=row_idx, column=col, value=value)
     
-    ws.freeze_panes = "A2"  # type: ignore
+    ws.freeze_panes = "A2"
+
+
+def _create_compliance_details_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
+    """Create Compliance_Details sheet for compliance smoke test results."""
+    ws = cast(Worksheet, wb.create_sheet("Compliance_Details"))
+    
+    # Exact column headers as specified
+    headers = [
+        "run_id", "timestamp", "case_id", "route", "check", "status", "pattern", "notes"
+    ]
+    
+    # Write headers
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(wrap_text=True)
+    
+    # Auto-size columns
+    for col in range(1, len(headers) + 1):
+        ws.column_dimensions[get_column_letter(col)].width = 16
+    
+    # Write compliance detail records
+    compliance_details = data.get("compliance_smoke", {}).get("details", [])
+    
+    for row_idx, detail in enumerate(compliance_details, 2):
+        values = [
+            detail.get("run_id", ""),
+            detail.get("timestamp", ""),
+            detail.get("case_id", ""),
+            detail.get("route", ""),
+            detail.get("check", ""),
+            detail.get("status", ""),
+            detail.get("pattern", ""),
+            detail.get("notes", "")
+        ]
+        
+        for col, value in enumerate(values, 1):
+            cell = ws.cell(row=row_idx, column=col, value=value)
+    
+    ws.freeze_panes = "A2"
+
+
+def _create_bias_details_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
+    """Create Bias_Details sheet for bias smoke test results."""
+    ws = cast(Worksheet, wb.create_sheet("Bias_Details"))
+    
+    # Exact column headers as specified
+    headers = [
+        "run_id", "timestamp", "case_id", "group_a", "group_b", "metric", "value", "threshold", "notes"
+    ]
+    
+    # Write headers
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(wrap_text=True)
+    
+    # Auto-size columns
+    for col in range(1, len(headers) + 1):
+        ws.column_dimensions[get_column_letter(col)].width = 16
+    
+    # Write bias detail records
+    bias_details = data.get("bias_smoke", {}).get("details", [])
+    
+    for row_idx, detail in enumerate(bias_details, 2):
+        values = [
+            detail.get("run_id", ""),
+            detail.get("timestamp", ""),
+            detail.get("case_id", ""),
+            detail.get("group_a", ""),
+            detail.get("group_b", ""),
+            detail.get("metric", ""),
+            detail.get("value", ""),
+            detail.get("threshold", ""),
+            detail.get("notes", "")
+        ]
+        
+        for col, value in enumerate(values, 1):
+            cell = ws.cell(row=row_idx, column=col, value=value)
+    
+    ws.freeze_panes = "A2"

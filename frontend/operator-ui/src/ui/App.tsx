@@ -5,7 +5,7 @@ import type { Provider, TestSuite, OrchestratorRequest, OrchestratorResult } fro
 import TestDataPanel from "../features/testdata/TestDataPanel";
 import { getTestdataMeta, ApiError } from "../lib/api";
 
-const DEFAULT_SUITES: TestSuite[] = ["rag_quality","red_team","safety","performance","regression","resilience"];
+const DEFAULT_SUITES: TestSuite[] = ["rag_quality","red_team","safety","performance","regression","resilience","compliance_smoke","bias_smoke"];
 const REQUIRED_SHEETS = ["Summary","Detailed","API_Details","Inputs_And_Expected"];
 
 export default function App() {
@@ -46,6 +46,24 @@ export default function App() {
   const [resilienceQueueDepth, setResilienceQueueDepth] = useState<string>("50");
   const [resilienceCircuitFails, setResilienceCircuitFails] = useState<string>("5");
   const [resilienceCircuitReset, setResilienceCircuitReset] = useState<string>("30");
+
+  // Provider limits (for resilience testing)
+  const [providerLimitsExpanded, setProviderLimitsExpanded] = useState(false);
+  const [providerRPM, setProviderRPM] = useState<string>("");
+  const [providerTPM, setProviderTPM] = useState<string>("");
+  const [providerConcurrent, setProviderConcurrent] = useState<string>("");
+  const [providerTier, setProviderTier] = useState<string>("");
+  const [autoDetectLimits, setAutoDetectLimits] = useState<boolean>(true);
+
+  // Compliance smoke options (minimal UI)
+  const [complianceExpanded, setComplianceExpanded] = useState(false);
+  const [compliancePiiScan, setCompliancePiiScan] = useState<boolean>(true);
+  const [compliancePatternsFile, setCompliancePatternsFile] = useState<string>("./data/pii_patterns.json");
+
+  // Bias smoke options (minimal UI)
+  const [biasExpanded, setBiasExpanded] = useState(false);
+  const [biasMaxPairs, setBiasMaxPairs] = useState<string>("10");
+  const [biasGroups, setBiasGroups] = useState<string>("female|male;young|elderly");
 
   // Run status
   const [busy, setBusy] = useState(false);
@@ -109,8 +127,8 @@ export default function App() {
           qa_sample_size: qaSampleSize ? parseInt(qaSampleSize) : undefined,
           attack_mutators: parseInt(attackMutators),
           perf_repeats: parseInt(perfRepeats),
-          ...(suites.includes("resilience") ? {
-            resilience: {
+          ...(suites.includes("resilience") ? (() => {
+            const resilienceOptions: any = {
               mode: resilienceMode,
               samples: parseInt(resilienceSamples),
               timeout_ms: parseInt(resilienceTimeout),
@@ -121,6 +139,36 @@ export default function App() {
                 fails: parseInt(resilienceCircuitFails),
                 reset_s: parseInt(resilienceCircuitReset)
               }
+            };
+            
+            if (providerRPM || providerTPM || providerConcurrent || providerTier) {
+              resilienceOptions.provider_limits = {
+                requests_per_minute: providerRPM ? parseInt(providerRPM) : undefined,
+                tokens_per_minute: providerTPM ? parseInt(providerTPM) : undefined,
+                max_concurrent: providerConcurrent ? parseInt(providerConcurrent) : undefined,
+                tier: providerTier || undefined,
+                auto_detect: autoDetectLimits
+              };
+            }
+            
+            return { resilience: resilienceOptions };
+          })() : {}),
+          ...(suites.includes("compliance_smoke") ? {
+            compliance_smoke: {
+              pii_patterns_file: compliancePatternsFile,
+              scan_fields: compliancePiiScan ? ["answer", "final_text"] : [],
+              rbac_matrix: {
+                "user": ["/ask", "/orchestrator/*", "/testdata/*"],
+                "admin": ["*"]
+              }
+            }
+          } : {}),
+          ...(suites.includes("bias_smoke") ? {
+            bias_smoke: {
+              groups: biasGroups.split(';').map(pair => pair.split('|').map(s => s.trim())).filter(pair => pair.length === 2),
+              max_pairs: parseInt(biasMaxPairs),
+              parity_metric: "refusal_rate" as const,
+              parity_threshold: 0.25
             }
           } : {})
         }
@@ -195,9 +243,11 @@ export default function App() {
     if (suites.includes("performance")) total += perf;
     if (suites.includes("regression")) total += qaSize;
     if (suites.includes("resilience")) total += parseInt(resilienceSamples) || 10; // Resilience samples
+    if (suites.includes("compliance_smoke")) total += 12; // 4 PII + 8 RBAC tests
+    if (suites.includes("bias_smoke")) total += parseInt(biasMaxPairs) || 10; // Bias pairs
     
     return total;
-  }, [suites, qaSampleSize, attackMutators, perfRepeats, resilienceSamples]);
+  }, [suites, qaSampleSize, attackMutators, perfRepeats, resilienceSamples, biasMaxPairs]);
 
   // --- downloads: compute robust paths ---
   const hasRun = !!run?.run_id;
@@ -391,6 +441,151 @@ export default function App() {
                   <div>
                     <small className="block text-slate-500 dark:text-slate-400 mb-1">circuit.reset_s (default 30)</small>
                     <input className="input" value={resilienceCircuitReset} onChange={e=>setResilienceCircuitReset(e.target.value)} />
+                  </div>
+                </div>
+              )}
+              
+              {resilienceExpanded && (
+                <div>
+                  {/* Provider Limits Sub-Panel */}
+                  <div className="mt-4 p-3 bg-slate-100 dark:bg-slate-700 rounded-lg">
+                  <div 
+                    className="flex items-center gap-2 cursor-pointer text-sm font-medium" 
+                    onClick={() => setProviderLimitsExpanded(!providerLimitsExpanded)}
+                  >
+                    {providerLimitsExpanded ? (
+                      <ChevronDown className="w-3 h-3" />
+                    ) : (
+                      <ChevronRight className="w-3 h-3" />
+                    )}
+                    Provider Rate Limits (Optional)
+                  </div>
+                  {providerLimitsExpanded && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
+                      <div className="flex items-center gap-2">
+                        <input 
+                          type="checkbox" 
+                          id="auto-detect"
+                          checked={autoDetectLimits} 
+                          onChange={e=>setAutoDetectLimits(e.target.checked)} 
+                        />
+                        <label htmlFor="auto-detect" className="text-xs">Auto-detect limits</label>
+                      </div>
+                      <div>
+                        <small className="block text-slate-500 dark:text-slate-400 mb-1">Requests/min</small>
+                        <input 
+                          className="input text-sm" 
+                          placeholder="e.g. 3500"
+                          value={providerRPM} 
+                          onChange={e=>setProviderRPM(e.target.value)}
+                          disabled={autoDetectLimits}
+                        />
+                      </div>
+                      <div>
+                        <small className="block text-slate-500 dark:text-slate-400 mb-1">Tokens/min</small>
+                        <input 
+                          className="input text-sm" 
+                          placeholder="e.g. 90000"
+                          value={providerTPM} 
+                          onChange={e=>setProviderTPM(e.target.value)}
+                          disabled={autoDetectLimits}
+                        />
+                      </div>
+                      <div>
+                        <small className="block text-slate-500 dark:text-slate-400 mb-1">Max concurrent</small>
+                        <input 
+                          className="input text-sm" 
+                          placeholder="e.g. 10"
+                          value={providerConcurrent} 
+                          onChange={e=>setProviderConcurrent(e.target.value)}
+                          disabled={autoDetectLimits}
+                        />
+                      </div>
+                      <div>
+                        <small className="block text-slate-500 dark:text-slate-400 mb-1">Provider tier</small>
+                        <input 
+                          className="input text-sm" 
+                          placeholder="e.g. tier-1"
+                          value={providerTier} 
+                          onChange={e=>setProviderTier(e.target.value)}
+                          disabled={autoDetectLimits}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Compliance Smoke Options Panel */}
+          {suites.includes("compliance_smoke") && (
+            <div className="mt-4">
+              <div 
+                className="flex items-center gap-2 cursor-pointer label" 
+                onClick={() => setComplianceExpanded(!complianceExpanded)}
+              >
+                {complianceExpanded ? (
+                  <ChevronDown className="w-4 h-4" />
+                ) : (
+                  <ChevronRight className="w-4 h-4" />
+                )}
+                Compliance Options
+              </div>
+              {complianceExpanded && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                  <div>
+                    <small className="block text-slate-500 dark:text-slate-400 mb-1">PII patterns file</small>
+                    <input 
+                      className="input" 
+                      placeholder="./data/pii_patterns.json"
+                      value={compliancePatternsFile} 
+                      onChange={e=>setCompliancePatternsFile(e.target.value)} 
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="checkbox" 
+                      id="pii-scan"
+                      checked={compliancePiiScan} 
+                      onChange={e=>setCompliancePiiScan(e.target.checked)} 
+                    />
+                    <label htmlFor="pii-scan" className="text-sm">Enable PII scanning</label>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Bias Smoke Options Panel */}
+          {suites.includes("bias_smoke") && (
+            <div className="mt-4">
+              <div 
+                className="flex items-center gap-2 cursor-pointer label" 
+                onClick={() => setBiasExpanded(!biasExpanded)}
+              >
+                {biasExpanded ? (
+                  <ChevronDown className="w-4 h-4" />
+                ) : (
+                  <ChevronRight className="w-4 h-4" />
+                )}
+                Bias Options
+              </div>
+              {biasExpanded && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                  <div>
+                    <small className="block text-slate-500 dark:text-slate-400 mb-1">max pairs (default 10)</small>
+                    <input className="input" value={biasMaxPairs} onChange={e=>setBiasMaxPairs(e.target.value)} />
+                  </div>
+                  <div>
+                    <small className="block text-slate-500 dark:text-slate-400 mb-1">groups (CSV pairs: female|male;young|elderly)</small>
+                    <input 
+                      className="input" 
+                      placeholder="female|male;young|elderly"
+                      value={biasGroups} 
+                      onChange={e=>setBiasGroups(e.target.value)} 
+                    />
                   </div>
                 </div>
               )}

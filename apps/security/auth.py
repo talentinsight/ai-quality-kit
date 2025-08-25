@@ -412,13 +412,14 @@ def get_principal(credentials: Optional[HTTPAuthorizationCredentials] = Depends(
             raise HTTPException(
                 status_code=401,
                 detail={"error": "invalid_token", "message": "Token not recognized"},
-                headers={"WWW-Authenticate": "Bearer"}
-            )
-        
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    
         role = token_role_map[token]
         token_hash_prefix = _get_token_hash_prefix(token)
         
         return Principal(role=role, token_hash_prefix=token_hash_prefix)
+    
     else:
         raise HTTPException(
             status_code=401,

@@ -134,21 +134,23 @@ class TestOrchestratorIntegration:
             suites=["rag_quality"]
         )
         
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Create a mock golden qaset file
-            qaset_path = Path(temp_dir) / "qaset.jsonl"
-            qaset_content = '''{"question": "Golden question?", "answer": "Golden answer"}'''
-            qaset_path.write_text(qaset_content)
-            
-            with patch('apps.orchestrator.run_tests.os.path.exists') as mock_exists:
-                mock_exists.return_value = True
-                with patch('builtins.open', lambda *args, **kwargs: open(qaset_path)):
-                    runner = TestRunner(request)
-                    tests = runner._load_rag_quality_tests()
-                    
-                    assert len(tests) > 0
-                    # Should use golden data format
-                    assert "Golden question?" in str(tests)
+        # Mock the golden file read operation directly
+        mock_golden_data = '''{"question": "Golden question?", "answer": "Golden answer"}'''
+        
+        with patch('apps.orchestrator.run_tests.os.path.exists') as mock_exists:
+            mock_exists.return_value = True
+            with patch('builtins.open') as mock_open:
+                # Setup mock file handle
+                mock_file = MagicMock()
+                mock_file.__enter__.return_value = [mock_golden_data]
+                mock_open.return_value = mock_file
+                
+                runner = TestRunner(request)
+                tests = runner._load_rag_quality_tests()
+                
+                assert len(tests) > 0
+                # Should use golden data format
+                assert "Golden question?" in str(tests)
     
     def test_load_red_team_tests_from_testdata(self, sample_testdata_bundle):
         """Test loading red team tests from testdata bundle."""
@@ -182,21 +184,23 @@ class TestOrchestratorIntegration:
             suites=["red_team"]
         )
         
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Create a mock safety attacks file
-            attacks_path = Path(temp_dir) / "attacks.txt"
-            attacks_content = "Test attack 1\nTest attack 2"
-            attacks_path.write_text(attacks_content)
-            
-            with patch('apps.orchestrator.run_tests.os.path.exists') as mock_exists:
-                mock_exists.return_value = True
-                with patch('builtins.open', lambda *args, **kwargs: open(attacks_path)):
-                    runner = TestRunner(request)
-                    tests = runner._load_red_team_tests()
-                    
-                    assert len(tests) > 0
-                    # Should use safety file data
-                    assert any("Test attack" in t["query"] for t in tests)
+        # Mock the safety file read operation directly
+        mock_safety_data = ["Test attack 1", "Test attack 2"]
+        
+        with patch('apps.orchestrator.run_tests.os.path.exists') as mock_exists:
+            mock_exists.return_value = True
+            with patch('builtins.open') as mock_open:
+                # Setup mock file handle
+                mock_file = MagicMock()
+                mock_file.__enter__.return_value = mock_safety_data
+                mock_open.return_value = mock_file
+                
+                runner = TestRunner(request)
+                tests = runner._load_red_team_tests()
+                
+                assert len(tests) > 0
+                # Should use safety file data
+                assert any("Test attack" in t["query"] for t in tests)
     
     def test_load_safety_tests_inherits_from_red_team(self, sample_testdata_bundle):
         """Test safety tests inherit from red team tests."""

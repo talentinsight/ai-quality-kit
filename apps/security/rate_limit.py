@@ -94,11 +94,15 @@ class InMemoryRateLimiter:
         
         for key in keys_to_remove:
             del self.buckets[key]
-            
+        
         self.last_cleanup = now
         
         if keys_to_remove:
             logger.debug(f"Cleaned up {len(keys_to_remove)} unused rate limit buckets")
+    
+    def clear_all_buckets(self):
+        """Clear all rate limit buckets. Used for testing."""
+        self.buckets.clear()
     
     async def check_rate_limit(self, key: str, capacity: int, refill_rate: float) -> Tuple[bool, float]:
         """
@@ -241,6 +245,21 @@ async def get_rate_limiter() -> Union[RedisRateLimiter, InMemoryRateLimiter]:
             logger.info("Using in-memory rate limiter")
     
     return _rate_limiter
+
+def clear_rate_limit_state():
+    """Clear all rate limiting state. Used for testing."""
+    global _rate_limiter, _config, _rate_limit_counters
+    
+    if _rate_limiter and hasattr(_rate_limiter, 'clear_all_buckets'):
+        _rate_limiter.clear_all_buckets()
+    
+    # Reset counters
+    _rate_limit_counters["allowed_total"] = 0
+    _rate_limit_counters["blocked_total"] = 0
+    
+    # Force reconfiguration on next middleware call
+    _config = None
+    _rate_limiter = None
 
 def _extract_token_from_auth(authorization: Optional[str]) -> Optional[str]:
     """Extract token from Authorization header."""

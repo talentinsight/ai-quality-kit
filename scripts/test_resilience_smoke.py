@@ -154,8 +154,8 @@ def test_backward_compatibility():
     return result["run_id"]
 
 
-def test_json_report_structure(run_id: str):
-    """Test JSON report includes resilience data."""
+def check_json_report_structure(run_id: str):
+    """Check JSON report includes resilience data."""
     print("🧪 Test 4: JSON report structure")
     
     response = requests.get(f"{BASE_URL}/orchestrator/report/{run_id}.json")
@@ -190,8 +190,8 @@ def test_json_report_structure(run_id: str):
     print(f"  ✅ JSON report structure verified: {len(details)} detail records")
     
 
-def test_excel_report_available(run_id: str):
-    """Test Excel report is available."""
+def check_excel_report_available(run_id: str):
+    """Check Excel report is available."""
     print("🧪 Test 5: Excel report availability")
     
     response = requests.get(f"{BASE_URL}/orchestrator/report/{run_id}.xlsx")
@@ -259,8 +259,8 @@ def main():
         run_id3 = test_backward_compatibility()
         
         # Test reports with most recent run
-        test_json_report_structure(run_id2)
-        test_excel_report_available(run_id2)
+        check_json_report_structure(run_id2)
+        check_excel_report_available(run_id2)
         
         # Test mixed suites
         test_mixed_suites()
