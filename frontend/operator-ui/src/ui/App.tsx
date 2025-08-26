@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Download, Play, ShieldCheck, Settings2, MoonStar, Sun, Server, CheckCircle2, XCircle, Rocket, ChevronDown, ChevronRight, RefreshCw, X } from "lucide-react";
+import { Download, Play, ShieldCheck, Settings2, MoonStar, Sun, Server, CheckCircle2, XCircle, Rocket, ChevronDown, ChevronRight, RefreshCw, X, MessageCircle } from "lucide-react";
 import clsx from "clsx";
 import type { Provider, TestSuite, OrchestratorRequest, OrchestratorResult } from "../types";
 import TestDataPanel from "../features/testdata/TestDataPanel";
 import { getTestdataMeta, ApiError } from "../lib/api";
+import ChatWizard from "../components/ChatWizard";
 
 const DEFAULT_SUITES: TestSuite[] = ["rag_quality","red_team","safety","performance","regression","resilience","compliance_smoke","bias_smoke"];
 const REQUIRED_SHEETS = ["Summary","Detailed","API_Details","Inputs_And_Expected"];
@@ -77,6 +78,9 @@ export default function App() {
   const [testdataId, setTestdataId] = useState("");
   const [testdataValid, setTestdataValid] = useState<boolean | null>(null);
   const [validatingTestdata, setValidatingTestdata] = useState(false);
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'classic' | 'chat'>('classic');
 
   const thresholds = useMemo(() => ({
     faithfulness_min: Number(faithMin),
@@ -350,10 +354,45 @@ export default function App() {
         </div>
       </div>
 
+      {/* Tab Navigation */}
+      <div className="border-b border-slate-200/80 dark:border-slate-700/70 bg-white/70 dark:bg-slate-900/60">
+        <div className="mx-auto max-w-6xl px-4">
+          <nav className="flex space-x-8">
+            <button
+              onClick={() => setActiveTab('classic')}
+              className={`py-3 px-2 text-sm transition-colors ${
+                activeTab === 'classic'
+                  ? 'text-slate-900 dark:text-slate-100 font-medium'
+                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <Settings2 size={16} />
+                <span>Classic Form</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('chat')}
+              className={`py-3 px-2 text-sm transition-colors ${
+                activeTab === 'chat'
+                  ? 'text-slate-900 dark:text-slate-100 font-medium'
+                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <MessageCircle size={16} />
+                <span>Chat Wizard</span>
+              </div>
+            </button>
+          </nav>
+        </div>
+      </div>
+
       {/* Content */}
-      <div className="mx-auto max-w-6xl px-4 py-6 grid gap-6">
-        {/* Control panel */}
-        <div className="card p-5">
+      {activeTab === 'classic' ? (
+        <div className="mx-auto max-w-6xl px-4 py-6 grid gap-6">
+          {/* Control panel */}
+          <div className="card p-5">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="label">Target Mode</label>
@@ -808,6 +847,11 @@ export default function App() {
           </div>
         )}
       </div>
+      ) : (
+        <div className="h-[calc(100vh-200px)]">
+          <ChatWizard />
+        </div>
+      )}
     </div>
   );
 }

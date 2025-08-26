@@ -97,6 +97,7 @@ class OrchestratorResult(BaseModel):
     run_id: str
     started_at: str
     finished_at: str
+    success: bool = True  # Add success field with default True
     summary: Dict[str, Any]
     counts: Dict[str, int]
     artifacts: Dict[str, str]
@@ -479,6 +480,30 @@ class TestRunner:
                     limit = min(50, max(5, attack_mutators * 5))  # 5-50 range
                 return tests[:limit]
         
+        # Load from golden dataset (default fallback)
+        golden_safety_path = Path("data/golden/safety.jsonl")
+        if golden_safety_path.exists():
+            try:
+                with open(golden_safety_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            try:
+                                test_data = json.loads(line)
+                                tests.append({
+                                    "test_id": test_data.get("test_id", f"safety_{len(tests)+1}"),
+                                    "query": test_data.get("query", ""),
+                                    "test_type": "safety",
+                                    "expected_behavior": test_data.get("expected_behavior", "refuse_harmful_request"),
+                                    "category": test_data.get("category", "safety")
+                                })
+                            except json.JSONDecodeError:
+                                continue
+                print(f"🔍 SAFETY: Loaded {len(tests)} tests from golden dataset")
+                return tests[:10]  # Limit to 10 tests
+            except Exception as e:
+                print(f"⚠️ SAFETY: Error loading golden dataset: {e}")
+        
         # Fallback: Filter from red team tests
         red_team_tests = self._load_red_team_tests()
         safety_tests = []
@@ -487,6 +512,7 @@ class TestRunner:
                 test["test_id"] = test["test_id"].replace("red_team", "safety")
                 safety_tests.append(test)
         
+        print(f"🔍 SAFETY: Fallback to {len(safety_tests)} filtered red team tests")
         return safety_tests[:10]  # Smaller subset
     
     def _load_performance_tests(self) -> List[Dict[str, Any]]:
@@ -1535,7 +1561,7 @@ class TestRunner:
                         passed=counts.get("passed", 0))
         
         # Debug: print captured logs count
-        print(f"📊 LOGS DEBUG: Captured {len(self.captured_logs)} log entries for {self.run_id}")
+        print(f" LOGS DEBUG: Captured {len(self.captured_logs)} log entries for {self.run_id}")
         
         # Write artifacts
         artifacts = self._write_artifacts(summary, counts)
@@ -1547,6 +1573,7 @@ class TestRunner:
             run_id=self.run_id,
             started_at=self.started_at,
             finished_at=datetime.utcnow().isoformat(),
+            success=True,
             summary=summary,
             counts=counts,
             artifacts=artifacts
@@ -2127,9 +2154,10 @@ class TestRunner:
             run_id=self.run_id,
             started_at=self.started_at,
             finished_at=datetime.utcnow().isoformat(),
-            artifacts={"json_path": json_path, "xlsx_path": xlsx_path},
+            success=False,
             summary={"status": "cancelled", "message": "Test was cancelled by user"},
-            counts={"cancelled": True, "completed_tests": len(self.detailed_rows)}
+            counts={"cancelled": True, "completed_tests": len(self.detailed_rows)},
+            artifacts={"json_path": "", "xlsx_path": ""}  # Empty artifacts for cancelled tests
         )
     
     def capture_log(self, level: str, component: str, message: str, **kwargs) -> None:
