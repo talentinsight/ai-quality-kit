@@ -114,6 +114,13 @@ async def readyz():
     return {"status": "ready"}
 
 
+@app.get("/config")
+async def get_config():
+    """Get application configuration for frontend."""
+    from apps.settings import settings
+    return settings.get_powerbi_config_dict()
+
+
 @app.get("/health")
 async def health():
     """Detailed health check."""

@@ -1566,6 +1566,9 @@ class TestRunner:
         # Write artifacts
         artifacts = self._write_artifacts(summary, counts)
         
+        # Publish to Power BI if enabled
+        self._publish_to_powerbi(summary, counts, artifacts)
+        
         # Schedule auto-deletion if configured
         self._schedule_auto_delete()
         
@@ -2172,3 +2175,66 @@ class TestRunner:
         # Add any additional fields
         log_entry.update(kwargs)
         self.captured_logs.append(log_entry)
+    
+    def _publish_to_powerbi(self, summary: Dict[str, Any], counts: Dict[str, int], artifacts: Dict[str, str]) -> None:
+        """Publish test results to Power BI if enabled."""
+        from apps.settings import settings
+        
+        if not settings.POWERBI_ENABLED:
+            return
+        
+        if not settings.validate_powerbi_config():
+            print(f"⚠️  Power BI enabled but configuration incomplete for run {self.run_id}")
+            return
+        
+        try:
+            from apps.orchestrator.integrations.powerbi_publisher import PowerBIClient, ensure_dataset, publish_run_result
+            
+            # Build result dictionary for Power BI
+            result_dict = {
+                "run_id": self.run_id,
+                "started_at": self.started_at,
+                "finished_at": datetime.utcnow().isoformat(),
+                "duration_ms": int((datetime.utcnow() - datetime.fromisoformat(self.started_at.replace('Z', '+00:00'))).total_seconds() * 1000),
+                "provider": self.request.provider or "",
+                "model": self.request.model or "",
+                "suites": list(self.request.suites),
+                "metrics": {
+                    "total": counts.get("total_tests", 0),
+                    "pass_count": counts.get("passed", 0),
+                    "policy_violations": counts.get("policy_violations", 0)
+                },
+                "tests": [
+                    {
+                        "suite": row.suite,
+                        "name": row.test_id,
+                        "status": row.status,
+                        "score": row.faithfulness if row.faithfulness is not None else 0.0,
+                        "latency_ms": row.latency_ms
+                    }
+                    for row in self.detailed_rows
+                ]
+            }
+            
+            # Create Power BI client and publish
+            client = PowerBIClient(
+                tenant_id=settings.POWERBI_TENANT_ID,
+                client_id=settings.POWERBI_CLIENT_ID,
+                client_secret=settings.POWERBI_CLIENT_SECRET
+            )
+            
+            dataset_id = ensure_dataset(client, settings.POWERBI_WORKSPACE_ID, settings.POWERBI_DATASET_NAME)
+            publish_run_result(client, settings.POWERBI_WORKSPACE_ID, dataset_id, result_dict)
+            
+            # Add Power BI info to artifacts if successful
+            if "powerbi" not in artifacts:
+                artifacts["powerbi"] = json.dumps({
+                    "workspace_id": settings.POWERBI_WORKSPACE_ID,
+                    "dataset_name": settings.POWERBI_DATASET_NAME
+                })
+            
+            print(f"✅ Published run {self.run_id} to Power BI dataset: {dataset_id}")
+            
+        except Exception as e:
+            print(f"⚠️  Failed to publish run {self.run_id} to Power BI: {e}")
+            # Do not raise - Power BI failures should not break the test run

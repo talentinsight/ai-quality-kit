@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { RunConfig, StepId, Message, ValidationError } from '../types/runConfig';
 
 interface WizardState {
@@ -47,7 +48,8 @@ const stepOrder: StepId[] = [
   'compliance', 'bias', 'testdataId', 'testData', 'summary'
 ];
 
-export const useWizardStore = create<WizardState>((set, get) => ({
+export const useWizardStore = create(persist<WizardState>(
+  (set, get) => ({
   config: initialConfig,
   currentStep: 'mode',
   completedSteps: new Set(),
@@ -124,7 +126,9 @@ export const useWizardStore = create<WizardState>((set, get) => ({
     isProcessing: false,
     errors: []
   })
-}));
+  }),
+  { name: "wizard-v1" }
+));
 
 // Helper functions
 export const getNextStep = (currentStep: StepId): StepId | null => {

@@ -79,6 +79,12 @@ export interface OrchestratorResult {
   counts?: Record<string, unknown>;
 }
 
+export interface OrchestratorStartResponse {
+  run_id: string;
+  status: string;
+  message: string;
+}
+
 // Test Data Intake types
 export type ArtifactType = 'passages' | 'qaset' | 'attacks' | 'schema';
 

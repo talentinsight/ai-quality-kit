@@ -204,6 +204,52 @@ async def run_tests(
         )
 
 
+@router.post("/start", response_model=OrchestratorStartResponse)
+async def start_tests(
+    http_request: Request,
+    request: OrchestratorRequest,
+    background: BackgroundTasks,
+    principal: Optional[Principal] = Depends(require_user_or_admin())
+) -> OrchestratorStartResponse:
+    """
+    Start test execution in background and return immediately.
+    
+    Args:
+        http_request: FastAPI request object for audit logging
+        request: Orchestrator request with test configuration
+        background: FastAPI background tasks
+        principal: Authenticated principal (if auth enabled)
+        
+    Returns:
+        Immediate response with run_id and status
+    """
+    start_time = time.time()
+    actor = principal.token_hash_prefix if principal else "anonymous"
+    client_ip = _get_client_ip(http_request)
+
+    runner = TestRunner(request)
+    _running_tests[runner.run_id] = {"cancelled": False, "start_time": time.time()}
+
+    audit_request_accepted(
+        route="/orchestrator/start",
+        actor=actor,
+        ip=client_ip
+    )
+    audit_orchestrator_run_started(run_id=runner.run_id, suites=list(request.suites), provider=request.provider, model=request.model, actor=actor)
+
+    async def _bg():
+        try:
+            result = await runner.run_all_tests()
+            _running_tests.pop(runner.run_id, None)
+            audit_orchestrator_run_finished(run_id=runner.run_id, suites=list(request.suites), provider=request.provider, model=request.model, actor=actor, duration_ms=(time.time()-start_time)*1000, success=True, testdata_id=request.testdata_id)
+        except Exception as e:
+            _running_tests.pop(runner.run_id, None)
+            audit_orchestrator_run_finished(run_id=runner.run_id, suites=list(request.suites), provider=request.provider, model=request.model, actor=actor, duration_ms=(time.time()-start_time)*1000, success=False, testdata_id=request.testdata_id, error=str(e))
+
+    background.add_task(_bg)
+    return OrchestratorStartResponse(run_id=runner.run_id, status="started", message="Run started in background")
+
+
 @router.get("/report/{run_id}.json")
 async def get_json_report(
     run_id: str,

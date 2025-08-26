@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Download, Play, ShieldCheck, Settings2, MoonStar, Sun, Server, CheckCircle2, XCircle, Rocket, ChevronDown, ChevronRight, RefreshCw, X, MessageCircle } from "lucide-react";
+import { Download, Play, ShieldCheck, Settings2, MoonStar, Sun, Server, CheckCircle2, XCircle, Rocket, ChevronDown, ChevronRight, RefreshCw, X, MessageCircle, Info } from "lucide-react";
 import clsx from "clsx";
 import type { Provider, TestSuite, OrchestratorRequest, OrchestratorResult } from "../types";
 import TestDataPanel from "../features/testdata/TestDataPanel";
 import { getTestdataMeta, ApiError } from "../lib/api";
 import ChatWizard from "../components/ChatWizard";
+import RequirementsMatrix from "../components/RequirementsMatrix";
+import { computeRequirementMatrix, ProvidedIntake } from "../lib/requirementStatus";
 
 const DEFAULT_SUITES: TestSuite[] = ["rag_quality","red_team","safety","performance","regression","resilience","compliance_smoke","bias_smoke"];
 const REQUIRED_SHEETS = ["Summary","Detailed","API_Details","Inputs_And_Expected"];
@@ -82,11 +84,45 @@ export default function App() {
   // Tab state
   const [activeTab, setActiveTab] = useState<'classic' | 'chat'>('classic');
 
+  // Requirements matrix state
+  const [showRequirementsModal, setShowRequirementsModal] = useState(false);
+
   const thresholds = useMemo(() => ({
     faithfulness_min: Number(faithMin),
     context_recall_min: Number(crecMin),
     toxicity_max: Number(toxMax)
   }), [faithMin, crecMin, toxMax]);
+
+  // Compute provided intake for requirements matrix
+  const getProvidedIntake = (): ProvidedIntake => {
+    const provided: ProvidedIntake = {};
+    
+    // In classic form, we don't have direct access to uploaded data counts
+    // This would need to be integrated with actual test data state
+    // For now, we'll assume no data is provided unless testdataId exists
+    if (testdataId) {
+      // Mock some data if testdata ID is set
+      provided.passages = { count: 10 };
+      provided.qaset = { count: 5 };
+    }
+    
+    // Handle compliance PII patterns
+    if (compliancePatternsFile) {
+      provided.pii_patterns = { path: compliancePatternsFile };
+    }
+    
+    // Handle bias groups
+    if (biasGroups) {
+      const pairs = biasGroups.split(';').length;
+      provided.bias_groups = { pairs };
+    }
+    
+    return provided;
+  };
+
+  // Compute requirements matrix for classic form
+  const providedIntake = getProvidedIntake();
+  const requirementRows = computeRequirementMatrix(suites, providedIntake, true); // Default to allowing defaults in classic form
 
   function toggleSuite(s: TestSuite) {
     setSuites(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
@@ -800,6 +836,25 @@ export default function App() {
           
           {testDataExpanded && (
             <div className="mt-4">
+              {/* Requirements Banner */}
+              {suites.length > 0 && (
+                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Info size={16} className="text-blue-600" />
+                      <span className="text-sm text-blue-800">
+                        View which data are required by your selected suites.
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setShowRequirementsModal(true)}
+                      className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                    >
+                      Show Requirements
+                    </button>
+                  </div>
+                </div>
+              )}
               <TestDataPanel token={token} />
             </div>
           )}
@@ -850,6 +905,36 @@ export default function App() {
       ) : (
         <div className="h-[calc(100vh-200px)]">
           <ChatWizard />
+        </div>
+      )}
+
+      {/* Requirements Matrix Modal */}
+      {showRequirementsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-2xl shadow-xl max-w-4xl max-h-[80vh] overflow-hidden">
+            <div className="p-6 border-b">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold text-gray-900">Test Data Requirements Matrix</h2>
+                <button
+                  onClick={() => setShowRequirementsModal(false)}
+                  className="p-2 hover:bg-gray-100 rounded-full"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+            <div className="p-6 overflow-y-auto max-h-[60vh]">
+              <RequirementsMatrix 
+                rows={requirementRows}
+                onUploadClick={(kind) => {
+                  setShowRequirementsModal(false);
+                  // Focus the test data section
+                  setTestDataExpanded(true);
+                  // TODO: Highlight specific data kind for upload
+                }}
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>

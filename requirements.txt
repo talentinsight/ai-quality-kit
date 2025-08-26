@@ -28,6 +28,7 @@ redis==5.2.0
 pyjwt==2.9.0
 cryptography==44.0.2
 passlib==1.7.4
+msal>=1.30.0
 
 # Data processing and utilities
 pandas==2.2.3

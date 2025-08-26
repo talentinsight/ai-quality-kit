@@ -3,8 +3,11 @@ import { useWizardStore, getNextStep, getPreviousStep, isStepOptional } from '..
 import { RunConfig, StepId, Message } from '../types/runConfig';
 import MessageBubble from './MessageBubble';
 import SuggestionChips from './SuggestionChips';
-import ComposerBar from './ComposerBar';
+
 import InlineDrawer from './InlineDrawer';
+import RequirementsMatrix from './RequirementsMatrix';
+import { computeRequirementMatrix, hasBlocking, ProvidedIntake } from '../lib/requirementStatus';
+import { postRunTests, mapRunConfigToRequest } from '../lib/api';
 import { ChevronLeft, ChevronRight, CheckCircle, Circle, Play, Download, Settings, Paperclip, Send } from 'lucide-react';
 
 interface TestResult {
@@ -66,6 +69,16 @@ const ChatWizard: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isRunning, setIsRunning] = useState(false);
 
+  // Requirements matrix state
+  const [useDefaults, setUseDefaults] = useState(true);
+  const [showRequirementsModal, setShowRequirementsModal] = useState(false);
+  
+  // Artifacts state for real API results
+  const [artifacts, setArtifacts] = useState<{json_path?:string;xlsx_path?:string;powerbi?:string} | null>(null);
+  
+  // Power BI config state
+  const [powerbiConfig, setPowerbiConfig] = useState<{powerbi_enabled: boolean; powerbi_embed_report_url?: string} | null>(null);
+
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -82,6 +95,26 @@ Let's start by choosing your target mode. Are you testing an API endpoint or an 
       });
     }
   }, [messages.length, addMessage]);
+
+  // Fetch Power BI configuration
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const base = (config.base_url || "").replace(/\/+$/,"");
+        const response = await fetch(`${base}/config`);
+        if (response.ok) {
+          const configData = await response.json();
+          setPowerbiConfig(configData);
+        }
+      } catch (error) {
+        console.log('Failed to fetch config:', error);
+      }
+    };
+    
+    if (config.base_url) {
+      fetchConfig();
+    }
+  }, [config.base_url]);
 
   const handleInputSubmit = async (input: string) => {
     if (!input.trim() || isProcessing) return;
@@ -386,7 +419,6 @@ What's your minimum context recall score? (0.0 to 1.0, default: 0.80)`
   };
 
   const getSuggestions = () => {
-    console.log('getSuggestions called, currentStep:', currentStep, 'provider:', config.provider);
     const suggestions = (() => {
       switch (currentStep) {
         case 'mode':
@@ -429,38 +461,36 @@ What's your minimum context recall score? (0.0 to 1.0, default: 0.80)`
           return [];
       }
     })();
-    console.log('Suggestions returned:', suggestions);
     return suggestions;
   };
 
   const handleRunTests = async () => {
     setIsRunning(true);
     try {
-      // Simulate test execution
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const req = mapRunConfigToRequest(config);
+      const result = await postRunTests(req, config.bearer_token || null);
       
-      const result: TestResult = {
-        run_id: `run_${Date.now()}`,
-        success: true,
-        duration_ms: 2000,
+      setTestResult({
+        run_id: result.run_id,
+        success: true, // If we get here without error, it's successful
+        duration_ms: 0, // if you want, compute from timestamps
         suites: config.test_suites || [],
         provider: config.provider || 'unknown',
         model: config.model || 'unknown'
-      };
-      
-      setTestResult(result);
-      setReportsReady(true);
-      
-      addMessage({
-        type: 'assistant',
-        content: `🎉 Tests completed successfully! Run ID: ${result.run_id}
-
-You can download the reports in JSON and Excel formats from the configuration panel.`
       });
-    } catch (error) {
+      setReportsReady(true);
+      setArtifacts(result.artifacts); // add a local state {json_path, xlsx_path}
+      
       addMessage({
         type: 'assistant',
-        content: `❌ Test execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+        content: `Tests completed successfully! Run ID: ${result.run_id}
+
+You can download JSON/XLSX reports from the configuration panel.`
+      });
+    } catch (error: any) {
+      addMessage({
+        type: 'assistant',
+        content: `Test execution failed: ${error?.message || 'Unknown error'}`
       });
     } finally {
       setIsRunning(false);
@@ -480,35 +510,70 @@ You can download the reports in JSON and Excel formats from the configuration pa
     return '*'.repeat(token.length - 4) + token.slice(-4);
   };
 
+  // Compute provided intake from config
+  const getProvidedIntake = (): ProvidedIntake => {
+    const provided: ProvidedIntake = {};
+    
+    // Mock data counts - in real implementation, this would come from test data state
+    // For now, we'll assume no data is provided unless config.test_data exists
+    if (config.test_data) {
+      if (config.test_data.passages) {
+        provided.passages = { count: 10 }; // Mock count
+      }
+      if (config.test_data.qaset) {
+        provided.qaset = { count: 5 }; // Mock count
+      }
+      if (config.test_data.attacks) {
+        provided.attacks = { count: 15 }; // Mock count
+      }
+      if (config.test_data.schema) {
+        provided.schema = { ok: true };
+      }
+    }
+    
+    // Handle compliance PII patterns
+    if (config.compliance?.pii_patterns_file) {
+      provided.pii_patterns = { path: config.compliance.pii_patterns_file };
+    }
+    
+    // Handle bias groups
+    if (config.bias?.groups_csv) {
+      const pairs = config.bias.groups_csv.split(';').length;
+      provided.bias_groups = { pairs };
+    }
+    
+    return provided;
+  };
+
+  // Compute requirements matrix
+  const providedIntake = getProvidedIntake();
+  const requirementRows = computeRequirementMatrix(config.test_suites, providedIntake, useDefaults);
+  const runBlocked = hasBlocking(requirementRows);
+
   return (
     <div className="h-full flex flex-col bg-gray-50">
-      {/* Slim Status Bar */}
-      <div className="sticky top-12 z-10 text-xs text-gray-500 px-4 py-2 backdrop-blur bg-white/70 border-b">
-        <div className="flex items-center space-x-4 max-w-[820px] mx-auto">
-          {stepOrder.map((step, index) => {
-            const isCompleted = completedSteps.has(step);
-            const isCurrent = currentStep === step;
-            
-            return (
-              <div key={step} className="flex items-center">
-                <div className={`w-2 h-2 rounded-full ${
-                  isCompleted 
-                    ? 'bg-green-500' 
-                    : isCurrent 
-                    ? 'bg-blue-500' 
-                    : 'bg-gray-300'
-                }`} />
-                <span className={`ml-2 ${
-                  isCurrent ? 'font-semibold text-gray-900' : 'text-gray-500'
-                }`}>
-                  {stepLabels[step]}
-                </span>
-                {index < stepOrder.length - 1 && (
-                  <span className="ml-4 text-gray-300">•</span>
-                )}
-              </div>
-            );
-          })}
+      {/* Progress Bar */}
+      <div className="sticky top-0 z-10 bg-white/90 backdrop-blur border-b">
+        <div className="max-w-[820px] mx-auto px-4 py-3">
+          <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center space-x-2">
+              <div className={`w-2 h-2 rounded-full ${
+                completedSteps.size > 0 ? 'bg-green-500' : 'bg-gray-300'
+              }`} />
+              <span className="text-gray-600">
+                Step {stepOrder.indexOf(currentStep) + 1} of {stepOrder.length}: {stepLabels[currentStep]}
+              </span>
+            </div>
+            <div className="text-gray-400">
+              {completedSteps.size}/{stepOrder.length} completed
+            </div>
+          </div>
+          <div className="mt-2 w-full bg-gray-200 rounded-full h-1">
+            <div 
+              className="bg-blue-500 h-1 rounded-full transition-all duration-300" 
+              style={{ width: `${(completedSteps.size / stepOrder.length) * 100}%` }}
+            />
+          </div>
         </div>
       </div>
 
@@ -534,22 +599,50 @@ You can download the reports in JSON and Excel formats from the configuration pa
                   <div className="col-span-2"><span className="font-medium">Suites:</span> {testResult.suites.join(', ')}</div>
                 </div>
                 
-                {reportsReady && (
+                {reportsReady && artifacts && (
                   <div className="mt-4 space-y-2">
                     <h4 className="font-medium text-green-700">📁 Download Reports:</h4>
                     <div className="flex space-x-2">
                       <button
-                        onClick={() => window.open(`${config.base_url}/reports/${testResult.run_id}.json`, '_blank')}
-                        className="px-3 py-1 bg-blue-500 text-white rounded-2xl text-sm hover:bg-blue-600"
+                        onClick={() => {
+                          const base = (config.base_url || "").replace(/\/+$/,"");
+                          const jsonUrl = (artifacts?.json_path?.startsWith("/") ? base + artifacts.json_path : artifacts?.json_path) || "#";
+                          window.open(jsonUrl, "_blank");
+                        }}
+                        disabled={!artifacts?.json_path}
+                        className="px-3 py-1 bg-blue-500 text-white rounded-2xl text-sm hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Download JSON
                       </button>
                       <button
-                        onClick={() => window.open(`${config.base_url}/reports/${testResult.run_id}.xlsx`, '_blank')}
-                        className="px-3 py-1 bg-green-500 text-white rounded-2xl text-sm hover:bg-green-600"
+                        onClick={() => {
+                          const base = (config.base_url || "").replace(/\/+$/,"");
+                          const xlsxUrl = (artifacts?.xlsx_path?.startsWith("/") ? base + artifacts.xlsx_path : artifacts?.xlsx_path) || "#";
+                          window.open(xlsxUrl, "_blank");
+                        }}
+                        disabled={!artifacts?.xlsx_path}
+                        className="px-3 py-1 bg-green-500 text-white rounded-2xl text-sm hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Download Excel
                       </button>
+                      
+                      {/* Power BI Button */}
+                      {powerbiConfig?.powerbi_enabled && artifacts?.powerbi && (
+                        <button
+                          onClick={() => {
+                            if (powerbiConfig.powerbi_embed_report_url) {
+                              window.open(powerbiConfig.powerbi_embed_report_url, "_blank");
+                            } else {
+                              // Show tooltip or message about opening workspace
+                              alert("Dataset published to Power BI workspace. Open your Power BI workspace to build a report.");
+                            }
+                          }}
+                          className="px-3 py-1 bg-purple-500 text-white rounded-2xl text-sm hover:bg-purple-600 transition-colors"
+                          title={powerbiConfig.powerbi_embed_report_url ? "View in Power BI" : "Dataset published to Power BI workspace; open your workspace to build a report"}
+                        >
+                          View in Power BI
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -560,13 +653,19 @@ You can download the reports in JSON and Excel formats from the configuration pa
 
           {/* Suggestion Chips - Above Composer */}
           <div className="px-4 py-2 border-t bg-white/80 backdrop-blur">
-            <div className="text-xs text-gray-500 mb-2">Current Step: {currentStep} | Provider: {config.provider}</div>
-            <div className="text-xs text-gray-400 mb-2">Suggestions: {JSON.stringify(getSuggestions())}</div>
-            <SuggestionChips 
-              suggestions={getSuggestions()} 
-              onSelect={(suggestion: string) => handleInputSubmit(suggestion)}
-              disabled={isProcessing}
-            />
+            {!isProcessing && (
+              <SuggestionChips 
+                suggestions={getSuggestions()} 
+                onSelect={(suggestion: string) => handleInputSubmit(suggestion)}
+                disabled={isProcessing}
+              />
+            )}
+            {isProcessing && (
+              <div className="flex items-center space-x-2 text-sm text-gray-500 mb-3">
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-500 border-t-transparent" />
+                <span>Processing your input...</span>
+              </div>
+            )}
           </div>
 
           {/* Sticky Composer */}
@@ -630,6 +729,43 @@ You can download the reports in JSON and Excel formats from the configuration pa
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-gray-900">Configuration Preview</h3>
             
+            {/* Allow Default Datasets Toggle */}
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+              <div>
+                <div className="text-sm font-medium text-gray-900">Allow default datasets</div>
+                <div className="text-xs text-gray-600">No uploads required</div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={useDefaults}
+                  onChange={(e) => setUseDefaults(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+
+            {/* Requirements Matrix */}
+            {config.test_suites.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-medium text-gray-700">Data Requirements</h4>
+                  {runBlocked && (
+                    <span className="text-xs text-red-600 font-medium">⚠ Blocked</span>
+                  )}
+                </div>
+                <RequirementsMatrix 
+                  rows={requirementRows} 
+                  compact={true}
+                  onUploadClick={(kind) => {
+                    // TODO: Implement upload functionality
+                    setShowDrawer(true);
+                  }}
+                />
+              </div>
+            )}
+            
             {/* Estimated Tests */}
             <div className="text-center p-4 bg-gray-50 rounded-xl">
               <div className="text-2xl font-bold text-gray-900">{getEstimatedTests()}</div>
@@ -649,6 +785,12 @@ You can download the reports in JSON and Excel formats from the configuration pa
 
             {/* Action Buttons */}
             <div className="space-y-2">
+              <button
+                onClick={() => setShowRequirementsModal(true)}
+                className="w-full rounded-2xl border px-4 py-2 hover:bg-gray-50 text-sm"
+              >
+                Show Requirements
+              </button>
               <button
                 onClick={() => setShowDrawer(true)}
                 className="w-full rounded-2xl border px-4 py-2 hover:bg-gray-50 text-sm"
@@ -675,13 +817,22 @@ You can download the reports in JSON and Excel formats from the configuration pa
               >
                 Validate
               </button>
-              <button
-                onClick={handleRunTests}
-                disabled={isRunning}
-                className="w-full rounded-2xl px-4 py-2 bg-black text-white hover:bg-black/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-              >
-                {isRunning ? 'Running...' : 'Run Tests'}
-              </button>
+              
+              {/* Run Tests Button with Blocking */}
+              <div className="space-y-1">
+                <button
+                  onClick={handleRunTests}
+                  disabled={isRunning || runBlocked}
+                  className="w-full rounded-2xl px-4 py-2 bg-black text-white hover:bg-black/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                >
+                  {isRunning ? 'Running...' : 'Run Tests'}
+                </button>
+                {runBlocked && (
+                  <div className="text-xs text-red-600 px-2">
+                    Missing required data for selected suite(s). Upload the items marked Missing or enable 'Allow default datasets'.
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Quick Actions */}
@@ -714,6 +865,36 @@ You can download the reports in JSON and Excel formats from the configuration pa
           isRunning={isRunning}
           onClose={() => setShowDrawer(false)}
         />
+      )}
+
+      {/* Requirements Matrix Modal */}
+      {showRequirementsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-2xl shadow-xl max-w-4xl max-h-[80vh] overflow-hidden">
+            <div className="p-6 border-b">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold text-gray-900">Test Data Requirements Matrix</h2>
+                <button
+                  onClick={() => setShowRequirementsModal(false)}
+                  className="p-2 hover:bg-gray-100 rounded-full"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div className="p-6 overflow-y-auto max-h-[60vh]">
+              <RequirementsMatrix 
+                rows={requirementRows}
+                onUploadClick={(kind) => {
+                  setShowRequirementsModal(false);
+                  // TODO: Focus the intake drawer and highlight specific data kind
+                }}
+              />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
