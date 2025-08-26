@@ -6,7 +6,7 @@ A comprehensive testing framework for AI applications that automatically evaluat
 
 **AI Quality Kit** automatically tests LLM outputs across multiple dimensions:
 
-- **Quality Evaluation**: Uses Ragas metrics (faithfulness, context recall) to assess answer quality and retrieval effectiveness
+- **Quality Evaluation**: Optional Ragas integration for advanced RAG metrics (faithfulness, answer relevancy, context precision/recall) with configurable thresholds
 - **Guardrails Validation**: Enforces structured output formats through JSON schema validation and deterministic checks
 - **Safety Testing**: Performs black-box safety testing against adversarial prompts with zero-tolerance violation policy
 - **Format Compliance**: Validates output consistency and detects potential data leakage through PII detection
@@ -1138,6 +1138,8 @@ ai-quality-kit/
 │   ├── test_ragas_quality.py # Ragas-based quality tests
 │   ├── metrics.py            # Evaluation metrics implementation
 │   └── dataset_loader.py     # Dataset loading utilities
+├── apps/orchestrator/evaluators/ # Advanced evaluation plugins
+│   └── ragas_adapter.py      # Optional Ragas integration (see docs/RAGAS.md)
 ├── guardrails/               # Output validation framework
 │   ├── schema.json           # JSON schema definition
 │   └── test_guardrails.py    # Schema and format validation tests

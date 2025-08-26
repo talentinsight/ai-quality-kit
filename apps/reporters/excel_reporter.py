@@ -86,6 +86,29 @@ def _create_summary_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     
     # Add dataset metadata headers (additive)
     summary = data.get("summary", {})
+    
+    # Add Ragas headers if RAG quality suite has Ragas metrics
+    rag_summary = summary.get("rag_quality", {})
+    if rag_summary.get("ragas"):
+        headers.extend([
+            "ragas_faithfulness", "ragas_answer_relevancy", 
+            "ragas_context_precision", "ragas_context_recall", "ragas_thresholds_passed"
+        ])
+    
+    # Add Promptfoo headers if Promptfoo suite exists
+    promptfoo_summary = summary.get("promptfoo", {})
+    if promptfoo_summary:
+        headers.extend([
+            "promptfoo_total", "promptfoo_passed", "promptfoo_pass_rate"
+        ])
+    
+    # Add MCP Security headers if MCP Security suite exists
+    mcp_summary = summary.get("mcp_security", {})
+    if mcp_summary:
+        headers.extend([
+            "mcp_security_tests", "mcp_security_passed", "mcp_p95_latency_ms", 
+            "mcp_slo_met", "mcp_schema_stable", "mcp_scope_denied"
+        ])
     if summary.get("dataset_source"):
         headers.extend([
             "dataset_source", "dataset_version", "estimated_tests"
@@ -152,8 +175,40 @@ def _create_summary_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
             bias_summary.get("pass", False)
         ])
     
+    # Add Ragas data if available
+    rag_summary = summary.get("rag_quality", {})
+    if rag_summary.get("ragas"):
+        ragas_metrics = rag_summary["ragas"]
+        row_data.extend([
+            ragas_metrics.get("faithfulness", 0.0),
+            ragas_metrics.get("answer_relevancy", 0.0),
+            ragas_metrics.get("context_precision", 0.0),
+            ragas_metrics.get("context_recall", 0.0),
+            rag_summary.get("ragas_thresholds_passed", True)
+        ])
+    
+    # Add Promptfoo data if available
+    promptfoo_summary = summary.get("promptfoo", {})
+    if promptfoo_summary:
+        row_data.extend([
+            promptfoo_summary.get("total", 0),
+            promptfoo_summary.get("passed", 0),
+            promptfoo_summary.get("pass_rate", 0.0)
+        ])
+
+    # Add MCP Security data if available
+    mcp_summary = summary.get("mcp_security", {})
+    if mcp_summary:
+        row_data.extend([
+            mcp_summary.get("security_tests", 0),
+            mcp_summary.get("security_passed", 0),
+            mcp_summary.get("p95_latency_ms", 0),
+            mcp_summary.get("slo_met", True),
+            mcp_summary.get("schema_stable", True),
+            mcp_summary.get("out_of_scope_denied", True)
+        ])
+    
     # Add dataset metadata if available (additive)
-    summary = data.get("summary", {})
     if summary.get("dataset_source"):
         row_data.extend([
             summary.get("dataset_source", "unknown"),

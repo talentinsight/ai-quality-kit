@@ -27,6 +27,9 @@ class Settings:
         
         # Audit Configuration
         self.AUDIT_ENABLED: bool = os.getenv("AUDIT_ENABLED", "true").lower() == "true"
+        
+        # Ragas Evaluation Configuration
+        self.RAGAS_ENABLED: bool = os.getenv("RAGAS_ENABLED", "false").lower() == "true"
     
     def validate_powerbi_config(self) -> bool:
         """Validate Power BI configuration when enabled."""
