@@ -17,6 +17,7 @@ interface WizardState {
   
   // Actions
   updateConfig: (updates: Partial<RunConfig>) => void;
+  resetConfig: () => void;
   setCurrentStep: (step: StepId) => void;
   markStepCompleted: (step: StepId) => void;
   addMessage: (message: Omit<Message, 'id' | 'timestamp'>) => void;
@@ -28,7 +29,7 @@ interface WizardState {
 
 const initialConfig: RunConfig = {
   target_mode: null,
-  base_url: 'http://localhost:8000',
+  url: '',
   bearer_token: '',
   provider: null,
   model: null,
@@ -61,6 +62,10 @@ export const useWizardStore = create(persist<WizardState>(
     config: { ...state.config, ...updates }
   })),
 
+  resetConfig: () => set((state) => ({
+    config: initialConfig
+  })),
+
   setCurrentStep: (step) => set({ currentStep: step }),
 
   markStepCompleted: (step) => set((state) => ({
@@ -91,8 +96,8 @@ export const useWizardStore = create(persist<WizardState>(
         break;
 
       case 'base':
-        if (!config.base_url?.trim()) {
-          errors.push({ field: 'base_url', message: 'Base URL is required' });
+        if (!config.url?.trim()) {
+          errors.push({ field: 'url', message: 'URL is required' });
         }
         break;
 

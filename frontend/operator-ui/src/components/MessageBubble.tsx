@@ -37,7 +37,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
           <div className={`text-xs mt-2 ${
             isUser ? 'text-blue-100' : 'text-gray-400'
           }`}>
-            {message.timestamp.toLocaleTimeString([], { 
+            {new Date(message.timestamp).toLocaleTimeString([], { 
               hour: '2-digit', 
               minute: '2-digit' 
             })}

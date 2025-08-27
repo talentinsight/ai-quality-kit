@@ -56,7 +56,7 @@ export interface TestDataIntake {
 
 export interface RunConfig {
   target_mode: TargetMode | null;
-  base_url?: string;
+  url?: string;               // unified URL for both API and MCP
   bearer_token?: string;
   provider?: Provider | null; // required only when target_mode==='api'
   model?: string | null;      // required for openai/anthropic/gemini/mock

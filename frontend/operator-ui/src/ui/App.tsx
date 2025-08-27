@@ -5,6 +5,7 @@ import type { Provider, TestSuite, OrchestratorRequest, OrchestratorResult } fro
 import TestDataPanel from "../features/testdata/TestDataPanel";
 import { getTestdataMeta, ApiError } from "../lib/api";
 import ChatWizard from "../components/ChatWizard";
+import ChatWizardV2 from "../components/ChatWizardV2";
 import RequirementsMatrix from "../components/RequirementsMatrix";
 import { computeRequirementMatrix, ProvidedIntake } from "../lib/requirementStatus";
 
@@ -446,7 +447,7 @@ export default function App() {
 
             {targetMode === "api" ? (
               <div>
-                <label className="label">API Base URL</label>
+                <label className="label">Server URL</label>
                 <input className="input" placeholder="http://localhost:8000" value={apiBaseUrl} onChange={e=>{
                   const newUrl = e.target.value;
                   setApiBaseUrl(newUrl);
@@ -468,8 +469,8 @@ export default function App() {
               </div>
             ) : (
               <div>
-                <label className="label">MCP Server URL</label>
-                <input className="input" placeholder="stdio:///path/to/mcp-server" value={mcpServerUrl} onChange={e=>setMcpServerUrl(e.target.value)} />
+                <label className="label">Server URL</label>
+                <input className="input" placeholder="http://localhost:3000" value={mcpServerUrl} onChange={e=>setMcpServerUrl(e.target.value)} />
               </div>
             )}
 
@@ -952,7 +953,7 @@ export default function App() {
       </div>
       ) : (
         <div className="h-[calc(100vh-200px)]">
-          <ChatWizard />
+          <ChatWizardV2 />
         </div>
       )}
 
