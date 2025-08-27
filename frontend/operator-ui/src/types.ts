@@ -74,7 +74,7 @@ export interface OrchestratorRequest {
 
 export interface OrchestratorResult {
   run_id: string;
-  artifacts: { json_path: string; xlsx_path: string };
+  artifacts: { json_path: string; xlsx_path: string; html_path?: string };
   summary?: Record<string, unknown>;
   counts?: Record<string, unknown>;
 }

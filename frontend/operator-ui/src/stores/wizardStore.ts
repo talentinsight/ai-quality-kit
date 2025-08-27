@@ -103,7 +103,7 @@ export const useWizardStore = create(persist<WizardState>(
         break;
 
       case 'model':
-        if (config.provider && ['openai', 'anthropic', 'gemini', 'mock'].includes(config.provider) && !config.model) {
+        if (config.target_mode === 'api' && config.provider && ['openai', 'anthropic', 'gemini', 'mock'].includes(config.provider) && !config.model) {
           errors.push({ field: 'model', message: 'Model is required for this provider' });
         }
         break;
@@ -144,3 +144,6 @@ export const getPreviousStep = (currentStep: StepId): StepId | null => {
 export const isStepOptional = (step: StepId): boolean => {
   return ['auth', 'thresholds', 'volumes', 'resilience', 'compliance', 'bias', 'testdataId', 'testData'].includes(step);
 };
+
+// Helper selector for API mode
+export const useIsApiMode = () => useWizardStore(s => s.config?.target_mode === "api");

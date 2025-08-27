@@ -81,7 +81,7 @@ const InlineDrawer: React.FC<InlineDrawerProps> = ({
       {config.target_mode === 'api' && (
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            AI Provider
+            Adapter (Provider Preset)
           </label>
           <select
             value={config.provider || ''}
@@ -95,11 +95,14 @@ const InlineDrawer: React.FC<InlineDrawerProps> = ({
             <option value="custom_rest">Custom REST</option>
             <option value="mock">Mock</option>
           </select>
+          <p className="text-xs text-gray-500 mt-1">
+            Select how we talk to your LLM API. For MCP targets, an adapter is not required.
+          </p>
         </div>
       )}
 
       {/* Model */}
-      {config.provider && ['openai', 'anthropic', 'gemini', 'mock'].includes(config.provider) && (
+      {config.target_mode === 'api' && config.provider && ['openai', 'anthropic', 'gemini', 'mock'].includes(config.provider) && (
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Model

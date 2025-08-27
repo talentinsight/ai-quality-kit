@@ -11,7 +11,7 @@ import time
 from .rag_pipeline import RAGPipeline
 from .config import config, resolve_provider_and_model, ALLOWED_PROVIDERS
 from apps.utils.hash_utils import query_hash
-from apps.cache.cache_store import get_cached, set_cache, get_cache_ttl, get_context_version
+from apps.cache.cache_store import get_cached, set_cache, get_cache_ttl, get_context_version, get_cache_stats
 from apps.observability.log_service import start_log, finish_log, log_eval_metrics, audit_start, audit_finish
 from apps.observability.live_eval import evaluate_comprehensive
 from apps.observability.perf import decide_phase_and_latency, record_latency
@@ -89,6 +89,17 @@ async def startup_event():
         await start_store()
         logger.info("Test data store initialized successfully")
         
+        # Run intake janitor cleanup on startup
+        try:
+            from apps.orchestrator.intake.storage import janitor_clean_old
+            from pathlib import Path
+            reports_dir = Path(os.getenv("REPORTS_DIR", "./reports"))
+            deleted_count = janitor_clean_old(reports_dir, hours=24)
+            if deleted_count > 0:
+                logger.info(f"Cleaned up {deleted_count} old test data bundles")
+        except Exception as e:
+            logger.warning(f"Failed to run intake janitor: {e}")
+        
     except Exception as e:
         logger.error(f"Failed to initialize RAG pipeline: {e}")
         raise
@@ -112,6 +123,21 @@ async def readyz():
     if not rag_pipeline:
         raise HTTPException(status_code=503, detail="RAG pipeline not ready")
     return {"status": "ready"}
+
+
+@app.get("/cache/stats")
+async def cache_stats(principal: Optional[Principal] = Depends(require_user_or_admin())):
+    """Get cache statistics."""
+    try:
+        stats = get_cache_stats()
+        return {
+            "cache_type": "in_memory",
+            "snowflake_available": False,  # We disabled it
+            **stats
+        }
+    except Exception as e:
+        logger.error(f"Failed to get cache stats: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get cache statistics")
 
 
 @app.get("/config")
@@ -293,9 +319,23 @@ def setup_routers():
     from apps.orchestrator.router import router as orchestrator_router
     app.include_router(orchestrator_router)
     
+    # Mount static files for orchestrator (HTML reports)
+    try:
+        from fastapi.staticfiles import StaticFiles
+        from pathlib import Path
+        static_dir = Path("apps/orchestrator/static")
+        if static_dir.exists():
+            app.mount("/orchestrator/static", StaticFiles(directory=str(static_dir)), name="orchestrator_static")
+    except Exception as e:
+        logger.warning(f"Failed to mount orchestrator static files: {e}")
+    
     # Always include test data intake
     from apps.testdata.router import router as testdata_router
     app.include_router(testdata_router)
+    
+    # Include orchestrator test data intake
+    from apps.orchestrator.router_testdata import router as orchestrator_testdata_router
+    app.include_router(orchestrator_testdata_router)
     
     # Include A2A if enabled
     a2a_enabled = os.getenv("A2A_ENABLED", "true").lower() == "true"

@@ -276,12 +276,17 @@ class MCPSecuritySuite:
         except Exception as e:
             latency_ms = int((time.time() - start_time) * 1000)
             # Exception could indicate proper access denial
-            access_denied = "permission" in str(e).lower() or "unauthorized" in str(e).lower()
+            access_denied = "permission" in str(e).lower() or "unauthorized" in str(e).lower() or "access denied" in str(e).lower()
             
-            if self.deny_out_of_scope and access_denied:
-                status = "pass"
-                error_message = None
+            if self.deny_out_of_scope:
+                if access_denied:
+                    status = "pass"
+                    error_message = None
+                else:
+                    status = "error"
+                    error_message = str(e)
             else:
+                # If out-of-scope access is allowed, exceptions are still errors
                 status = "error"
                 error_message = str(e)
             

@@ -29,7 +29,7 @@ const stepLabels: Record<StepId, string> = {
   mode: 'Mode',
   base: 'Base',
   auth: 'Auth',
-  provider: 'Provider',
+  provider: 'Adapter',
   model: 'Model',
   suites: 'Suites',
   thresholds: 'Thresholds',
@@ -74,7 +74,7 @@ const ChatWizard: React.FC = () => {
   const [showRequirementsModal, setShowRequirementsModal] = useState(false);
   
   // Artifacts state for real API results
-  const [artifacts, setArtifacts] = useState<{json_path?:string;xlsx_path?:string;powerbi?:string} | null>(null);
+  const [artifacts, setArtifacts] = useState<{json_path?:string;xlsx_path?:string;html_path?:string;powerbi?:string} | null>(null);
   
   // Power BI config state
   const [powerbiConfig, setPowerbiConfig] = useState<{powerbi_enabled: boolean; powerbi_embed_report_url?: string} | null>(null);
@@ -215,14 +215,32 @@ Now, which AI provider are you using? (OpenAI, Anthropic, Gemini, Custom REST, o
         } else {
           // Assume they provided the token/key
           updateConfig({ bearer_token: input.trim() });
-          addMessage({
-            type: 'assistant',
-            content: `Authentication configured. 
+          
+          if (config.target_mode === 'mcp') {
+            // Skip provider/model for MCP mode
+            addMessage({
+              type: 'assistant',
+              content: `Authentication configured. 
 
-Now, which AI provider are you using? (OpenAI, Anthropic, Gemini, Custom REST, or Mock)`
-          });
-          setCurrentStep('provider');
-          markStepCompleted('auth');
+Since you're using MCP mode, no adapter/model selection is needed. MCP uses a standard protocol.
+
+Which test suites would you like to run? (rag_quality, red_team, safety, performance, regression, resilience, compliance_smoke, bias_smoke)`
+            });
+            setCurrentStep('suites');
+            markStepCompleted('auth');
+            markStepCompleted('provider');
+            markStepCompleted('model');
+          } else {
+            // API mode - need provider selection
+            addMessage({
+              type: 'assistant',
+              content: `Authentication configured. 
+
+Now, which adapter (provider preset) are you using? (OpenAI, Anthropic, Gemini, Custom REST, or Mock)`
+            });
+            setCurrentStep('provider');
+            markStepCompleted('auth');
+          }
         }
         break;
 
@@ -231,7 +249,7 @@ Now, which AI provider are you using? (OpenAI, Anthropic, Gemini, Custom REST, o
           updateConfig({ provider: 'openai' });
           addMessage({
             type: 'assistant',
-            content: `OpenAI provider selected. Which model would you like to test? You can select from: gpt-4, gpt-4-turbo, gpt-4o, gpt-3.5-turbo, gpt-3.5-turbo-16k`
+            content: `OpenAI adapter selected. Which model would you like to test? You can select from: gpt-4, gpt-4-turbo, gpt-4o, gpt-3.5-turbo, gpt-3.5-turbo-16k`
           });
           setCurrentStep('model');
           markStepCompleted('provider');
@@ -239,7 +257,7 @@ Now, which AI provider are you using? (OpenAI, Anthropic, Gemini, Custom REST, o
           updateConfig({ provider: 'anthropic' });
           addMessage({
             type: 'assistant',
-            content: `Anthropic provider selected. Which model would you like to test? You can select from: claude-3-opus, claude-3-sonnet, claude-3-haiku, claude-2.1, claude-2.0`
+            content: `Anthropic adapter selected. Which model would you like to test? You can select from: claude-3-opus, claude-3-sonnet, claude-3-haiku, claude-2.1, claude-2.0`
           });
           setCurrentStep('model');
           markStepCompleted('provider');
@@ -247,7 +265,7 @@ Now, which AI provider are you using? (OpenAI, Anthropic, Gemini, Custom REST, o
           updateConfig({ provider: 'gemini' });
           addMessage({
             type: 'assistant',
-            content: `Gemini provider selected. Which model would you like to test? You can select from: gemini-1.5-pro, gemini-1.5-flash, gemini-pro, gemini-flash`
+            content: `Gemini adapter selected. Which model would you like to test? You can select from: gemini-1.5-pro, gemini-1.5-flash, gemini-pro, gemini-flash`
           });
           setCurrentStep('model');
           markStepCompleted('provider');
@@ -255,7 +273,7 @@ Now, which AI provider are you using? (OpenAI, Anthropic, Gemini, Custom REST, o
           updateConfig({ provider: 'custom_rest' });
           addMessage({
             type: 'assistant',
-            content: `Custom REST provider selected. Which model would you like to test? (Enter the model name)`
+            content: `Custom REST adapter selected. Which model would you like to test? (Enter the model name)`
           });
           setCurrentStep('model');
           markStepCompleted('provider');
@@ -263,14 +281,14 @@ Now, which AI provider are you using? (OpenAI, Anthropic, Gemini, Custom REST, o
           updateConfig({ provider: 'mock' });
           addMessage({
             type: 'assistant',
-            content: `Mock provider selected. Which model would you like to test? You can select from: mock-model-1, mock-model-2, mock-model-3`
+            content: `Mock adapter selected. Which model would you like to test? You can select from: mock-model-1, mock-model-2, mock-model-3`
           });
           setCurrentStep('model');
           markStepCompleted('provider');
         } else {
           addMessage({
             type: 'assistant',
-            content: `Please specify a valid provider: OpenAI, Anthropic, Gemini, Custom REST, or Mock.`
+            content: `Please specify a valid adapter: OpenAI, Anthropic, Gemini, Custom REST, or Mock.`
           });
         }
         break;
@@ -424,8 +442,12 @@ What's your minimum context recall score? (0.0 to 1.0, default: 0.80)`
         case 'mode':
           return ['API', 'MCP'];
         case 'provider':
-          return ['OpenAI', 'Anthropic', 'Gemini', 'Custom REST', 'Mock'];
+          // Only show provider suggestions for API mode
+          return config.target_mode === 'api' ? ['OpenAI', 'Anthropic', 'Gemini', 'Custom REST', 'Mock'] : [];
         case 'model':
+          // Only show model suggestions for API mode
+          if (config.target_mode !== 'api') return [];
+          
           // Return model options based on selected provider
           switch (config.provider) {
             case 'openai':
@@ -624,6 +646,17 @@ You can download JSON/XLSX reports from the configuration panel.`
                         className="px-3 py-1 bg-green-500 text-white rounded-2xl text-sm hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Download Excel
+                      </button>
+                      <button
+                        onClick={() => {
+                          const base = (config.base_url || "").replace(/\/+$/,"");
+                          const htmlUrl = artifacts?.html_path?.startsWith("/") ? base + artifacts.html_path
+                                         : artifacts?.html_path || `${base}/orchestrator/report/${testResult?.run_id}.html`;
+                          window.open(htmlUrl, "_blank");
+                        }}
+                        className="px-3 py-1 bg-purple-500 text-white rounded-2xl text-sm hover:bg-purple-600"
+                      >
+                        Open HTML Report
                       </button>
                       
                       {/* Power BI Button */}

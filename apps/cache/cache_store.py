@@ -1,6 +1,7 @@
-"""Snowflake-backed cache store for response caching."""
+"""Cache store for response caching with Snowflake and in-memory fallback."""
 
 import os
+import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
@@ -14,6 +15,9 @@ try:
 except ImportError:
     # Fallback if snowflake client not available
     snowflake_cursor = None
+
+# In-memory cache as fallback
+_memory_cache: Dict[str, Dict] = {}
 
 
 def is_cache_enabled() -> bool:
@@ -42,7 +46,32 @@ def get_cached(query_hash: str, context_version: str) -> Optional[Dict]:
     Returns:
         Cached response dict or None if not found/expired
     """
-    if not is_cache_enabled() or snowflake_cursor is None:
+    if not is_cache_enabled():
+        return None
+    
+    cache_key = f"{query_hash}:{context_version}"
+    
+    # Try in-memory cache first (always available)
+    if cache_key in _memory_cache:
+        cached_item = _memory_cache[cache_key]
+        # Check if expired
+        if cached_item["expires_at"] > time.time():
+            print(f"🔍 DEBUG: Cache HIT (memory): {cache_key[:16]}...")
+            return {
+                "answer": cached_item["answer"],
+                "context": cached_item["context"],
+                "created_at": cached_item["created_at"],
+                "expires_at": cached_item["expires_at"],
+                "source": "memory_cache"
+            }
+        else:
+            # Remove expired entry
+            del _memory_cache[cache_key]
+            print(f"🔍 DEBUG: Cache EXPIRED (memory): {cache_key[:16]}...")
+    
+    # Fallback to Snowflake cache if available
+    if snowflake_cursor is None:
+        print(f"🔍 DEBUG: Cache MISS (memory only): {cache_key[:16]}...")
         return None
     
     try:
@@ -101,7 +130,24 @@ def set_cache(query_hash: str, context_version: str, answer: str, context: List[
         context: Retrieved context passages
         ttl_seconds: Time to live in seconds
     """
-    if not is_cache_enabled() or snowflake_cursor is None:
+    if not is_cache_enabled():
+        return
+    
+    cache_key = f"{query_hash}:{context_version}"
+    expires_at_timestamp = time.time() + ttl_seconds
+    
+    # Always store in memory cache (fast and always available)
+    _memory_cache[cache_key] = {
+        "answer": answer[:2000] if len(answer) > 2000 else answer,  # Truncate long answers
+        "context": context,
+        "created_at": time.time(),
+        "expires_at": expires_at_timestamp
+    }
+    print(f"🔍 DEBUG: Cache SET (memory): {cache_key[:16]}... TTL={ttl_seconds}s")
+    
+    # Also store in Snowflake if available (persistent across restarts)
+    if snowflake_cursor is None:
+        print(f"🔍 DEBUG: Snowflake unavailable, using memory cache only")
         return
     
     try:
@@ -154,16 +200,49 @@ def set_cache(query_hash: str, context_version: str, answer: str, context: List[
 
 
 def clear_expired_cache() -> None:
-    """Clear expired cache entries."""
-    if not is_cache_enabled() or snowflake_cursor is None:
+    """Clear expired cache entries from both memory and Snowflake."""
+    if not is_cache_enabled():
+        return
+    
+    current_time = time.time()
+    
+    # Clean memory cache
+    expired_keys = [
+        key for key, item in _memory_cache.items() 
+        if item["expires_at"] <= current_time
+    ]
+    
+    for key in expired_keys:
+        del _memory_cache[key]
+    
+    if expired_keys:
+        print(f"🔍 DEBUG: Cleaned {len(expired_keys)} expired entries from memory cache")
+    
+    # Clean Snowflake cache if available
+    if snowflake_cursor is None:
         return
     
     try:
         with snowflake_cursor() as cursor:
             delete_sql = "DELETE FROM LLM_RESPONSE_CACHE_PROD WHERE EXPIRES_AT <= CURRENT_TIMESTAMP()"
-            
             cursor.execute(delete_sql)
             
     except Exception as e:
         # Log error without exposing secrets
-        print(f"Warning: Cache cleanup failed: {str(e)}")
+        print(f"Warning: Snowflake cache cleanup failed: {str(e)}")
+
+
+def get_cache_stats() -> Dict[str, int]:
+    """Get cache statistics."""
+    current_time = time.time()
+    total_entries = len(_memory_cache)
+    expired_entries = sum(
+        1 for item in _memory_cache.values() 
+        if item["expires_at"] <= current_time
+    )
+    
+    return {
+        "total_entries": total_entries,
+        "active_entries": total_entries - expired_entries,
+        "expired_entries": expired_entries
+    }

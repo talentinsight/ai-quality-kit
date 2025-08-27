@@ -436,12 +436,35 @@ export default function App() {
                 <option value="api">API (HTTP)</option>
                 <option value="mcp">MCP</option>
               </select>
+              <p className="text-xs text-slate-500 mt-1">
+                {targetMode === "api" 
+                  ? "Adapter selection is required; it defines the HTTP schema used to call your LLM."
+                  : "MCP uses a standard protocol; no adapter/model selection is needed."
+                }
+              </p>
             </div>
 
             {targetMode === "api" ? (
               <div>
                 <label className="label">API Base URL</label>
-                <input className="input" placeholder="http://localhost:8000" value={apiBaseUrl} onChange={e=>setApiBaseUrl(e.target.value)} />
+                <input className="input" placeholder="http://localhost:8000" value={apiBaseUrl} onChange={e=>{
+                  const newUrl = e.target.value;
+                  setApiBaseUrl(newUrl);
+                  
+                  // Auto-infer provider from URL if provider is not set
+                  if (targetMode === "api" && !provider) {
+                    import('../lib/ui').then(({ inferAdapterFromUrl }) => {
+                      const inferred = inferAdapterFromUrl(newUrl);
+                      if (inferred) {
+                        setProvider(inferred);
+                        // Auto-update model based on inferred provider
+                        if (inferred === "openai") setModel("gpt-4");
+                        else if (inferred === "anthropic") setModel("claude-3-5-sonnet");
+                        else if (inferred === "gemini") setModel("gemini-1.5-pro");
+                      }
+                    });
+                  }
+                }} />
               </div>
             ) : (
               <div>
@@ -456,31 +479,44 @@ export default function App() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-            <div>
-              <label className="label">Provider</label>
-              <select className="input" value={provider} onChange={e=>{
-                const newProvider = e.target.value as Provider;
-                setProvider(newProvider);
-                // Auto-update model based on provider
-                if (newProvider === "openai") setModel("gpt-4");
-                else if (newProvider === "anthropic") setModel("claude-3-5-sonnet");
-                else if (newProvider === "gemini") setModel("gemini-1.5-pro");
-                else if (newProvider === "mock") setModel("mock-1");
-                else setModel("custom-model");
-              }}>
-                <option value="openai">OpenAI</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="gemini">Gemini</option>
-                <option value="custom_rest">Custom REST (local)</option>
-                <option value="mock">Mock (offline)</option>
-              </select>
+          {/* Provider and Model - Only for API mode */}
+          {targetMode === "api" && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <div>
+                <label className="label">Adapter (Provider Preset)</label>
+                <select className="input" value={provider} onChange={e=>{
+                  const newProvider = e.target.value as Provider;
+                  setProvider(newProvider);
+                  // Auto-update model based on provider
+                  if (newProvider === "openai") setModel("gpt-4");
+                  else if (newProvider === "anthropic") setModel("claude-3-5-sonnet");
+                  else if (newProvider === "gemini") setModel("gemini-1.5-pro");
+                  else if (newProvider === "mock") setModel("mock-1");
+                  else setModel("custom-model");
+                }}>
+                  <option value="openai">OpenAI</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="gemini">Gemini</option>
+                  <option value="custom_rest">Custom REST (local)</option>
+                  <option value="mock">Mock (offline)</option>
+                </select>
+                <p className="text-xs text-slate-500 mt-1">Select how we talk to your LLM API. For MCP targets, an adapter is not required.</p>
+              </div>
+              <div>
+                <label className="label">Model</label>
+                <input className="input" placeholder="gpt-4o-mini / claude-3-5-sonnet / gemini-1.5-pro / custom / mock-1" value={model} onChange={e=>setModel(e.target.value)} />
+              </div>
             </div>
-            <div>
-              <label className="label">Model</label>
-              <input className="input" placeholder="gpt-4o-mini / claude-3-5-sonnet / gemini-1.5-pro / custom / mock-1" value={model} onChange={e=>setModel(e.target.value)} />
+          )}
+
+          {/* MCP Mode Info */}
+          {targetMode === "mcp" && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mt-4">
+              <p className="text-sm text-blue-800 dark:text-blue-200">
+                <strong>MCP selected:</strong> Adapter/Model not required. MCP uses a standard protocol; no adapter/model selection is needed.
+              </p>
             </div>
-          </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
             <div>
@@ -891,6 +927,18 @@ export default function App() {
               </button>
               <button className="btn btn-primary" onClick={()=>safeDownload(xlsxPath, `${run!.run_id}.xlsx`)}>
                 <Download size={16}/> Download Excel
+              </button>
+              <button 
+                className="btn btn-secondary" 
+                onClick={() => {
+                  const base = (apiBaseUrl || "").replace(/\/+$/,"");
+                  const htmlUrl = (run?.artifacts as any)?.html_path?.startsWith("/") 
+                    ? base + (run?.artifacts as any).html_path
+                    : (run?.artifacts as any)?.html_path || `${base}/orchestrator/report/${run!.run_id}.html`;
+                  window.open(htmlUrl, "_blank");
+                }}
+              >
+                <Download size={16}/> Open HTML Report
               </button>
               <div className="ml-auto flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                 <Server size={16}/> Backend: {targetMode === "api" ? apiBaseUrl : mcpServerUrl}

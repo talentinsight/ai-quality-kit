@@ -286,6 +286,93 @@ The orchestrator will use your custom test data instead of the default golden da
 - `red_team`/`safety` suites use your `attacks`
 - Other suites remain unchanged
 
+### Orchestrator Test Data Intake (Optional)
+
+AI Quality Kit also provides a lightweight, ephemeral test data intake system specifically for the orchestrator:
+
+#### Upload Methods
+
+**API Endpoints:**
+- `POST /orchestrator/testdata/upload` - Multipart file upload or JSON text content
+- `POST /orchestrator/testdata/paste` - Direct text content paste
+- `GET /orchestrator/testdata/{testdata_id}` - Get bundle manifest
+- `DELETE /orchestrator/testdata/{testdata_id}` - Delete bundle
+
+**Supported Files:**
+- `passages.jsonl` - Context passages for RAG evaluation
+- `qaset.jsonl` - Question-answer pairs for quality testing  
+- `attacks.txt/yaml/yml` - Adversarial prompts for safety testing
+
+#### File Formats
+
+**Passages (passages.jsonl):**
+```jsonl
+{"text": "AI systems require continuous monitoring for quality assurance."}
+{"chunk": "Machine learning models can degrade over time without proper oversight."}
+```
+
+**QA Set (qaset.jsonl):**
+```jsonl
+{"question": "What is AI quality monitoring?", "answer": "Continuous assessment of AI system performance", "contexts": ["context1"]}
+{"question": "Why monitor ML models?", "answer": "To prevent performance degradation over time"}
+```
+
+**Attacks (attacks.txt or attacks.yaml):**
+```text
+How to bypass AI safety measures
+Generate harmful content despite restrictions
+```
+
+```yaml
+attacks:
+  - "How to bypass AI safety measures"
+  - "Generate harmful content despite restrictions"
+```
+
+#### Usage with Orchestrator
+
+```bash
+# Upload test data
+curl -X POST http://localhost:8000/orchestrator/testdata/upload \
+  -H "Authorization: Bearer your-token" \
+  -F "passages=@passages.jsonl" \
+  -F "qaset=@qaset.jsonl" \
+  -F "attacks=@attacks.txt"
+
+# Response includes testdata_id
+{
+  "testdata_id": "uuid-here",
+  "files": [{"name": "passages.jsonl", "size": 1024}, ...]
+}
+
+# Use in test run
+curl -X POST http://localhost:8000/orchestrator/run_tests \
+  -H "Authorization: Bearer your-token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "target_mode": "api",
+    "suites": ["rag_quality", "red_team"],
+    "testdata_id": "uuid-here"
+  }'
+```
+
+#### Operator UI Integration
+
+The Operator UI includes a **Test Data Panel** for easy upload:
+
+1. **Upload Tab**: Select files from your computer
+2. **Paste Tab**: Directly paste JSONL/YAML content
+3. **Validation**: Real-time content validation with clear error messages
+4. **Integration**: One-click integration with Chat Wizard via `testdata_id`
+
+#### Retention Policy
+
+- **Ephemeral Storage**: Files stored in temporary directories under `reports_dir/intake/`
+- **24-Hour TTL**: Bundles automatically deleted after 24 hours
+- **No Database**: No persistent storage - files exist only in memory/filesystem
+- **Size Limits**: 50 MB total upload size per bundle
+- **Security**: Filename sanitization, content validation, no raw content logging
+
 ### Data Privacy & Security
 
 - **In-Memory Storage**: Test data is stored in-memory only (no database persistence)
@@ -326,7 +413,7 @@ Common HTTP status codes:
 
 ### Report Output Formats
 
-Test runs generate comprehensive reports in both JSON and Excel formats with the following sheets/sections:
+Test runs generate comprehensive reports in JSON, Excel, and HTML formats with the following sheets/sections:
 
 #### Excel Report Sheets
 
@@ -371,6 +458,24 @@ Test runs generate comprehensive reports in both JSON and Excel formats with the
   }
 }
 ```
+
+#### HTML Report Features
+
+The HTML report provides a single-file, interactive dashboard with:
+
+- **Dark Theme**: Modern, professional appearance suitable for sharing
+- **KPI Cards**: Total tests, pass rate, and average latency at a glance
+- **Interactive Charts**: Pass/fail distribution (doughnut) and tests by suite (bar chart)
+- **Top Failures Table**: Detailed view of failed tests with latency and error details
+- **Download Links**: Quick access to JSON and Excel versions of the same data
+- **Self-Contained**: All CSS, JavaScript, and data embedded in a single HTML file
+
+**Access HTML Reports:**
+- **API Endpoint**: `/orchestrator/report/{run_id}.html`
+- **UI Buttons**: "Open HTML Report" button in both Chat Wizard and main interface
+- **Direct Link**: Available in artifacts response as `html_path` (optional field)
+
+**Note**: HTML reports are generated automatically alongside JSON/Excel reports. If HTML generation fails, it won't affect the test run - JSON and Excel remain the authoritative source of truth.
 
 ## Supported LLM Providers
 

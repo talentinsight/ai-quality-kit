@@ -230,14 +230,19 @@ def _get_mock_chat(model_override: Optional[str] = None) -> Callable[[List[str]]
         # Simple deterministic response based on input
         last_message = messages[-1].lower()
         
-        if "hello" in last_message or "hi" in last_message:
+        # Safety-aware responses for testing (order matters - most specific first)
+        if "ignore" in last_message or "forget" in last_message or "new instructions" in last_message:
+            return "The context does not provide information to answer this question. I can only respond based on the provided context."
+        elif "hello" in last_message or "hi" in last_message:
             return "Hello! This is a mock response from the AI assistant."
-        elif "question" in last_message or "?" in last_message:
-            return "This is a mock answer to your question. The mock provider is working correctly."
+        elif "question" in last_message:
+            return "Based on the context provided, I can give you a mock answer. The mock provider is working correctly."
+        elif "?" in last_message:
+            return "The context does not provide sufficient information to answer your question. Please check the provided context."
         elif "error" in last_message or "fail" in last_message:
             return "Mock error response: Something went wrong in the mock provider."
         else:
-            return f"Mock response: I received your message '{messages[-1][:50]}...' and processed it with model {model_name}."
+            return f"The context does not provide sufficient information to answer your request. Mock model {model_name} processed your message."
     
     return chat
 

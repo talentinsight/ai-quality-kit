@@ -310,6 +310,36 @@ async def get_xlsx_report(
     )
 
 
+@router.get("/report/{run_id}.html")
+async def get_html_report(
+    run_id: str,
+    principal: Optional[Principal] = Depends(require_user_or_admin())
+) -> FileResponse:
+    """
+    Download HTML report for a test run.
+    
+    Args:
+        run_id: Test run identifier
+        principal: Authenticated principal (if auth enabled)
+        
+    Returns:
+        HTML file response
+    """
+    html_path = get_reports_dir() / f"{run_id}.html"
+    
+    if not html_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"HTML report not found for run_id: {run_id}"
+        )
+    
+    return FileResponse(
+        path=str(html_path),
+        filename=f"{run_id}.html",
+        media_type="text/html"
+    )
+
+
 @router.get("/reports")
 async def list_reports(
     principal: Optional[Principal] = Depends(require_user_or_admin())
