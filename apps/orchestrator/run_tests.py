@@ -125,6 +125,8 @@ class OrchestratorRequest(BaseModel):
     # Individual test selection (additive)
     selected_tests: Optional[Dict[str, List[str]]] = None  # suite_id -> [test_ids]
     suite_configs: Optional[Dict[str, Any]] = None  # suite_id -> config
+    # RAG Reliability & Robustness configuration (additive)
+    rag_reliability_robustness: Optional[Dict[str, Any]] = None
 
 
 class OrchestratorResult(BaseModel):
@@ -2108,7 +2110,9 @@ class TestRunner:
                             event="suite_complete", suite=suite, passed=suite_passed, total=suite_total)
         
         # Run RAG Reliability & Robustness (Prompt Robustness) evaluation if enabled
+        self.capture_log("INFO", "orchestrator", "🔍 MAIN DEBUG: About to call _run_prompt_robustness_evaluation", event="debug")
         await self._run_prompt_robustness_evaluation()
+        self.capture_log("INFO", "orchestrator", "🔍 MAIN DEBUG: Finished _run_prompt_robustness_evaluation", event="debug")
         
         # Generate summary
         print(f"🔍 DEBUG: Before summary generation, detailed_rows count: {len(self.detailed_rows)}")
@@ -2149,25 +2153,33 @@ class TestRunner:
     async def _run_prompt_robustness_evaluation(self) -> None:
         """Run prompt robustness evaluation if rag_prompt_robustness suite is selected."""
         try:
+            self.capture_log("INFO", "orchestrator", f"🔍 DEBUG: Checking prompt robustness evaluation...", event="debug")
+            self.capture_log("INFO", "orchestrator", f"🔍 DEBUG: Request suites: {self.request.suites}", event="debug")
+            self.capture_log("INFO", "orchestrator", f"🔍 DEBUG: rag_reliability_robustness config: {self.request.rag_reliability_robustness}", event="debug")
+            
             # Check if rag_prompt_robustness suite is in the request
             if "rag_prompt_robustness" not in self.request.suites and "rag_reliability_robustness" not in self.request.suites:
+                self.capture_log("INFO", "orchestrator", "🔍 DEBUG: No relevant suites found, returning", event="debug")
                 return
             
             # Check if prompt robustness is enabled in config
-            rag_reliability_config = getattr(self.request, 'rag_reliability_robustness', {})
+            rag_reliability_config = self.request.rag_reliability_robustness or {}
             prompt_robustness_config = rag_reliability_config.get('prompt_robustness', {})
             
+            self.capture_log("INFO", "orchestrator", f"🔍 DEBUG: prompt_robustness_config: {prompt_robustness_config}", event="debug")
+            
             if not prompt_robustness_config.get('enabled', False):
+                self.capture_log("INFO", "orchestrator", "🔍 DEBUG: Prompt robustness not enabled, returning", event="debug")
                 return
             
-            print("🔍 Running RAG Reliability & Robustness (Prompt Robustness) evaluation...")
+            self.capture_log("INFO", "orchestrator", "🔍 Running RAG Reliability & Robustness (Prompt Robustness) evaluation...", event="debug")
             
-            # Load dataset items for prompt robustness
-            suite_data = self.load_suites()
-            prompt_robustness_items = suite_data.get("rag_prompt_robustness", [])
+            # Load dataset items for prompt robustness directly
+            prompt_robustness_items = self._load_rag_prompt_robustness_tests()
+            self.capture_log("INFO", "orchestrator", f"🔍 DEBUG: prompt_robustness_items count: {len(prompt_robustness_items)}", event="debug")
             
             if not prompt_robustness_items:
-                print("No prompt robustness test items found")
+                self.capture_log("INFO", "orchestrator", "🔍 DEBUG: No prompt robustness test items found, returning", event="debug")
                 return
             
             # Import and run prompt robustness evaluation
@@ -2471,7 +2483,14 @@ class TestRunner:
         
         # Add deprecation note if applicable
         if self.deprecated_suites:
-            summary["_deprecated_note"] = f"Deprecated suite alias applied: {', '.join(self.deprecated_suites)} → resilience"
+            # Map deprecated suites to their new names
+            alias_mappings = []
+            for deprecated_suite in self.deprecated_suites:
+                if deprecated_suite == "rag_quality":
+                    alias_mappings.append(f"{deprecated_suite} → rag_reliability_robustness")
+                else:
+                    alias_mappings.append(f"{deprecated_suite} → resilience")  # Default for other deprecated suites
+            summary["_deprecated_note"] = f"Deprecated suite alias applied: {', '.join(alias_mappings)}"
         
         # Add dataset metadata (additive)
         summary["dataset_source"] = self.dataset_source

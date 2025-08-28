@@ -1,0 +1,16 @@
+{
+  "target_mode": "api",
+  "api_base_url": "http://localhost:8000",
+  "suites": ["rag_reliability_robustness"],
+  "options": {
+    "provider": "mock",
+    "model": "mock-model"
+  },
+  "rag_reliability_robustness": {
+    "prompt_robustness": {
+      "enabled": true,
+      "prompt_source": "built_in",
+      "include_prompts": true
+    }
+  }
+}
