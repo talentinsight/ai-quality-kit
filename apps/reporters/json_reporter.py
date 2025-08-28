@@ -17,6 +17,7 @@ def build_json(
     compliance_smoke_details: Optional[List[Dict[str, Any]]] = None,
     bias_smoke_details: Optional[List[Dict[str, Any]]] = None,
     logs: Optional[List[Dict[str, Any]]] = None,
+    rag_reliability_robustness: Optional[Dict[str, Any]] = None,
     anonymize: bool = True
 ) -> Dict[str, Any]:
     """Build comprehensive JSON report from orchestrator data.
@@ -101,6 +102,10 @@ def build_json(
         report["bias_smoke"] = bias_smoke_section
     if logs_section:
         report["logs"] = logs_section
+    
+    # Add RAG Reliability & Robustness section if present
+    if rag_reliability_robustness:
+        report["rag_reliability_robustness"] = rag_reliability_robustness
     
     return report
 

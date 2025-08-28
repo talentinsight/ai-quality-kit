@@ -50,6 +50,27 @@ def write_excel(path: str, data: Dict[str, Any]) -> None:
     if data.get("logs") and data["logs"].get("entries"):
         _create_logs_sheet(wb, data)
     
+    # Optional sheets for RAG Reliability & Robustness (Prompt Robustness)
+    if data.get("rag_reliability_robustness") and data["rag_reliability_robustness"].get("prompt_robustness"):
+        prompt_robustness_data = data["rag_reliability_robustness"]["prompt_robustness"]
+        
+        # Import structure sheet writers
+        from apps.reporting.structure_sheet import (
+            write_structure_sheet,
+            write_structure_prompts_sheet,
+            write_structure_diffs_sheet
+        )
+        
+        # Write structure sheets if data is available
+        if prompt_robustness_data.get("structure_rows"):
+            write_structure_sheet(wb, prompt_robustness_data["structure_rows"])
+        
+        if prompt_robustness_data.get("prompts_rows"):
+            write_structure_prompts_sheet(wb, prompt_robustness_data["prompts_rows"])
+        
+        if prompt_robustness_data.get("diffs_rows"):
+            write_structure_diffs_sheet(wb, prompt_robustness_data["diffs_rows"])
+    
     # Save workbook
     wb.save(path)
 
@@ -104,6 +125,15 @@ def _create_summary_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     
     # Add MCP Security headers if MCP Security suite exists
     mcp_summary = summary.get("mcp_security", {})
+    
+    # Add RAG Reliability & Robustness headers if prompt robustness data exists
+    rag_reliability_summary = data.get("rag_reliability_robustness", {}).get("prompt_robustness", {}).get("rollups", {})
+    if rag_reliability_summary:
+        headers.extend([
+            "prompt_robustness_capacity_lift", "prompt_robustness_stability_simple", 
+            "prompt_robustness_stability_cot", "prompt_robustness_stability_scaffold",
+            "prompt_robustness_contract_adherence"
+        ])
     if mcp_summary:
         headers.extend([
             "mcp_security_tests", "mcp_security_passed", "mcp_p95_latency_ms", 
@@ -196,6 +226,18 @@ def _create_summary_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
             promptfoo_summary.get("pass_rate", 0.0)
         ])
 
+    # Add RAG Reliability & Robustness data if available
+    rag_reliability_summary = data.get("rag_reliability_robustness", {}).get("prompt_robustness", {}).get("rollups", {})
+    if rag_reliability_summary:
+        stability_by_mode = rag_reliability_summary.get("stability_avg_by_mode", {})
+        row_data.extend([
+            rag_reliability_summary.get("capacity_lift_avg", 0.0),
+            stability_by_mode.get("simple", 0.0),
+            stability_by_mode.get("cot", 0.0),
+            stability_by_mode.get("scaffold", 0.0),
+            rag_reliability_summary.get("contract_adherence_pct", 0.0)
+        ])
+    
     # Add MCP Security data if available
     mcp_summary = summary.get("mcp_security", {})
     if mcp_summary:

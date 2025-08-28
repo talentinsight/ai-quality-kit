@@ -10,6 +10,29 @@ from typing import Dict, List, Optional, Any, Literal
 from pathlib import Path
 import pandas as pd
 from pydantic import BaseModel
+
+
+class MockProviderClient:
+    """Simple mock provider client for prompt robustness evaluation."""
+    
+    def __init__(self, base_url: str, token: Optional[str], provider: str, model: str):
+        self.base_url = base_url
+        self.token = token
+        self.provider = provider
+        self.model = model
+    
+    def complete(self, prompt: str, temperature: float = 0, top_p: float = 1, max_tokens: int = 1000) -> Dict[str, Any]:
+        """Mock completion method that returns deterministic responses."""
+        # For testing purposes, return a simple mock response
+        # In a real implementation, this would make API calls
+        import time
+        time.sleep(0.1)  # Simulate API latency
+        
+        return {
+            "text": f"Mock response for: {prompt[:50]}...",
+            "prompt_tokens": len(prompt.split()),
+            "completion_tokens": 10
+        }
 from dotenv import load_dotenv
 
 # Import settings for Ragas configuration
@@ -158,6 +181,7 @@ class TestRunner:
         self.compliance_smoke_details: List[Dict[str, Any]] = []
         self.bias_smoke_details: List[Dict[str, Any]] = []
         self.deprecated_suites: List[str] = []
+        self.rag_reliability_robustness_data: Optional[Dict[str, Any]] = None
         
         # Log capture for Excel report
         self.captured_logs: List[Dict[str, Any]] = []
@@ -2083,6 +2107,9 @@ class TestRunner:
             self.capture_log("INFO", "orchestrator", f"Completed {suite} suite: {suite_passed}/{suite_total} passed", 
                             event="suite_complete", suite=suite, passed=suite_passed, total=suite_total)
         
+        # Run RAG Reliability & Robustness (Prompt Robustness) evaluation if enabled
+        await self._run_prompt_robustness_evaluation()
+        
         # Generate summary
         print(f"🔍 DEBUG: Before summary generation, detailed_rows count: {len(self.detailed_rows)}")
         if self.detailed_rows:
@@ -2118,6 +2145,65 @@ class TestRunner:
             counts=counts,
             artifacts=artifacts
         )
+    
+    async def _run_prompt_robustness_evaluation(self) -> None:
+        """Run prompt robustness evaluation if rag_prompt_robustness suite is selected."""
+        try:
+            # Check if rag_prompt_robustness suite is in the request
+            if "rag_prompt_robustness" not in self.request.suites and "rag_reliability_robustness" not in self.request.suites:
+                return
+            
+            # Check if prompt robustness is enabled in config
+            rag_reliability_config = getattr(self.request, 'rag_reliability_robustness', {})
+            prompt_robustness_config = rag_reliability_config.get('prompt_robustness', {})
+            
+            if not prompt_robustness_config.get('enabled', False):
+                return
+            
+            print("🔍 Running RAG Reliability & Robustness (Prompt Robustness) evaluation...")
+            
+            # Load dataset items for prompt robustness
+            suite_data = self.load_suites()
+            prompt_robustness_items = suite_data.get("rag_prompt_robustness", [])
+            
+            if not prompt_robustness_items:
+                print("No prompt robustness test items found")
+                return
+            
+            # Import and run prompt robustness evaluation
+            from apps.orchestrator.suites.rag_prompt_robustness import run_prompt_robustness
+            
+            # Create a simple mock provider client for prompt robustness evaluation
+            provider_client = MockProviderClient(
+                base_url=self.request.api_base_url or "http://localhost:8000",
+                token=self.request.api_bearer_token,
+                provider=(self.request.options or {}).get("provider", "mock"),
+                model=(self.request.options or {}).get("model", "mock-model")
+            )
+            
+            # Build run config
+            run_cfg = {
+                "run_id": self.run_id,
+                "rag_reliability_robustness": {
+                    "prompt_robustness": prompt_robustness_config
+                }
+            }
+            
+            # Run evaluation
+            prompt_robustness_results = run_prompt_robustness(run_cfg, provider_client, prompt_robustness_items)
+            
+            # Store results for report generation
+            self.rag_reliability_robustness_data = {
+                "prompt_robustness": prompt_robustness_results
+            }
+            
+            print(f"✅ Prompt robustness evaluation completed with {len(prompt_robustness_results.get('structure_rows', []))} results")
+            
+        except Exception as e:
+            print(f"❌ Error running prompt robustness evaluation: {e}")
+            # Don't fail the entire run if prompt robustness fails
+            self.capture_log("ERROR", "orchestrator", f"Prompt robustness evaluation failed: {str(e)}", 
+                           event="prompt_robustness_error")
     
     def _is_ragas_enabled(self) -> bool:
         """Check if Ragas evaluation should be enabled for this run."""
@@ -2468,6 +2554,7 @@ class TestRunner:
             compliance_smoke_details=self.compliance_smoke_details if self.compliance_smoke_details else None,
             bias_smoke_details=self.bias_smoke_details if self.bias_smoke_details else None,
             logs=self.captured_logs if self.captured_logs else None,
+            rag_reliability_robustness=self.rag_reliability_robustness_data if self.rag_reliability_robustness_data else None,
             anonymize=anonymize
         )
         
