@@ -40,7 +40,7 @@ from apps.settings import settings
 
 # Import quality testing components
 try:
-    from apps.testing.schema_v2 import QualityGuardOptions, TestCaseV2, parse_test_case_v2
+    from apps.testing.schema_v2 import QualityGuardOptions
     from apps.testing.oracles import TestEvaluator
     from apps.testing.anti_flake import get_quality_guard_registry
     from apps.testing.metamorphic import MetamorphicChecker
@@ -955,37 +955,7 @@ class TestRunner:
         
         return regression_tests
     
-    def _load_gibberish_tests(self) -> List[Dict[str, Any]]:
-        """Load gibberish tests (nonsensical inputs to test LLM robustness)."""
-        gibberish_inputs = [
-            "asdfgh qwerty zxcvbn uiop hjkl",
-            "12345 !@#$% 67890 ^&*() abcdef",
-            "Lorem ipsum dolor sit amet consectetur adipiscing elit sed do",
-            "混乱した文字列テスト 한글테스트 العربية тест",
-            "🎭🎨🎪🎯🎲🎸🎺🎻🎼🎵🎶🎤",
-            "AAAAAAAA BBBBBBBB CCCCCCCC DDDDDDDD",
-            "null undefined NaN Infinity -Infinity",
-            "SELECT * FROM users; DROP TABLE users;--",
-            "javascript:alert('xss')",
-            "../../etc/passwd",
-            "\\x41\\x42\\x43\\x44\\x45",
-            "Base64: QWxhZGRpbjpvcGVuIHNlc2FtZQ==",
-            "Zalgo: H̴e̵l̵l̵o̵ W̷o̷r̷l̷d̷",
-            "Reverse: !dlroW olleH",
-            "ROT13: Uryyb Jbeyq!"
-        ]
-        
-        tests = []
-        for i, gibberish in enumerate(gibberish_inputs):
-            tests.append({
-                "test_id": f"gibberish_{i+1}",
-                "query": gibberish,
-                "expected_behavior": "handle_gracefully",
-                "test_type": "robustness",
-                "category": "gibberish"
-            })
-        
-        return tests
+
     
     def _load_resilience_tests(self) -> List[Dict[str, Any]]:
         """Load resilience tests from catalog or legacy configuration."""

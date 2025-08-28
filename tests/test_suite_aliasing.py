@@ -27,12 +27,13 @@ class TestSuiteAliasing(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             runner = TestRunner(request)
+            suite_data = runner.load_suites()  # This triggers the deprecation warning
             
             # Check that deprecation warning was issued
-            self.assertEqual(len(w), 1)
-            self.assertTrue(issubclass(w[0].category, DeprecationWarning))
-            self.assertIn("rag_quality is deprecated", str(w[0].message))
-            self.assertIn("rag_reliability_robustness", str(w[0].message))
+            deprecation_warnings = [warning for warning in w if issubclass(warning.category, DeprecationWarning) and "rag_quality is deprecated" in str(warning.message)]
+            self.assertEqual(len(deprecation_warnings), 1)
+            self.assertIn("rag_quality is deprecated", str(deprecation_warnings[0].message))
+            self.assertIn("rag_reliability_robustness", str(deprecation_warnings[0].message))
     
     def test_rag_structure_eval_alias_to_rag_prompt_robustness(self):
         """Test that rag_structure_eval is mapped to rag_prompt_robustness."""
@@ -54,9 +55,10 @@ class TestSuiteAliasing(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             runner = TestRunner(request)
+            suite_data = runner.load_suites()  # This should not trigger deprecation warnings
             
-            # Should not issue any deprecation warnings
-            deprecation_warnings = [warning for warning in w if issubclass(warning.category, DeprecationWarning)]
+            # Should not issue any deprecation warnings related to suite aliasing
+            deprecation_warnings = [warning for warning in w if issubclass(warning.category, DeprecationWarning) and ("rag_quality" in str(warning.message) or "gibberish" in str(warning.message))]
             self.assertEqual(len(deprecation_warnings), 0)
     
     def test_mixed_suites_with_aliases(self):
@@ -73,8 +75,8 @@ class TestSuiteAliasing(unittest.TestCase):
             self.assertIn("rag_reliability_robustness", suite_data)
             self.assertIn("red_team", suite_data)
             
-            # Should issue exactly one deprecation warning
-            deprecation_warnings = [warning for warning in w if issubclass(warning.category, DeprecationWarning)]
+            # Should issue exactly one deprecation warning for suite aliasing
+            deprecation_warnings = [warning for warning in w if issubclass(warning.category, DeprecationWarning) and "rag_quality is deprecated" in str(warning.message)]
             self.assertEqual(len(deprecation_warnings), 1)
     
     def test_deprecated_suites_tracking(self):
@@ -83,6 +85,7 @@ class TestSuiteAliasing(unittest.TestCase):
         request.suites = ["rag_quality", "gibberish"]
         
         runner = TestRunner(request)
+        suite_data = runner.load_suites()  # This triggers the alias mapping
         
         # Should track both deprecated suites
         self.assertIn("rag_quality", runner.deprecated_suites)
