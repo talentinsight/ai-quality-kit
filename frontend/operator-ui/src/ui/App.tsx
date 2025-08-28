@@ -16,7 +16,7 @@ import CompactGroundTruthPanel from "../components/CompactGroundTruthPanel";
 import TestSuiteSelector from "../components/TestSuiteSelector";
 import { computeRequirementMatrix, ProvidedIntake } from "../lib/requirementStatus";
 
-const DEFAULT_SUITES: TestSuite[] = ["rag_quality","red_team","safety","performance","regression","resilience","compliance_smoke","bias_smoke"];
+const DEFAULT_SUITES: TestSuite[] = ["rag_reliability_robustness","red_team","safety","performance","regression","resilience","compliance_smoke","bias_smoke"];
 const REQUIRED_SHEETS = ["Summary","Detailed","API_Details","Inputs_And_Expected"];
 
 export default function App() {

@@ -32,7 +32,7 @@ load_dotenv()
 
 # Type definitions
 TargetMode = Literal["api", "mcp"]
-TestSuiteName = Literal["rag_quality", "red_team", "safety", "performance", "regression", "gibberish", "resilience", "compliance_smoke", "bias_smoke", "promptfoo", "mcp_security"]
+TestSuiteName = Literal["rag_quality", "rag_reliability_robustness", "rag_prompt_robustness", "rag_structure_eval", "red_team", "safety", "performance", "regression", "gibberish", "resilience", "compliance_smoke", "bias_smoke", "promptfoo", "mcp_security"]
 
 
 class ProviderLimits(BaseModel):
@@ -203,8 +203,10 @@ class TestRunner:
         """Load test items for each requested suite."""
         suite_data = {}
         
-        # Handle backward compatibility: gibberish -> resilience alias
+        # Handle backward compatibility aliases
         processed_suites = []
+        deprecation_logged = False
+        
         for suite in self.request.suites:
             if suite == "gibberish":
                 # Map gibberish to resilience
@@ -212,12 +214,36 @@ class TestRunner:
                     processed_suites.append("resilience")
                     self.deprecated_suites.append("gibberish")
                     print("Deprecated suite alias applied: gibberish → resilience")
+            elif suite == "rag_quality":
+                # Map rag_quality to rag_reliability_robustness with deprecation warning
+                if "rag_reliability_robustness" not in processed_suites:
+                    processed_suites.append("rag_reliability_robustness")
+                    self.deprecated_suites.append("rag_quality")
+                    if not deprecation_logged:
+                        import warnings
+                        warnings.warn(
+                            "rag_quality is deprecated; use rag_reliability_robustness",
+                            DeprecationWarning,
+                            stacklevel=2
+                        )
+                        deprecation_logged = True
+                        print("Deprecated suite alias applied: rag_quality → rag_reliability_robustness")
+            elif suite == "rag_structure_eval":
+                # Map rag_structure_eval to rag_prompt_robustness (alias)
+                if "rag_prompt_robustness" not in processed_suites:
+                    processed_suites.append("rag_prompt_robustness")
+                    print("Suite alias applied: rag_structure_eval → rag_prompt_robustness")
             else:
                 processed_suites.append(suite)
         
         for suite in processed_suites:
             if suite == "rag_quality":
                 suite_data[suite] = self._load_rag_quality_tests()
+            elif suite == "rag_reliability_robustness":
+                # Parent suite - load same tests as rag_quality for backward compatibility
+                suite_data[suite] = self._load_rag_quality_tests()
+            elif suite == "rag_prompt_robustness":
+                suite_data[suite] = self._load_rag_prompt_robustness_tests()
             elif suite == "red_team":
                 suite_data[suite] = self._load_red_team_tests()
             elif suite == "safety":
@@ -356,6 +382,11 @@ class TestRunner:
             # Map UI test IDs to actual test filtering logic
             if suite_name == "rag_quality":
                 filtered_cases = self._filter_rag_quality_tests(test_cases, selected_test_ids)
+            elif suite_name == "rag_reliability_robustness":
+                filtered_cases = self._filter_rag_reliability_robustness_tests(test_cases, selected_test_ids)
+            elif suite_name == "rag_prompt_robustness":
+                # For prompt robustness, include all tests (filtering happens in the runner)
+                filtered_cases = test_cases
             elif suite_name == "red_team":
                 filtered_cases = self._filter_red_team_tests(test_cases, selected_test_ids)
             elif suite_name == "safety":
@@ -384,6 +415,42 @@ class TestRunner:
             'answer_correctness': 'answer_correctness',
             'ground_truth_evaluation': 'ragas_full'  # Special case for full Ragas evaluation
         }
+        
+        # If ground_truth_evaluation is selected, enable Ragas evaluation
+        if 'ground_truth_evaluation' in selected_test_ids:
+            # This will trigger Ragas evaluation in the evaluator
+            # For now, include all test cases and let the evaluator handle it
+            return test_cases
+        
+        # For basic tests, include all test cases but mark which evaluations to run
+        # The actual filtering happens in the evaluation phase
+        for test_case in test_cases:
+            # Add metadata about which evaluations to run
+            test_case['selected_evaluations'] = [test_type_mapping.get(tid, tid) for tid in selected_test_ids if tid in test_type_mapping]
+            filtered_cases.append(test_case)
+        
+        return filtered_cases
+    
+    def _filter_rag_reliability_robustness_tests(self, test_cases: List[Dict[str, Any]], selected_test_ids: List[str]) -> List[Dict[str, Any]]:
+        """Filter RAG reliability & robustness tests based on selected test types."""
+        filtered_cases = []
+        
+        # Map UI test IDs to filtering logic
+        test_type_mapping = {
+            'basic_faithfulness': 'faithfulness',
+            'context_recall': 'context_recall', 
+            'answer_relevancy': 'answer_relevancy',
+            'context_precision': 'context_precision',
+            'answer_correctness': 'answer_correctness',
+            'ground_truth_evaluation': 'ragas_full',  # Special case for full Ragas evaluation
+            'prompt_robustness': 'prompt_robustness'  # New prompt robustness test
+        }
+        
+        # If prompt_robustness is selected, we need to trigger the prompt robustness suite
+        if 'prompt_robustness' in selected_test_ids:
+            # Add metadata to indicate prompt robustness should be run
+            for test_case in test_cases:
+                test_case['run_prompt_robustness'] = True
         
         # If ground_truth_evaluation is selected, enable Ragas evaluation
         if 'ground_truth_evaluation' in selected_test_ids:
@@ -563,6 +630,87 @@ class TestRunner:
             # Use environment default if no specific size requested
             sample_size = int(os.getenv("RAGAS_SAMPLE_SIZE", "8"))
             return tests[:sample_size]
+    
+    def _load_rag_prompt_robustness_tests(self) -> List[Dict[str, Any]]:
+        """Load RAG prompt robustness tests from structure_eval datasets."""
+        tests = []
+        
+        # Load from structure_eval datasets
+        structure_eval_dir = Path("data/structure_eval")
+        
+        # Load long_multiplication dataset
+        long_mult_file = structure_eval_dir / "long_multiplication.jsonl"
+        if long_mult_file.exists():
+            with open(long_mult_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        item = json.loads(line)
+                        tests.append({
+                            "test_id": item.get("id", f"prompt_robustness_{len(tests)+1}"),
+                            "task_type": item.get("task_type", "long_multiplication"),
+                            "input": item.get("input", {}),
+                            "gold": item.get("gold"),
+                            "paraphrases": item.get("paraphrases", []),
+                            "output_contract": item.get("output_contract")
+                        })
+        
+        # Load extraction_receipts dataset
+        extraction_file = structure_eval_dir / "extraction_receipts.jsonl"
+        if extraction_file.exists():
+            with open(extraction_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        item = json.loads(line)
+                        tests.append({
+                            "test_id": item.get("id", f"prompt_robustness_{len(tests)+1}"),
+                            "task_type": item.get("task_type", "extraction"),
+                            "input": item.get("input", {}),
+                            "gold": item.get("gold"),
+                            "paraphrases": item.get("paraphrases", []),
+                            "output_contract": item.get("output_contract")
+                        })
+        
+        # Load json_to_sql dataset (optional)
+        json_sql_file = structure_eval_dir / "json_to_sql.jsonl"
+        if json_sql_file.exists():
+            with open(json_sql_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        item = json.loads(line)
+                        tests.append({
+                            "test_id": item.get("id", f"prompt_robustness_{len(tests)+1}"),
+                            "task_type": item.get("task_type", "json_to_sql"),
+                            "input": item.get("input", {}),
+                            "gold": item.get("gold"),
+                            "paraphrases": item.get("paraphrases", []),
+                            "output_contract": item.get("output_contract")
+                        })
+        
+        # Load rag_qa dataset (optional)
+        rag_qa_file = structure_eval_dir / "rag_qa.jsonl"
+        if rag_qa_file.exists():
+            with open(rag_qa_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        item = json.loads(line)
+                        tests.append({
+                            "test_id": item.get("id", f"prompt_robustness_{len(tests)+1}"),
+                            "task_type": item.get("task_type", "rag_qa"),
+                            "input": item.get("input", {}),
+                            "gold": item.get("gold"),
+                            "paraphrases": item.get("paraphrases", []),
+                            "output_contract": item.get("output_contract")
+                        })
+        
+        # If no datasets found, return empty list
+        if not tests:
+            print("No structure_eval datasets found, rag_prompt_robustness will have no tests")
+        
+        return tests
     
     def _load_red_team_tests(self) -> List[Dict[str, Any]]:
         """Load red team tests from expanded, attacks file or testdata bundle."""

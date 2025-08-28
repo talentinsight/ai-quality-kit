@@ -2,6 +2,9 @@ export type Provider = "openai"|"anthropic"|"gemini"|"custom_rest"|"mock";
 
 export type TestSuite =
   | "rag_quality"
+  | "rag_reliability_robustness"
+  | "rag_prompt_robustness"
+  | "rag_structure_eval"
   | "red_team"
   | "safety"
   | "performance"

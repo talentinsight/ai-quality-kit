@@ -33,9 +33,9 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
 }) => {
   const [testSuites, setTestSuites] = useState<TestSuite[]>([
     {
-      id: 'rag_quality',
-      name: 'RAG Quality',
-      description: 'Retrieval-Augmented Generation evaluation',
+      id: 'rag_reliability_robustness',
+      name: 'RAG Reliability & Robustness',
+      description: 'Retrieval-Augmented Generation evaluation and robustness testing',
       icon: BarChart3,
       color: 'blue',
       enabled: true,
@@ -85,6 +85,13 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
           description: 'Measures the accuracy of the answer compared to ground truth',
           enabled: false,
           estimatedDuration: '4-8 min',
+        },
+        {
+          id: 'prompt_robustness',
+          name: 'Prompt Robustness (Structured Prompting)',
+          description: 'Tests prompt robustness across simple, CoT, and scaffold modes',
+          enabled: false,
+          estimatedDuration: '10-20 min',
         }
       ]
     },
