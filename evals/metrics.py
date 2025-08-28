@@ -1,10 +1,17 @@
 """Evaluation metrics using Ragas framework."""
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import pandas as pd
 from datasets import Dataset
 from ragas import evaluate
-from ragas.metrics import faithfulness, context_recall
+from ragas.metrics import (
+    faithfulness, 
+    context_recall, 
+    answer_relevancy, 
+    context_precision,
+    answer_correctness,
+    answer_similarity
+)
 import logging
 
 # Configure logging
@@ -57,12 +64,17 @@ def eval_batch(samples: List[Dict[str, Any]]) -> Dict[str, float]:
         # Create dataset
         dataset = Dataset.from_dict(eval_data)
         
-        # Define metrics to evaluate
-        metrics_to_eval = [faithfulness]
+        # Define metrics to evaluate (always available)
+        metrics_to_eval = [faithfulness, answer_relevancy]
         
-        # Add context_recall only if ground_truths is available
+        # Add metrics that require ground truth
         if 'ground_truths' in eval_data:
-            metrics_to_eval.append(context_recall)
+            metrics_to_eval.extend([
+                context_recall,
+                context_precision,
+                answer_correctness,
+                answer_similarity
+            ])
         
         # Run evaluation with error handling for uvloop compatibility
         logger.info(f"Evaluating {len(samples)} samples with Ragas...")
@@ -72,12 +84,19 @@ def eval_batch(samples: List[Dict[str, Any]]) -> Dict[str, float]:
             # Debug: Print the raw result
             logger.info(f"Raw Ragas result: {result}")
             
-            # Extract scores
+            # Extract scores for all 6 available metrics
             scores = {}
-            if 'faithfulness' in result:
-                scores['faithfulness'] = float(result['faithfulness'])
-            if 'context_recall' in result:
-                scores['context_recall'] = float(result['context_recall'])
+            metric_names = [
+                'faithfulness', 'answer_relevancy',
+                'context_recall', 'context_precision', 'answer_correctness',
+                'answer_similarity'
+            ]
+            
+            for metric_name in metric_names:
+                if hasattr(result, metric_name):
+                    metric_value = getattr(result, metric_name)
+                    if metric_value is not None:
+                        scores[metric_name] = float(metric_value)
             
             # Check if all scores are 0 (which might indicate an issue)
             if all(score == 0.0 for score in scores.values()) and scores:
@@ -104,7 +123,7 @@ def eval_batch(samples: List[Dict[str, Any]]) -> Dict[str, float]:
         raise ValueError(f"Ragas evaluation failed: {e}")
 
 
-def create_eval_sample(question: str, answer: str, contexts: List[str], ground_truth: str = None) -> Dict[str, Any]:
+def create_eval_sample(question: str, answer: str, contexts: List[str], ground_truth: Optional[str] = None) -> Dict[str, Any]:
     """
     Create a properly formatted evaluation sample.
     

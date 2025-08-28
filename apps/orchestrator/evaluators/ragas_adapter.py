@@ -34,9 +34,14 @@ def evaluate_ragas(samples: List[Dict[str, Any]]) -> Dict[str, Any]:
                 "faithfulness": float,
                 "answer_relevancy": float, 
                 "context_precision": float,
-                "context_recall": float
+                "context_recall": float,        # Only with ground truth
+                "answer_correctness": float,    # Only with ground truth
+                "answer_similarity": float     # Only with ground truth
             }
         }
+        
+        Without ground truth: 3 metrics (faithfulness, answer_relevancy, context_precision)
+        With ground truth: 6 metrics (all above)
         
         Returns empty dict {} if:
         - Ragas import fails
@@ -55,7 +60,9 @@ def evaluate_ragas(samples: List[Dict[str, Any]]) -> Dict[str, Any]:
             faithfulness, 
             answer_relevancy, 
             context_precision, 
-            context_recall
+            context_recall,
+            answer_correctness,
+            answer_similarity
         )
         from datasets import Dataset
     except ImportError as e:
@@ -113,11 +120,16 @@ def evaluate_ragas(samples: List[Dict[str, Any]]) -> Dict[str, Any]:
         dataset = Dataset.from_dict(eval_data)
         
         # Define metrics to evaluate based on available data
-        metrics_to_eval = [faithfulness, answer_relevancy]
+        # Without ground truth: faithfulness, answer_relevancy, context_precision (as context relevancy)
+        metrics_to_eval = [faithfulness, answer_relevancy, context_precision]
         
-        # Add metrics that require ground truth
+        # Add additional metrics that require ground truth
         if has_ground_truth:
-            metrics_to_eval.extend([context_precision, context_recall])
+            metrics_to_eval.extend([
+                context_recall,
+                answer_correctness,
+                answer_similarity
+            ])
         
         logger.info(f"Evaluating {len(valid_samples)} samples with Ragas metrics: {[m.name for m in metrics_to_eval]}")
         
@@ -137,7 +149,9 @@ def evaluate_ragas(samples: List[Dict[str, Any]]) -> Dict[str, Any]:
             'faithfulness': 'faithfulness',
             'answer_relevancy': 'answer_relevancy', 
             'context_precision': 'context_precision',
-            'context_recall': 'context_recall'
+            'context_recall': 'context_recall',
+            'answer_correctness': 'answer_correctness',
+            'answer_similarity': 'answer_similarity'
         }
         
         for ragas_key, our_key in metric_mapping.items():

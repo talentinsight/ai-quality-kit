@@ -99,6 +99,9 @@ class OrchestratorRequest(BaseModel):
     # Promptfoo integration options (additive)
     promptfoo_files: Optional[List[str]] = None
     force_provider_from_yaml: Optional[bool] = False
+    # Individual test selection (additive)
+    selected_tests: Optional[Dict[str, List[str]]] = None  # suite_id -> [test_ids]
+    suite_configs: Optional[Dict[str, Any]] = None  # suite_id -> config
 
 
 class OrchestratorResult(BaseModel):
@@ -243,6 +246,10 @@ class TestRunner:
                 else:
                     suite_data["promptfoo"] = promptfoo_tests
         
+        # Apply individual test filtering if selected_tests is provided
+        if self.request.selected_tests:
+            suite_data = self._filter_individual_tests(suite_data)
+        
         # Apply sharding if configured
         if self.request.shards and self.request.shard_id:
             suite_data = self._apply_sharding(suite_data)
@@ -331,6 +338,161 @@ class TestRunner:
             sharded_suite_data[suite_name] = sharded_cases
         
         return sharded_suite_data
+    
+    def _filter_individual_tests(self, suite_data: Dict[str, List[Dict[str, Any]]]) -> Dict[str, List[Dict[str, Any]]]:
+        """Filter tests based on individual test selection from UI."""
+        filtered_suite_data = {}
+        
+        for suite_name, test_cases in suite_data.items():
+            # Get selected test IDs for this suite
+            selected_test_ids = (self.request.selected_tests or {}).get(suite_name, [])
+            
+            if not selected_test_ids:
+                # If no specific tests selected for this suite, skip it entirely
+                continue
+            
+            filtered_cases = []
+            
+            # Map UI test IDs to actual test filtering logic
+            if suite_name == "rag_quality":
+                filtered_cases = self._filter_rag_quality_tests(test_cases, selected_test_ids)
+            elif suite_name == "red_team":
+                filtered_cases = self._filter_red_team_tests(test_cases, selected_test_ids)
+            elif suite_name == "safety":
+                filtered_cases = self._filter_safety_tests(test_cases, selected_test_ids)
+            elif suite_name == "performance":
+                filtered_cases = self._filter_performance_tests(test_cases, selected_test_ids)
+            else:
+                # For other suites, include all tests (legacy behavior)
+                filtered_cases = test_cases
+            
+            if filtered_cases:
+                filtered_suite_data[suite_name] = filtered_cases
+        
+        return filtered_suite_data
+    
+    def _filter_rag_quality_tests(self, test_cases: List[Dict[str, Any]], selected_test_ids: List[str]) -> List[Dict[str, Any]]:
+        """Filter RAG quality tests based on selected test types."""
+        filtered_cases = []
+        
+        # Map UI test IDs to filtering logic
+        test_type_mapping = {
+            'basic_faithfulness': 'faithfulness',
+            'context_recall': 'context_recall', 
+            'answer_relevancy': 'answer_relevancy',
+            'context_precision': 'context_precision',
+            'answer_correctness': 'answer_correctness',
+            'ground_truth_evaluation': 'ragas_full'  # Special case for full Ragas evaluation
+        }
+        
+        # If ground_truth_evaluation is selected, enable Ragas evaluation
+        if 'ground_truth_evaluation' in selected_test_ids:
+            # This will trigger Ragas evaluation in the evaluator
+            # For now, include all test cases and let the evaluator handle it
+            return test_cases
+        
+        # For basic tests, include all test cases but mark which evaluations to run
+        # The actual filtering happens in the evaluation phase
+        for test_case in test_cases:
+            # Add metadata about which evaluations to run
+            test_case['selected_evaluations'] = [test_type_mapping.get(tid, tid) for tid in selected_test_ids if tid in test_type_mapping]
+            filtered_cases.append(test_case)
+        
+        return filtered_cases
+    
+    def _filter_red_team_tests(self, test_cases: List[Dict[str, Any]], selected_test_ids: List[str]) -> List[Dict[str, Any]]:
+        """Filter red team tests based on selected attack types."""
+        filtered_cases = []
+        
+        # Map UI test IDs to attack categories
+        attack_type_mapping = {
+            'prompt_injection': ['injection', 'prompt_injection'],
+            'jailbreak_attempts': ['jailbreak', 'role_play'],
+            'data_extraction': ['extraction', 'data_leak'],
+            'context_manipulation': ['context', 'manipulation'],
+            'social_engineering': ['social', 'engineering']
+        }
+        
+        for test_case in test_cases:
+            test_category = test_case.get('category', '').lower()
+            test_type = test_case.get('type', '').lower()
+            
+            # Check if this test case matches any selected test type
+            should_include = False
+            for selected_id in selected_test_ids:
+                if selected_id in attack_type_mapping:
+                    keywords = attack_type_mapping[selected_id]
+                    if any(keyword in test_category or keyword in test_type for keyword in keywords):
+                        should_include = True
+                        break
+            
+            if should_include:
+                filtered_cases.append(test_case)
+        
+        return filtered_cases
+    
+    def _filter_safety_tests(self, test_cases: List[Dict[str, Any]], selected_test_ids: List[str]) -> List[Dict[str, Any]]:
+        """Filter safety tests based on selected safety categories."""
+        filtered_cases = []
+        
+        # Map UI test IDs to safety categories
+        safety_type_mapping = {
+            'toxicity_detection': ['toxicity', 'toxic'],
+            'hate_speech': ['hate', 'discrimination'],
+            'violence_content': ['violence', 'violent'],
+            'adult_content': ['adult', 'sexual'],
+            'bias_detection': ['bias', 'biased'],
+            'misinformation': ['misinformation', 'false']
+        }
+        
+        for test_case in test_cases:
+            test_category = test_case.get('category', '').lower()
+            test_type = test_case.get('type', '').lower()
+            
+            # Check if this test case matches any selected safety type
+            should_include = False
+            for selected_id in selected_test_ids:
+                if selected_id in safety_type_mapping:
+                    keywords = safety_type_mapping[selected_id]
+                    if any(keyword in test_category or keyword in test_type for keyword in keywords):
+                        should_include = True
+                        break
+            
+            if should_include:
+                filtered_cases.append(test_case)
+        
+        return filtered_cases
+    
+    def _filter_performance_tests(self, test_cases: List[Dict[str, Any]], selected_test_ids: List[str]) -> List[Dict[str, Any]]:
+        """Filter performance tests based on selected performance metrics."""
+        filtered_cases = []
+        
+        # Map UI test IDs to performance test types
+        perf_type_mapping = {
+            'cold_start_latency': ['cold', 'start'],
+            'warm_performance': ['warm', 'performance'],
+            'throughput_testing': ['throughput', 'concurrent'],
+            'stress_testing': ['stress', 'load'],
+            'memory_usage': ['memory', 'usage']
+        }
+        
+        for test_case in test_cases:
+            test_category = test_case.get('category', '').lower()
+            test_type = test_case.get('type', '').lower()
+            
+            # Check if this test case matches any selected performance type
+            should_include = False
+            for selected_id in selected_test_ids:
+                if selected_id in perf_type_mapping:
+                    keywords = perf_type_mapping[selected_id]
+                    if any(keyword in test_category or keyword in test_type for keyword in keywords):
+                        should_include = True
+                        break
+            
+            if should_include:
+                filtered_cases.append(test_case)
+        
+        return filtered_cases
     
     def _load_rag_quality_tests(self) -> List[Dict[str, Any]]:
         """Load RAG quality tests from expanded, golden dataset or testdata bundle."""

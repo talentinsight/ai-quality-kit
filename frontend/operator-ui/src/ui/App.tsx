@@ -7,6 +7,13 @@ import { getTestdataMeta, ApiError } from "../lib/api";
 import ChatWizard from "../components/ChatWizard";
 import ChatWizardV2 from "../components/ChatWizardV2";
 import RequirementsMatrix from "../components/RequirementsMatrix";
+import GroundTruthEvaluationPanel from "../components/GroundTruthEvaluationPanel";
+import RagQualitySuite from "../components/suites/RagQualitySuite";
+import RedTeamSuite from "../components/suites/RedTeamSuite";
+import SafetySuite from "../components/suites/SafetySuite";
+import PerformanceSuite from "../components/suites/PerformanceSuite";
+import CompactGroundTruthPanel from "../components/CompactGroundTruthPanel";
+import TestSuiteSelector from "../components/TestSuiteSelector";
 import { computeRequirementMatrix, ProvidedIntake } from "../lib/requirementStatus";
 
 const DEFAULT_SUITES: TestSuite[] = ["rag_quality","red_team","safety","performance","regression","resilience","compliance_smoke","bias_smoke"];
@@ -87,6 +94,14 @@ export default function App() {
 
   // Requirements matrix state
   const [showRequirementsModal, setShowRequirementsModal] = useState(false);
+
+  // Ground Truth evaluation state
+  const [useGroundTruth, setUseGroundTruth] = useState(false);
+  const [groundTruthExpanded, setGroundTruthExpanded] = useState(false);
+
+  // Test selection state
+  const [selectedTests, setSelectedTests] = useState<Record<string, string[]>>({});
+  const [suiteConfigs, setSuiteConfigs] = useState<Record<string, any>>({});
 
   const thresholds = useMemo(() => ({
     faithfulness_min: Number(faithMin),
@@ -203,6 +218,7 @@ export default function App() {
         thresholds,
         testdata_id: testdataId.trim() || undefined,
         use_expanded: true,  // Enable expanded dataset by default
+        use_ragas: useGroundTruth,  // Enable Ragas evaluation when ground truth is selected
         run_id: tempRunId,  // Send our generated run_id for cancel
         options: { 
           provider, 
@@ -210,6 +226,8 @@ export default function App() {
           qa_sample_size: qaSampleSize ? parseInt(qaSampleSize) : undefined,
           attack_mutators: parseInt(attackMutators),
           perf_repeats: parseInt(perfRepeats),
+          selected_tests: selectedTests, // Send individual test selections
+          suite_configs: suiteConfigs, // Send suite-specific configurations
           ...(suites.includes("resilience") ? (() => {
             const resilienceOptions: any = {
               mode: resilienceMode,
@@ -324,24 +342,50 @@ export default function App() {
 
   const canRun = !!(targetMode === "api" ? apiBaseUrl : mcpServerUrl) && suites.length > 0 && !busy && (testdataId.trim() === '' || testdataValid !== false);
 
-  // Estimated test count calculation
+  // Estimated test count calculation based on selected individual tests
   const estimatedTests = useMemo(() => {
     let total = 0;
-    const qaSize = qaSampleSize ? parseInt(qaSampleSize) : 8; // Default sample size
-    const attacks = parseInt(attackMutators) || 1;
-    const perf = parseInt(perfRepeats) || 2;
     
-    if (suites.includes("rag_quality")) total += qaSize;
-    if (suites.includes("red_team")) total += 10 * attacks; // ~10 base attacks
-    if (suites.includes("safety")) total += Math.min(50, Math.max(5, attacks * 5)); // 5-50 safety tests based on attack_mutators
-    if (suites.includes("performance")) total += perf;
-    if (suites.includes("regression")) total += qaSize;
-    if (suites.includes("resilience")) total += parseInt(resilienceSamples) || 10; // Resilience samples
-    if (suites.includes("compliance_smoke")) total += 12; // 4 PII + 8 RBAC tests
-    if (suites.includes("bias_smoke")) total += parseInt(biasMaxPairs) || 10; // Bias pairs
+    // Count individual tests selected
+    Object.entries(selectedTests).forEach(([suiteId, testIds]) => {
+      if (testIds.length > 0) {
+        // Base count is number of selected tests
+        let suiteTotal = testIds.length;
+        
+        // Apply multipliers based on suite type and configuration
+        if (suiteId === 'rag_quality') {
+          const qaSize = qaSampleSize ? parseInt(qaSampleSize) : 8;
+          suiteTotal = testIds.length * Math.max(1, Math.floor(qaSize / 3)); // Rough estimate
+        } else if (suiteId === 'red_team') {
+          const attacks = parseInt(attackMutators) || 1;
+          suiteTotal = testIds.length * attacks * 2; // Each test type has multiple attack variations
+        } else if (suiteId === 'safety') {
+          const attacks = parseInt(attackMutators) || 1;
+          suiteTotal = testIds.length * Math.max(3, attacks * 2); // Safety tests have multiple variations
+        } else if (suiteId === 'performance') {
+          const perf = parseInt(perfRepeats) || 2;
+          suiteTotal = testIds.length * perf; // Performance tests repeat
+        }
+        
+        total += suiteTotal;
+      }
+    });
     
-    return total;
-  }, [suites, qaSampleSize, attackMutators, perfRepeats, resilienceSamples, biasMaxPairs]);
+    // Add legacy suite counts for suites not in selectedTests
+    const legacySuites = suites.filter(suite => !selectedTests[suite]);
+    legacySuites.forEach(suite => {
+      const qaSize = qaSampleSize ? parseInt(qaSampleSize) : 8;
+      const attacks = parseInt(attackMutators) || 1;
+      const perf = parseInt(perfRepeats) || 2;
+      
+      if (suite === "regression") total += qaSize;
+      if (suite === "resilience") total += parseInt(resilienceSamples) || 10;
+      if (suite === "compliance_smoke") total += 12;
+      if (suite === "bias_smoke") total += parseInt(biasMaxPairs) || 10;
+    });
+    
+    return Math.max(1, total);
+  }, [selectedTests, suites, qaSampleSize, attackMutators, perfRepeats, resilienceSamples, biasMaxPairs]);
 
   // --- downloads: compute robust paths ---
   const hasRun = !!run?.run_id;
@@ -421,6 +465,7 @@ export default function App() {
                 <span>Chat Wizard</span>
               </div>
             </button>
+
           </nav>
         </div>
       </div>
@@ -519,55 +564,50 @@ export default function App() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
-            <div>
-              <label className="label">Test Suites</label>
-              <div className="flex flex-wrap gap-2">
-                {DEFAULT_SUITES.map(s => (
-                  <label key={s} className="pill cursor-pointer select-none">
-                    <input type="checkbox" className="mr-2 accent-brand-600" checked={suites.includes(s)} onChange={()=>toggleSuite(s)} />
-                    {s}
-                  </label>
-                ))}
-              </div>
-              <div className="mt-3 flex gap-2">
-                <button className="btn btn-ghost" onClick={selectAll}>Select all</button>
-                <button className="btn btn-ghost" onClick={clearAll}>Clear</button>
-              </div>
-            </div>
-
-            <div>
-              <label className="label">Thresholds & Policies</label>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div><small className="block text-slate-500 dark:text-slate-400 mb-1">faithfulness_min</small><input className="input" value={faithMin} onChange={e=>setFaithMin(e.target.value)} /></div>
-                <div><small className="block text-slate-500 dark:text-slate-400 mb-1">context_recall_min</small><input className="input" value={crecMin} onChange={e=>setCrecMin(e.target.value)} /></div>
-                <div><small className="block text-slate-500 dark:text-slate-400 mb-1">toxicity_max</small><input className="input" value={toxMax} onChange={e=>setToxMax(e.target.value)} /></div>
-              </div>
-            </div>
+          <div className="mt-4">
+            <TestSuiteSelector
+              onSelectionChange={(tests) => {
+                setSelectedTests(tests);
+                // Update suites based on selected tests
+                const activeSuites = Object.keys(tests).filter(suiteId => 
+                  tests[suiteId].length > 0
+                ) as TestSuite[];
+                setSuites(activeSuites);
+              }}
+              onSuiteConfigChange={(suiteId, config) => {
+                setSuiteConfigs(prev => ({
+                  ...prev,
+                  [suiteId]: config
+                }));
+              }}
+            />
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
-            <div>
-              <label className="label">Test Volume Controls</label>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div><small className="block text-slate-500 dark:text-slate-400 mb-1">qa_sample_size</small><input className="input" placeholder="empty = all" value={qaSampleSize} onChange={e=>setQaSampleSize(e.target.value)} /></div>
-                <div><small className="block text-slate-500 dark:text-slate-400 mb-1">attack_mutators</small><input className="input" value={attackMutators} onChange={e=>setAttackMutators(e.target.value)} /></div>
-                <div><small className="block text-slate-500 dark:text-slate-400 mb-1">perf_repeats</small><input className="input" value={perfRepeats} onChange={e=>setPerfRepeats(e.target.value)} /></div>
-              </div>
-              <div className="mt-3 flex gap-2">
-                <button className="btn btn-ghost" onClick={()=>setProfile("smoke")}>Smoke</button>
-                <button className="btn btn-ghost" onClick={()=>setProfile("full")}>Full</button>
-                <button className="btn btn-ghost" onClick={()=>setProfile("red_team_heavy")}>Red Team Heavy</button>
-              </div>
-            </div>
 
-            <div>
-              <label className="label">Estimated Tests</label>
-              <div className="text-2xl font-bold text-brand-600 dark:text-brand-400">
-                ~{estimatedTests} tests
+
+          {/* Global Controls */}
+          <div className="mt-6 border-t border-slate-200 dark:border-slate-700 pt-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <label className="label">Test Profiles</label>
+                <div className="flex gap-2">
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setProfile("smoke")}>Smoke</button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setProfile("full")}>Full</button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setProfile("red_team_heavy")}>Red Team Heavy</button>
+                </div>
+                <small className="text-slate-500 dark:text-slate-400 mt-1 block">
+                  Quick configuration presets for common testing scenarios
+                </small>
               </div>
-              <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Based on selected suites and volume settings
+
+              <div>
+                <label className="label">Estimated Tests</label>
+                <div className="text-2xl font-bold text-brand-600 dark:text-brand-400">
+                  ~{estimatedTests} tests
+                </div>
+                <small className="text-slate-500 dark:text-slate-400">
+                  Based on selected suites and their individual configurations
+                </small>
               </div>
             </div>
           </div>

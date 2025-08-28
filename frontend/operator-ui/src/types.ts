@@ -61,12 +61,15 @@ export interface OrchestratorRequest {
     qa_sample_size?: number;
     attack_mutators?: number;
     perf_repeats?: number;
+    selected_tests?: Record<string, string[]>;
+    suite_configs?: Record<string, any>;
     resilience?: ResilienceOptions;
     compliance_smoke?: ComplianceSmokeOptions;
     bias_smoke?: BiasSmokeOptions;
   };
   testdata_id?: string;
   use_expanded?: boolean;
+  use_ragas?: boolean;  // Enable Ragas evaluation
   run_id?: string;  // For cancel functionality
   shards?: number;
   shard_id?: number;
