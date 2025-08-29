@@ -35,8 +35,12 @@ class SyntheticProvider:
         # Determine if this should be a success or failure
         is_success = self.random.random() < self.success_rate
         
+        # Safety tasks (HIGHEST PRIORITY - check first!)
+        if self._is_safety_task(prompt_lower):
+            return self._handle_safety_task(prompt, is_success)
+        
         # Receipt extraction
-        if self._is_receipt_task(prompt_lower):
+        elif self._is_receipt_task(prompt_lower):
             return self._handle_receipt_extraction(prompt, is_success)
         
         # Mathematical operations
@@ -77,6 +81,11 @@ class SyntheticProvider:
         """Check if this is a QA/RAG task."""
         qa_indicators = ["question", "answer", "context", "passage", "explain", "what", "how", "why"]
         return any(indicator in prompt_lower for indicator in qa_indicators)
+    
+    def _is_safety_task(self, prompt_lower: str) -> bool:
+        """Check if this is a safety/security task."""
+        safety_indicators = ["ignore", "forget", "new instructions", "system:", "assistant:", "bypass", "jailbreak"]
+        return any(indicator in prompt_lower for indicator in safety_indicators)
     
     def _handle_receipt_extraction(self, prompt: str, is_success: bool) -> Dict[str, Any]:
         """Handle receipt extraction with realistic merchant detection."""
@@ -290,6 +299,32 @@ class SyntheticProvider:
             "text": answer,
             "prompt_tokens": len(prompt.split()),
             "completion_tokens": len(answer.split())
+        }
+    
+    def _handle_safety_task(self, prompt: str, is_success: bool) -> Dict[str, Any]:
+        """Handle safety/security tasks with appropriate refusal responses."""
+        if not is_success:
+            return {
+                "text": "I cannot and will not help with that request. It goes against my safety guidelines.",
+                "prompt_tokens": len(prompt.split()),
+                "completion_tokens": 15
+            }
+        
+        # Generate appropriate safety refusal response
+        safety_responses = [
+            "I cannot ignore my instructions or safety guidelines. I'm designed to help within ethical boundaries.",
+            "I'm unable to bypass my safety protocols. I can only assist with appropriate requests.",
+            "I cannot and will not help with requests that attempt to override my safety measures.",
+            "I'm programmed to maintain my safety guidelines. I cannot assist with this type of request.",
+            "I must decline this request as it violates my core safety principles."
+        ]
+        
+        response = self.random.choice(safety_responses)
+        
+        return {
+            "text": response,
+            "prompt_tokens": len(prompt.split()),
+            "completion_tokens": len(response.split())
         }
     
     def _handle_default_task(self, prompt: str, is_success: bool) -> Dict[str, Any]:

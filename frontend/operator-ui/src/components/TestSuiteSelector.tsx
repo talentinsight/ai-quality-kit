@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, BarChart3, Shield, ShieldCheck, Zap, TrendingUp, Layers, CheckSquare, Square, AlertTriangle, Clock, Database, LucideIcon } from 'lucide-react';
+import { ChevronDown, ChevronRight, BarChart3, Shield, ShieldCheck, Zap, TrendingUp, Layers, CheckSquare, Square, AlertTriangle, Clock, Database, Scale, LucideIcon } from 'lucide-react';
 
 interface TestDefinition {
   id: string;
@@ -180,19 +180,46 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
           enabled: false,
           estimatedDuration: '2-4 min',
         },
-        {
-          id: 'bias_detection',
-          name: 'Bias Detection',
-          description: 'Tests for discriminatory or biased outputs',
-          enabled: false,
-          estimatedDuration: '4-8 min',
-        },
+
         {
           id: 'misinformation',
           name: 'Misinformation Detection',
           description: 'Tests for false or misleading information generation',
           enabled: false,
           estimatedDuration: '3-6 min',
+        }
+      ]
+    },
+    {
+      id: 'bias_smoke',
+      name: 'Bias Detection',
+      description: 'Demographic fairness and bias testing',
+      icon: Scale,
+      color: 'purple',
+      enabled: false,
+      expanded: false,
+      tests: [
+        {
+          id: 'demographic_parity',
+          name: 'Demographic Parity',
+          description: 'A/B testing across demographic groups (gender, age)',
+          enabled: true,
+          required: true,
+          estimatedDuration: '3-8 min',
+        },
+        {
+          id: 'refusal_rate_analysis',
+          name: 'Refusal Rate Analysis',
+          description: 'Compare refusal rates between demographic groups',
+          enabled: true,
+          estimatedDuration: '2-5 min',
+        },
+        {
+          id: 'length_delta_analysis',
+          name: 'Response Length Analysis',
+          description: 'Analyze response length differences across groups',
+          enabled: false,
+          estimatedDuration: '2-5 min',
         }
       ]
     },
@@ -263,6 +290,9 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
         // Build complete configuration for all sub-tests
         const faithfulnessEnabled = suite.tests.find(t => t.id === 'basic_faithfulness')?.enabled || false;
         const contextRecallEnabled = suite.tests.find(t => t.id === 'context_recall')?.enabled || false;
+        const answerRelevancyEnabled = suite.tests.find(t => t.id === 'answer_relevancy')?.enabled || false;
+        const contextPrecisionEnabled = suite.tests.find(t => t.id === 'context_precision')?.enabled || false;
+        const answerCorrectnessEnabled = suite.tests.find(t => t.id === 'answer_correctness')?.enabled || false;
         const groundTruthEnabled = suite.tests.find(t => t.id === 'ground_truth_evaluation')?.enabled || false;
         const promptRobustnessEnabled = suite.tests.find(t => t.id === 'prompt_robustness')?.enabled || false;
         
@@ -272,6 +302,15 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
           },
           context_recall: {
             enabled: contextRecallEnabled
+          },
+          answer_relevancy: {
+            enabled: answerRelevancyEnabled
+          },
+          context_precision: {
+            enabled: contextPrecisionEnabled
+          },
+          answer_correctness: {
+            enabled: answerCorrectnessEnabled
           },
           ground_truth_eval: {
             enabled: groundTruthEnabled

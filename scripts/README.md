@@ -1,110 +1,109 @@
-# Test Scripts
+# Requirements Management Scripts
 
-This directory contains production verification scripts for the AI Quality Kit.
+Bu dizin, `requirements.txt` dosyasını otomatik olarak güncellemek için script'ler içerir.
 
-## JWT Validation Tests
+## 📋 Script'ler
 
-**File:** `test_jwt_validation.py`
+### 1. `update_requirements.sh` (Bash Script)
+Basit bir bash script'i. Tüm yüklü paketleri `pip freeze` ile alır.
 
-Tests JWT authentication with issuer/audience validation:
-- Wrong audience → 401 with `invalid_audience`
-- Correct audience → authentication success
-- Missing roles → 401 with `insufficient_permissions`
-
-**Usage:**
+**Kullanım:**
 ```bash
-# Start server with JWT mode
-export AUTH_ENABLED=true AUTH_MODE=jwt JWT_SECRET=test-secret-key
-export JWT_ISSUER=https://test-issuer.com JWT_AUDIENCE=https://test-api.com
-uvicorn apps.rag_service.main:app --port 8000 &
+# Virtual environment'ı aktive et
+source .venv/bin/activate
 
-# Run tests
-python scripts/test_jwt_validation.py
+# Script'i çalıştır
+./scripts/update_requirements.sh
 ```
 
-## Audit Logging Tests
+**Özellikler:**
+- Virtual environment kontrolü
+- Otomatik backup oluşturma
+- Eski backup dosyalarını temizleme
 
-**File:** `test_audit_logging.py`
+### 2. `update_requirements.py` (Python Script) ⭐ **ÖNERİLEN**
+Akıllı Python script'i. Sadece ana paketleri kategorilere göre organize eder.
 
-Tests structured audit logging functionality:
-- Request acceptance events
-- Orchestrator run start/finish events  
-- Authentication failure events
-- PII redaction verification
-
-**Usage:**
+**Kullanım:**
 ```bash
-# Start server with audit logging
-export AUDIT_ENABLED=true AUTH_ENABLED=true AUTH_MODE=jwt
-uvicorn apps.rag_service.main:app --port 8000 &
+# Virtual environment'ı aktive et
+source .venv/bin/activate
 
-# Run tests (watch server logs for audit events)
-python scripts/test_audit_logging.py
+# Script'i çalıştır
+python scripts/update_requirements.py
 ```
 
-## Expected Audit Log Format
+**Özellikler:**
+- Paketleri kategorilere göre organize eder
+- Sadece ana paketleri tutar
+- Gereksiz paketleri filtreler
+- Otomatik backup oluşturma
+- Virtual environment kontrolü
 
-Audit logs are emitted as JSON lines to stdout:
+## 🔄 Güncelleme Süreci
 
-```json
-{"timestamp":1755970843.651284,"event":"request_accepted","iso_timestamp":"2025-08-23T17:40:43Z","route":"/orchestrator/run_tests","actor":"48d191d4","client_ip":"127.0.0.1"}
-
-{"timestamp":1755970843.65165,"event":"orchestrator_run_started","iso_timestamp":"2025-08-23T17:40:43Z","run_id":"run_1755970843_7008bbde","suites":["rag_quality"],"provider":"mock","model":"test-model","actor":"48d191d4"}
-
-{"timestamp":1755970844.090826,"event":"orchestrator_run_finished","iso_timestamp":"2025-08-23T17:40:44Z","run_id":"run_1755970843_7008bbde","success":true,"duration_ms":439.55}
-```
-
-## Environment Variables
-
-Both tests require these environment variables:
-
-### JWT Validation
-- `AUTH_ENABLED=true`
-- `AUTH_MODE=jwt`
-- `JWT_SECRET=test-secret-key`
-- `JWT_ISSUER=https://test-issuer.com`
-- `JWT_AUDIENCE=https://test-api.com`
-
-### Audit Logging  
-- `AUDIT_ENABLED=true`
-- `AUDIT_REDACT_FIELDS=answer,text,inputs,content,response` (optional)
-
-## Percentile Headers Tests
-
-**File:** `test_percentile_headers.py`
-
-Tests percentile latency headers feature:
-- Feature flag behavior (enabled/disabled)
-- P50/P95 header appearance after sufficient data
-- Monotonic property (P50 ≤ P95)
-- Per-route tracking separation
-
-**Usage:**
+### Otomatik Güncelleme (Önerilen)
 ```bash
-# Test with percentiles disabled (default)
-python scripts/test_percentile_headers.py
+# 1. Virtual environment'ı aktive et
+source .venv/bin/activate
 
-# Test with percentiles enabled
-export PERF_PERCENTILES_ENABLED=true
-uvicorn apps.rag_service.main:app --port 8000 &
-python scripts/test_percentile_headers.py
+# 2. Yeni paket yükle
+pip install yeni-paket
+
+# 3. Requirements'ı güncelle
+python scripts/update_requirements.py
 ```
 
-## Expected Headers
+### Manuel Güncelleme
+```bash
+# Tüm paketleri al
+pip freeze > requirements.txt
 
-### Basic Headers (Always Present)
-- `X-Perf-Phase: cold|warm`
-- `X-Latency-MS: <milliseconds>`
+# Veya sadece belirli paketleri
+pip freeze | grep -E "(fastapi|uvicorn|pydantic)" > requirements.txt
+```
 
-### Percentile Headers (When Enabled)
-- `X-P50-MS: <milliseconds>` (50th percentile)
-- `X-P95-MS: <milliseconds>` (95th percentile)
+## 📁 Backup Dosyaları
 
-## Notes
+Script'ler otomatik olarak backup oluşturur:
+- `requirements.txt.backup.{PID}` - Python script
+- `requirements.txt.backup.{YYYYMMDD_HHMMSS}` - Bash script
 
-- These are smoke tests for production verification
-- Check server logs manually for audit events
-- Tests use mock provider to avoid external dependencies
-- JWT tokens are created with 1-hour expiration
-- Percentile headers require 2+ requests to appear
-- Ring buffer size configurable via `PERF_WINDOW` (default 500)
+## ⚠️ Önemli Notlar
+
+1. **Virtual Environment:** Script'leri çalıştırmadan önce `.venv`'yi aktive edin
+2. **Backup:** Her güncelleme öncesi otomatik backup oluşturulur
+3. **Review:** Güncellenen dosyayı gözden geçirin ve gereksiz paketleri kaldırın
+4. **Production:** Production'da sadece gerekli paketleri tutun
+
+## 🎯 Kategoriler
+
+Script, paketleri şu kategorilere göre organize eder:
+
+- **Core FastAPI and web framework**
+- **HTTP and async**
+- **AI/ML Libraries**
+- **Vector search and ML**
+- **RAG Evaluation**
+- **Database and caching**
+- **Authentication and security**
+- **Data processing and utilities**
+- **Testing and quality**
+- **Development tools**
+- **Monitoring and observability**
+- **Utilities**
+
+## 🚀 Hızlı Başlangıç
+
+```bash
+# 1. Script'leri çalıştırılabilir yap
+chmod +x scripts/*.sh scripts/*.py
+
+# 2. Virtual environment'ı aktive et
+source .venv/bin/activate
+
+# 3. Requirements'ı güncelle
+python scripts/update_requirements.py
+```
+
+Bu şekilde `requirements.txt` dosyanız her zaman güncel ve organize kalacak! 🎉

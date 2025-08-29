@@ -2,11 +2,13 @@
 fastapi==0.116.1
 uvicorn==0.35.0
 pydantic==2.11.7
+starlette==0.47.2
 
 # HTTP and async
 httpx==0.28.1
 aiohttp==3.9.1
 requests==2.32.3
+httpcore==1.0.7
 
 # Environment and configuration
 python-dotenv==1.0.1
@@ -17,49 +19,74 @@ anthropic==0.40.0
 langchain==0.3.9
 langchain-openai==0.2.10
 langchain-community==0.3.9
-faiss-cpu==1.9.0
-numpy==1.26.4
+langchain-core==0.3.63
+langchain-google-genai==2.0.10
+langchain-text-splitters==0.3.7
+langsmith==0.1.147
 
-# RAG Evaluation (optional)
-ragas>=0.2.9
+# Vector search and ML
+scikit-learn==1.7.1
+scipy==1.16.1
+numpy==1.26.4
+joblib==1.5.2
+threadpoolctl==3.6.0
+
+# RAG Evaluation
+ragas==0.3.2
+datasets==4.0.0
+instructor==1.8.2
 
 # Database and caching
 snowflake-connector-python==3.12.3
 redis==5.2.0
+upstash-redis==1.3.0
 
 # Authentication and security
-pyjwt==2.9.0
+PyJWT==2.9.0
 cryptography==44.0.2
 passlib==1.7.4
-msal>=1.30.0
+msal==1.33.0
+pyOpenSSL==24.3.0
 
 # Data processing and utilities
 pandas==2.2.3
-pyyaml==6.0.2
+PyYAML==6.0.2
 jsonschema==4.23.0
 python-multipart==0.0.20
-jinja2==3.1.4
+Jinja2==3.1.4
+openpyxl==3.1.5
 
 # Testing and quality
 pytest==8.3.4
 pytest-asyncio==0.25.0
+pytest-cov==4.1.0
+pytest-mock==3.10.0
 coverage==7.8.0
 
 # Development tools
 black==24.1.1
 flake8==7.0.0
-
-# Math and scientific computing
-# scipy==1.13.1  # Removed due to Fortran compiler requirement
+mypy==1.8.0
 
 # Date and time utilities
 python-dateutil==2.9.0
+pytz==2024.1
+tzdata==2025.2
 
 # Text processing
 beautifulsoup4==4.13.3
+lxml==5.3.1
 
 # Monitoring and observability
 structlog==24.4.0
+prometheus_client==0.21.1
 
 # Type hints
-typing-extensions==4.14.1
+typing-inspect==0.9.0
+typing-inspection==0.4.1
+
+# Utilities
+click==8.1.8
+tqdm==4.67.1
+rich==13.9.4
+tenacity==9.0.0

@@ -27,18 +27,18 @@ const SafetySuite: React.FC<SafetySuiteProps> = ({
       categories: ['Hate speech', 'Harassment', 'Violence', 'Self-harm']
     },
     {
-      id: 'bias_detection',
-      name: 'Bias Detection',
-      description: 'Tests for discriminatory or biased outputs',
-      enabled: true,
-      categories: ['Gender bias', 'Racial bias', 'Religious bias', 'Age bias']
-    },
-    {
       id: 'content_policy',
       name: 'Content Policy Compliance',
       description: 'Tests adherence to content policies and guidelines',
       enabled: true,
       categories: ['Adult content', 'Violence', 'Illegal activities', 'Misinformation']
+    },
+    {
+      id: 'harmful_content',
+      name: 'Harmful Content Detection',
+      description: 'Tests for malicious code, illegal activities, and dangerous instructions',
+      enabled: true,
+      categories: ['Malicious code', 'Illegal activities', 'Dangerous instructions', 'Privacy violations']
     }
   ];
 

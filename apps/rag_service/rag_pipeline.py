@@ -1,9 +1,12 @@
-"""RAG Pipeline implementation with FAISS indexing."""
+"""RAG Pipeline implementation with scikit-learn for vector search."""
 
 import json
 import numpy as np
 from typing import List, Dict, Any, Optional
-import faiss
+# import faiss  # Removed - compatibility issues with Python 3.13
+# from sentence_transformers import SentenceTransformer, util  # Removed - PyTorch dependency
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 from langchain_openai import OpenAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import os
@@ -17,7 +20,7 @@ from llm.prompts import CONTEXT_ONLY_ANSWERING_PROMPT
 
 
 class RAGPipeline:
-    """Retrieval-Augmented Generation pipeline with FAISS indexing."""
+    """Retrieval-Augmented Generation pipeline with scikit-learn TF-IDF indexing."""
     
     def __init__(self, model_name: str, top_k: int = 4):
         """
@@ -50,13 +53,22 @@ class RAGPipeline:
             # Fallback for when no API key is available
             self.embeddings = None
         self.chat = get_chat()
-        self.index: Optional[faiss.IndexFlatIP] = None
+        # self.index: Optional[faiss.IndexFlatIP] = None  # Removed FAISS index
         self.passages: List[Dict[str, Any]] = []
         self.passage_texts: List[str] = []
+        self.passage_embeddings: Optional[np.ndarray] = None
+        
+        # Initialize TF-IDF vectorizer for local text similarity (fallback)
+        self.tfidf_vectorizer = TfidfVectorizer(
+            max_features=10000,
+            stop_words='english',
+            ngram_range=(1, 2)
+        )
+        self.tfidf_matrix = None
         
     def build_index_from_passages(self, path: str) -> None:
         """
-        Build FAISS index from passages file.
+        Build vector index from passages file using scikit-learn TF-IDF.
         
         Args:
             path: Path to JSONL file containing passages
@@ -77,20 +89,34 @@ class RAGPipeline:
         self.passage_texts = [passage['text'] for passage in self.passages]
         
         # Generate embeddings
-        if self.embeddings is None:
-            raise ValueError("OpenAI API key not configured - cannot generate embeddings")
-        embeddings_list = self.embeddings.embed_documents(self.passage_texts)
-        embeddings_array = np.array(embeddings_list, dtype=np.float32)
+        if self.embeddings is not None:
+            # Use OpenAI embeddings if available
+            try:
+                embeddings_list = self.embeddings.embed_documents(self.passage_texts)
+                self.passage_embeddings = np.array(embeddings_list, dtype=np.float32)
+                print("Using OpenAI embeddings")
+            except Exception as e:
+                print(f"OpenAI embeddings failed: {e}, falling back to TF-IDF")
+                self.passage_embeddings = None
         
-        # Create FAISS index (Inner Product for cosine similarity)
-        dimension = embeddings_array.shape[1]
-        self.index = faiss.IndexFlatIP(dimension)
+        if self.passage_embeddings is None:
+            # Fallback to TF-IDF vectorization
+            try:
+                self.tfidf_matrix = self.tfidf_vectorizer.fit_transform(self.passage_texts)
+                print("Using TF-IDF vectorization")
+            except Exception as e:
+                raise ValueError(f"Failed to create TF-IDF vectors: {e}")
         
-        # Normalize embeddings for cosine similarity
-        faiss.normalize_L2(embeddings_array)  # type: ignore
-        self.index.add(embeddings_array)  # type: ignore
+        if self.passage_embeddings is None and self.tfidf_matrix is None:
+            raise ValueError("No indexing method available - cannot build index")
         
-        print(f"Built FAISS index with {len(self.passages)} passages")
+        # Normalize OpenAI embeddings for cosine similarity
+        if self.passage_embeddings is not None:
+            self.passage_embeddings = self.passage_embeddings / np.linalg.norm(
+                self.passage_embeddings, axis=1, keepdims=True
+            )
+        
+        print(f"Built vector index with {len(self.passages)} passages using scikit-learn")
     
     def retrieve(self, query: str) -> List[str]:
         """
@@ -100,30 +126,43 @@ class RAGPipeline:
             query: User query string
             
         Returns:
-            List of retrieved passage texts
+            List of top-k relevant passage texts
         """
-        if self.index is None:
-            raise RuntimeError("Index not built. Call build_index_from_passages() first.")
+        if self.passage_embeddings is None and self.tfidf_matrix is None:
+            raise ValueError("Index not built - call build_index_from_passages first")
         
-        # Generate query embedding
-        if self.embeddings is None:
-            raise ValueError("OpenAI API key not configured - cannot generate embeddings")
-        query_embedding = self.embeddings.embed_query(query)
-        query_vector = np.array([query_embedding], dtype=np.float32)
+        # Generate query embedding/vector
+        if self.embeddings is not None and self.passage_embeddings is not None:
+            try:
+                query_embedding = self.embeddings.embed_query(query)
+                query_embedding = np.array(query_embedding, dtype=np.float32)
+                
+                # Normalize query embedding
+                query_embedding = query_embedding / np.linalg.norm(query_embedding)
+                
+                # Calculate cosine similarities
+                similarities = np.dot(self.passage_embeddings, query_embedding)
+                
+            except Exception:
+                # Fallback to TF-IDF
+                if self.tfidf_matrix is not None:
+                    query_vector = self.tfidf_vectorizer.transform([query])
+                    similarities = cosine_similarity(query_vector, self.tfidf_matrix).flatten()
+                else:
+                    raise ValueError("No embedding method available")
+        else:
+            # Use TF-IDF similarity
+            if self.tfidf_matrix is not None:
+                query_vector = self.tfidf_vectorizer.transform([query])
+                similarities = cosine_similarity(query_vector, self.tfidf_matrix).flatten()
+            else:
+                raise ValueError("No indexing method available")
         
-        # Normalize for cosine similarity
-        faiss.normalize_L2(query_vector)  # type: ignore
+        # Get top-k indices
+        top_indices = np.argsort(similarities)[::-1][:self.top_k]
         
-        # Search
-        scores, indices = self.index.search(query_vector, self.top_k)  # type: ignore
-        
-        # Return relevant passages
-        retrieved_texts = []
-        for idx in indices[0]:
-            if idx < len(self.passage_texts):
-                retrieved_texts.append(self.passage_texts[idx])
-        
-        return retrieved_texts
+        # Return top-k passages
+        return [self.passage_texts[i] for i in top_indices]
     
     def answer(self, query: str, context: List[str], provider: Optional[str] = None, model: Optional[str] = None) -> str:
         """

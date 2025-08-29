@@ -53,6 +53,9 @@ export interface BiasSmokeOptions {
 export interface RagReliabilityRobustnessConfig {
   faithfulness_eval: { enabled: boolean };
   context_recall: { enabled: boolean };
+  answer_relevancy: { enabled: boolean };
+  context_precision: { enabled: boolean };
+  answer_correctness: { enabled: boolean };
   ground_truth_eval: { enabled: boolean };
   prompt_robustness: { 
     enabled: boolean; 
