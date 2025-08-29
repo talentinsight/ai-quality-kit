@@ -660,6 +660,67 @@ export default function App() {
                   <label className="label">Bearer Token (optional)</label>
                   <input className="input max-w-xs" type="password" placeholder="Optional: your-auth-token" value={token} onChange={e=>setToken(e.target.value)} />
                 </div>
+
+                {/* Test Data ID */}
+                <div>
+                  <label className="label">Test Data ID (Optional)</label>
+                  <div className="flex flex-wrap items-center gap-3 max-w-4xl">
+                    <input
+                      className="input flex-1 min-w-0"
+                      placeholder="Enter testdata_id to override default data sources"
+                      value={testdataId}
+                      onChange={(e) => setTestdataId(e.target.value)}
+                    />
+                    <button
+                      className="btn btn-ghost"
+                      onClick={loadLastTestdataId}
+                      title="Load last used testdata_id"
+                    >
+                      Use Last
+                    </button>
+                    <button
+                      className="btn btn-ghost"
+                      onClick={validateTestdataId}
+                      disabled={validatingTestdata || !testdataId.trim()}
+                      title="Validate testdata_id"
+                    >
+                      {validatingTestdata ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent" />
+                          Validate
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw size={16} />
+                          Validate
+                        </>
+                      )}
+                    </button>
+                    {testdataValid !== null && (
+                      <div className={clsx(
+                        "flex items-center gap-1 text-sm px-2 py-1 rounded-lg",
+                        testdataValid 
+                          ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300"
+                          : "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
+                      )}>
+                        {testdataValid ? (
+                          <>
+                            <CheckCircle2 size={14} />
+                            Valid
+                          </>
+                        ) : (
+                          <>
+                            <XCircle size={14} />
+                            Invalid
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    When provided, overrides default passages, qaset, and attacks data sources
+                  </p>
+                </div>
               </div>
             )}
 
@@ -812,6 +873,43 @@ export default function App() {
                 <small className="text-slate-500 dark:text-slate-400">
                   Based on selected suites and their individual configurations
                 </small>
+              </div>
+            </div>
+
+            {/* Run Tests Button */}
+            <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+              <div className="flex flex-wrap items-center gap-3">
+                <button 
+                  onClick={runTests} 
+                  disabled={busy || !targetMode || (targetMode === "api" && (!apiBaseUrl || !provider)) || suites.length === 0} 
+                  className="btn-primary flex items-center gap-2"
+                >
+                  {busy ? <RefreshCw className="animate-spin" size={16} /> : <Play size={16} />}
+                  {busy ? "Running Tests..." : "Run Tests"}
+                </button>
+                
+                <button 
+                  onClick={planTests} 
+                  disabled={busy || !targetMode || (targetMode === "api" && (!apiBaseUrl || !provider)) || suites.length === 0}
+                  className="btn btn-secondary flex items-center gap-2"
+                >
+                  <Settings2 size={16} />
+                  Dry Run (Plan Only)
+                </button>
+                
+                {busy && (
+                  <button onClick={cancelTests} className="btn-danger flex items-center gap-2">
+                    <XCircle size={16} />
+                    Cancel
+                  </button>
+                )}
+
+                {message && <span className="text-sm text-slate-600 dark:text-slate-300">{message}</span>}
+                {testdataId.trim() && testdataValid === false && (
+                  <span className="text-sm text-red-600 dark:text-red-400">
+                    Invalid test data ID - please validate before running
+                  </span>
+                )}
               </div>
             </div>
             </div>
@@ -1018,101 +1116,7 @@ export default function App() {
             </div>
           )}
 
-          {/* Test Data ID Section */}
-          <div className="mt-4 p-4 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-            <label className="label">Test Data ID (Optional)</label>
-            <div className="flex flex-wrap items-center gap-3">
-              <input
-                className="input flex-1 min-w-0"
-                placeholder="Enter testdata_id to override default data sources"
-                value={testdataId}
-                onChange={(e) => setTestdataId(e.target.value)}
-              />
-              <button
-                className="btn btn-ghost"
-                onClick={loadLastTestdataId}
-                title="Load last used testdata_id"
-              >
-                Use Last
-              </button>
-              <button
-                className="btn btn-ghost"
-                onClick={validateTestdataId}
-                disabled={validatingTestdata || !testdataId.trim()}
-                title="Validate testdata_id"
-              >
-                {validatingTestdata ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent" />
-                    Validating...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw size={16} />
-                    Validate
-                  </>
-                )}
-              </button>
-              {testdataValid !== null && (
-                <div className={clsx(
-                  "flex items-center gap-1 text-sm px-2 py-1 rounded-lg",
-                  testdataValid 
-                    ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300"
-                    : "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
-                )}>
-                  {testdataValid ? (
-                    <>
-                      <CheckCircle2 size={14} />
-                      Valid
-                    </>
-                  ) : (
-                    <>
-                      <XCircle size={14} />
-                      Invalid/Expired
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-            <small className="block text-slate-500 dark:text-slate-400 mt-1">
-              When provided, overrides default passages, qaset, and attacks data sources
-            </small>
-            
-            {/* Run controls */}
-            <div className="flex flex-wrap items-center gap-3 mt-4">
-              <button 
-                onClick={runTests} 
-                disabled={busy || !targetMode || (targetMode === "api" && (!apiBaseUrl || !provider))} 
-                className="btn-primary flex items-center gap-2"
-              >
-                {busy ? <RefreshCw className="animate-spin" size={16} /> : <Play size={16} />}
-                {busy ? "Running..." : "Run Tests"}
-              </button>
-              
-              <button 
-                onClick={planTests} 
-                disabled={busy || !targetMode || (targetMode === "api" && (!apiBaseUrl || !provider))} 
-                className="btn-secondary flex items-center gap-2"
-              >
-                <CheckCircle2 size={16} />
-                Dry Run (Plan Only)
-              </button>
-              
-              {busy && (
-                <button onClick={cancelTests} className="btn-danger flex items-center gap-2">
-                  <XCircle size={16} />
-                  Cancel
-                </button>
-              )}
-            </div>
-            
-            {message && <span className="text-sm text-slate-600 dark:text-slate-300">{message}</span>}
-            {testdataId.trim() && testdataValid === false && (
-              <span className="text-sm text-red-600 dark:text-red-400">
-                Invalid test data ID - please validate before running
-              </span>
-            )}
-          </div>
+
 
           {/* Summary row */}
           {run?.summary && (
