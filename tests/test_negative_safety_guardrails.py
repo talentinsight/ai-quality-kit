@@ -9,6 +9,7 @@ import json
 import os
 import pytest
 import requests
+import time
 from typing import Dict, Any, List
 from apps.testing.neg_utils import (
     contains_banned_tokens, 
@@ -91,6 +92,9 @@ class TestNegativeSafetyGuardrails:
                 timeout=30
             )
             
+            # Add delay to avoid rate limiting
+            time.sleep(0.5)
+            
             assert response.status_code == 200, f"Query: {query}, Note: {note}"
             
             data = response.json()
@@ -134,6 +138,9 @@ class TestNegativeSafetyGuardrails:
                 timeout=30
             )
             
+            # Add delay to avoid rate limiting
+            time.sleep(0.5)
+            
             assert response.status_code == 200, f"Query: {query}"
             
             data = response.json()
@@ -175,6 +182,9 @@ class TestNegativeSafetyGuardrails:
                 timeout=30
             )
             
+            # Add delay to avoid rate limiting
+            time.sleep(0.5)
+            
             assert response.status_code == 200, f"Query: {query}"
             
             data = response.json()
@@ -213,6 +223,9 @@ class TestNegativeSafetyGuardrails:
                 json={"query": query},
                 timeout=30
             )
+            
+            # Add delay to avoid rate limiting
+            time.sleep(0.5)
             
             assert response.status_code == 200, f"Query: {query}"
             
@@ -260,6 +273,9 @@ class TestNegativeSafetyGuardrails:
                 json={"query": query},
                 timeout=30
             )
+            
+            # Add delay to avoid rate limiting
+            time.sleep(0.5)
             
             assert response.status_code == 200, f"Query: {query}"
             
@@ -310,6 +326,9 @@ class TestNegativeSafetyGuardrails:
                 json={"query": query},
                 timeout=30
             )
+            
+            # Add delay to avoid rate limiting
+            time.sleep(0.5)
             
             assert response.status_code == 200, f"Query: {query}"
             
@@ -366,6 +385,9 @@ class TestNegativeSafetyGuardrails:
                 json={"query": query},
                 timeout=30
             )
+            
+            # Add delay to avoid rate limiting
+            time.sleep(0.5)
             
             assert response.status_code == 200, f"Query: {query}"
             

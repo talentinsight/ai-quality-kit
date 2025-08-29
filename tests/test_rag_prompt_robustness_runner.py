@@ -110,11 +110,9 @@ class TestContracts(unittest.TestCase):
         }
         contract_cfg = {"type": "jsonschema", "schema": schema}
         
-        # Mock jsonschema import
-        with patch('apps.evaluation.contracts.jsonschema') as mock_jsonschema:
-            mock_jsonschema.validate.return_value = None  # No exception = valid
-            result = validate_contract(contract_cfg, '{"result": 123}')
-            self.assertTrue(result)
+        # Test with valid JSON that matches schema
+        result = validate_contract(contract_cfg, '{"result": 123}')
+        self.assertTrue(result)
     
     def test_validate_jsonschema_invalid(self):
         """Test JSON schema validation with invalid data."""
@@ -127,13 +125,9 @@ class TestContracts(unittest.TestCase):
         }
         contract_cfg = {"type": "jsonschema", "schema": schema}
         
-        # Mock jsonschema import and ValidationError
-        with patch('apps.evaluation.contracts.jsonschema') as mock_jsonschema:
-            from jsonschema import ValidationError
-            mock_jsonschema.ValidationError = ValidationError
-            mock_jsonschema.validate.side_effect = ValidationError("Invalid")
-            result = validate_contract(contract_cfg, '{"wrong": "field"}')
-            self.assertFalse(result)
+        # Test with invalid JSON that doesn't match schema
+        result = validate_contract(contract_cfg, '{"wrong": "field"}')
+        self.assertFalse(result)
     
     def test_validate_ebnf_stub(self):
         """Test EBNF validation returns None (stub)."""

@@ -1,4 +1,4 @@
-export type Provider = "openai"|"anthropic"|"gemini"|"custom_rest"|"mock";
+export type Provider = "openai"|"anthropic"|"gemini"|"custom_rest"|"synthetic"|"mock";
 
 export type TestSuite =
   | "rag_quality"
@@ -50,11 +50,24 @@ export interface BiasSmokeOptions {
   parity_threshold: number;
 }
 
+export interface RagReliabilityRobustnessConfig {
+  faithfulness_eval: { enabled: boolean };
+  context_recall: { enabled: boolean };
+  ground_truth_eval: { enabled: boolean };
+  prompt_robustness: { 
+    enabled: boolean; 
+    prompt_source?: string; 
+    include_prompts?: boolean;
+  };
+}
+
 export interface OrchestratorRequest {
   target_mode: "api"|"mcp";
   api_base_url?: string;
   api_bearer_token?: string;
   mcp_server_url?: string;
+  provider?: Provider;  // Top-level provider
+  model?: string;       // Top-level model
   suites: TestSuite[];
   thresholds?: Record<string, number|string|boolean>;
   options?: { 
@@ -69,6 +82,7 @@ export interface OrchestratorRequest {
     resilience?: ResilienceOptions;
     compliance_smoke?: ComplianceSmokeOptions;
     bias_smoke?: BiasSmokeOptions;
+    rag_reliability_robustness?: RagReliabilityRobustnessConfig;
   };
   testdata_id?: string;
   use_expanded?: boolean;
@@ -83,6 +97,19 @@ export interface OrchestratorResult {
   artifacts: { json_path: string; xlsx_path: string; html_path?: string };
   summary?: Record<string, unknown>;
   counts?: Record<string, unknown>;
+}
+
+export interface SubSuitePlan {
+  enabled: boolean;
+  planned_items: number;
+}
+
+export interface OrchestratorPlan {
+  suite: string;
+  sub_suites: Record<string, SubSuitePlan>;
+  total_planned: number;
+  skips: Array<{ sub_suite: string; reason: string }>;
+  alias_used: boolean;
 }
 
 export interface OrchestratorStartResponse {

@@ -38,7 +38,7 @@ class TestRagasAdapter(unittest.TestCase):
     
     def test_evaluate_ragas_import_failure(self):
         """Test that evaluate_ragas returns empty dict when Ragas import fails."""
-        with patch('apps.orchestrator.evaluators.ragas_adapter.evaluate', side_effect=ImportError("No module named 'ragas'")):
+        with patch('ragas.evaluate', side_effect=ImportError("No module named 'ragas'")):
             result = evaluate_ragas(self.sample_data)
             self.assertEqual(result, {})
     
@@ -77,8 +77,8 @@ class TestRagasAdapter(unittest.TestCase):
             'answer_relevancy': 0.90
         }
         
-        with patch('apps.orchestrator.evaluators.ragas_adapter.Dataset') as mock_dataset_class, \
-             patch('apps.orchestrator.evaluators.ragas_adapter.evaluate') as mock_evaluate:
+        with patch('datasets.Dataset') as mock_dataset_class, \
+             patch('ragas.evaluate') as mock_evaluate:
             
             mock_dataset_class.from_dict.return_value = mock_dataset
             mock_evaluate.return_value = mock_result
@@ -89,8 +89,8 @@ class TestRagasAdapter(unittest.TestCase):
             expected = {'ragas': {'faithfulness': 0.85, 'answer_relevancy': 0.90}}
             self.assertEqual(result, expected)
     
-    @patch('apps.orchestrator.evaluators.ragas_adapter.Dataset')
-    @patch('apps.orchestrator.evaluators.ragas_adapter.evaluate')
+    @patch('datasets.Dataset')
+    @patch('ragas.evaluate')
     def test_evaluate_ragas_successful_evaluation(self, mock_evaluate, mock_dataset_class):
         """Test successful Ragas evaluation with mocked results."""
         # Mock the dataset creation
@@ -124,8 +124,8 @@ class TestRagasAdapter(unittest.TestCase):
         call_args = mock_evaluate.call_args
         self.assertIsNotNone(call_args)
     
-    @patch('apps.orchestrator.evaluators.ragas_adapter.Dataset')
-    @patch('apps.orchestrator.evaluators.ragas_adapter.evaluate')
+    @patch('datasets.Dataset')
+    @patch('ragas.evaluate')
     def test_evaluate_ragas_handles_nan_values(self, mock_evaluate, mock_dataset_class):
         """Test that evaluate_ragas handles NaN values in results."""
         mock_dataset = MagicMock()
@@ -144,8 +144,8 @@ class TestRagasAdapter(unittest.TestCase):
         expected = {'ragas': {'answer_relevancy': 0.90}}
         self.assertEqual(result, expected)
     
-    @patch('apps.orchestrator.evaluators.ragas_adapter.Dataset')
-    @patch('apps.orchestrator.evaluators.ragas_adapter.evaluate')
+    @patch('datasets.Dataset')
+    @patch('ragas.evaluate')
     def test_evaluate_ragas_handles_evaluation_errors(self, mock_evaluate, mock_dataset_class):
         """Test that evaluate_ragas handles evaluation errors gracefully."""
         mock_dataset = MagicMock()
@@ -159,8 +159,8 @@ class TestRagasAdapter(unittest.TestCase):
         # Should return empty dict on error
         self.assertEqual(result, {})
     
-    @patch('apps.orchestrator.evaluators.ragas_adapter.Dataset')
-    @patch('apps.orchestrator.evaluators.ragas_adapter.evaluate')
+    @patch('datasets.Dataset')
+    @patch('ragas.evaluate')
     def test_evaluate_ragas_handles_uvloop_error(self, mock_evaluate, mock_dataset_class):
         """Test that evaluate_ragas handles uvloop compatibility errors."""
         mock_dataset = MagicMock()

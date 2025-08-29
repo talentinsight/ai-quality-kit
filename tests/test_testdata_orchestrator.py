@@ -230,10 +230,14 @@ class TestOrchestratorIntegration:
         runner = TestRunner(request)
         suite_data = runner.load_suites()
         
-        assert "rag_quality" in suite_data
+        # rag_quality should be aliased to rag_reliability_robustness
+        assert "rag_reliability_robustness" in suite_data
         assert "red_team" in suite_data
-        assert len(suite_data["rag_quality"]) == 2
+        assert len(suite_data["rag_reliability_robustness"]) == 2
         assert len(suite_data["red_team"]) > 0
+        
+        # Verify the alias was applied
+        assert "rag_quality" in runner.deprecated_suites
     
     def test_orchestrator_preserves_determinism(self, sample_testdata_bundle):
         """Test orchestrator preserves determinism with testdata."""

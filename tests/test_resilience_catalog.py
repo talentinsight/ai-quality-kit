@@ -191,7 +191,8 @@ class TestResilienceOrchestrator:
         mock_request.use_expanded = False
         mock_request.dataset_version = None
         mock_request.quality_guard = None
-        mock_request.suites = ["resilience"]  # Add missing suites attribute
+        mock_request.suites = ["resilience"]
+        mock_request.run_id = None  # Add missing run_id attribute
         return mock_request
     
     def test_catalog_loading_with_use_catalog_false(self):

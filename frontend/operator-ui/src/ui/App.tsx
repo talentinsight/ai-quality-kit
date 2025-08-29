@@ -28,14 +28,14 @@ export default function App() {
   }, [dark]);
 
   // Back-end configuration
-  const [apiBaseUrl, setApiBaseUrl] = useState("http://localhost:8000");
-  const [mcpServerUrl, setMcpServerUrl] = useState("stdio:///path/to/mcp-server");
+  const [apiBaseUrl, setApiBaseUrl] = useState("");
+  const [mcpServerUrl, setMcpServerUrl] = useState("");
   const [token, setToken] = useState("");
-  const [targetMode, setTargetMode] = useState<"api"|"mcp">("api");
+  const [targetMode, setTargetMode] = useState<"api"|"mcp"|"">("");
 
   // Provider & model
-  const [provider, setProvider] = useState<Provider>("openai");
-  const [model, setModel] = useState("gpt-4");
+  const [provider, setProvider] = useState<Provider|"">("");
+  const [model, setModel] = useState("");
 
   // Suites & thresholds
   const [suites, setSuites] = useState<TestSuite[]>([...DEFAULT_SUITES]);
@@ -169,6 +169,107 @@ export default function App() {
     return fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
   }
 
+  async function planTests() {
+    try {
+      const payload: OrchestratorRequest = {
+        target_mode: targetMode as "api"|"mcp",
+        api_base_url: targetMode === "api" ? apiBaseUrl : undefined,
+        api_bearer_token: targetMode === "api" ? token : undefined,
+        mcp_server_url: targetMode === "mcp" ? mcpServerUrl : undefined,
+        suites,
+        thresholds,
+        testdata_id: testdataId.trim() || undefined,
+        use_expanded: true,
+        use_ragas: useGroundTruth,
+        options: { 
+          provider: provider || undefined,
+          model: model,
+          qa_sample_size: qaSampleSize ? parseInt(qaSampleSize) : undefined,
+          attack_mutators: parseInt(attackMutators),
+          perf_repeats: parseInt(perfRepeats),
+          selected_tests: selectedTests,
+          suite_configs: suiteConfigs,
+          ...(suites.includes("resilience") ? (() => {
+            const resilienceOptions: any = {
+              mode: resilienceMode,
+              samples: parseInt(resilienceSamples),
+              timeout_ms: parseInt(resilienceTimeout),
+              retries: parseInt(resilienceRetries),
+              concurrency: parseInt(resilienceConcurrency),
+              queue_depth: parseInt(resilienceQueueDepth),
+              circuit: {
+                fails: parseInt(resilienceCircuitFails),
+                reset_s: parseInt(resilienceCircuitReset)
+              }
+            };
+            
+            if (providerRPM || providerTPM || providerConcurrent || providerTier) {
+              resilienceOptions.provider_limits = {
+                requests_per_minute: providerRPM ? parseInt(providerRPM) : undefined,
+                tokens_per_minute: providerTPM ? parseInt(providerTPM) : undefined,
+                max_concurrent: providerConcurrent ? parseInt(providerConcurrent) : undefined,
+                tier: providerTier || undefined,
+                auto_detect: autoDetectLimits
+              };
+            }
+            
+            return { resilience: resilienceOptions };
+          })() : {}),
+          ...(suites.includes("compliance_smoke") ? {
+            compliance_smoke: {
+              pii_patterns_file: compliancePatternsFile,
+              scan_fields: compliancePiiScan ? ["answer", "final_text"] : [],
+              rbac_matrix: {
+                "user": ["/ask", "/orchestrator/*", "/testdata/*"],
+                "admin": ["*"]
+              }
+            }
+          } : {}),
+          ...(suites.includes("bias_smoke") ? {
+            bias_smoke: {
+              groups: biasGroups.split(';').map(pair => pair.split('|').map(s => s.trim())).filter(pair => pair.length === 2),
+              max_pairs: parseInt(biasMaxPairs),
+              parity_metric: "refusal_rate" as const,
+              parity_threshold: 0.25
+            }
+          } : {}),
+          // RAG Reliability & Robustness configuration
+          ...(suiteConfigs['rag_reliability_robustness'] ? {
+            rag_reliability_robustness: suiteConfigs['rag_reliability_robustness']
+          } : {}),
+          // Handle legacy rag_quality alias with deprecation warning
+          ...(suites.includes('rag_quality' as TestSuite) ? (() => {
+            console.warn('rag_quality is deprecated; use rag_reliability_robustness instead');
+            return {
+              rag_reliability_robustness: suiteConfigs['rag_reliability_robustness'] || {
+                faithfulness_eval: { enabled: true },
+                context_recall: { enabled: true },
+                ground_truth_eval: { enabled: false },
+                prompt_robustness: { enabled: false, prompt_source: 'built_in', include_prompts: true }
+              }
+            };
+          })() : {})
+        }
+      };
+      
+      const res = await postJSON(`${apiBaseUrl}/orchestrator/run_tests?dry_run=true`, payload);
+      
+      if (!res.ok) {
+        throw new Error(`Plan failed: ${res.status}`);
+      }
+      
+      const planData = await res.json();
+      console.log("Test plan:", planData);
+      
+      // Display plan results
+      setMessage(`Plan: ${planData.total_planned || 0} tests planned across ${Object.keys(planData.sub_suites || {}).length} sub-suites`);
+      
+    } catch (e: any) {
+      console.error("Plan error:", e);
+      setMessage(`Plan failed: ${e?.message || String(e)}`);
+    }
+  }
+
   async function cancelTests() {
     console.log("🔥 CANCEL: currentRunId =", currentRunId);
     if (!currentRunId) {
@@ -210,7 +311,7 @@ export default function App() {
     
     try {
       const payload: OrchestratorRequest = {
-        target_mode: targetMode,
+        target_mode: targetMode as "api"|"mcp",
         api_base_url: targetMode === "api" ? apiBaseUrl : undefined,
         api_bearer_token: targetMode === "api" ? token : undefined,
         mcp_server_url: targetMode === "mcp" ? mcpServerUrl : undefined,
@@ -221,8 +322,8 @@ export default function App() {
         use_ragas: useGroundTruth,  // Enable Ragas evaluation when ground truth is selected
         run_id: tempRunId,  // Send our generated run_id for cancel
         options: { 
-          provider, 
-          model,
+          provider: provider || undefined,  // Send provider in options
+          model: model,        // Send model in options
           qa_sample_size: qaSampleSize ? parseInt(qaSampleSize) : undefined,
           attack_mutators: parseInt(attackMutators),
           perf_repeats: parseInt(perfRepeats),
@@ -271,7 +372,23 @@ export default function App() {
               parity_metric: "refusal_rate" as const,
               parity_threshold: 0.25
             }
-          } : {})
+          } : {}),
+          // RAG Reliability & Robustness configuration
+          ...(suiteConfigs['rag_reliability_robustness'] ? {
+            rag_reliability_robustness: suiteConfigs['rag_reliability_robustness']
+          } : {}),
+          // Handle legacy rag_quality alias with deprecation warning
+          ...(suites.includes('rag_quality' as TestSuite) ? (() => {
+            console.warn('rag_quality is deprecated; use rag_reliability_robustness instead');
+            return {
+              rag_reliability_robustness: suiteConfigs['rag_reliability_robustness'] || {
+                faithfulness_eval: { enabled: true },
+                context_recall: { enabled: true },
+                ground_truth_eval: { enabled: false },
+                prompt_robustness: { enabled: false, prompt_source: 'built_in', include_prompts: true }
+              }
+            };
+          })() : {})
         }
       };
       // Make request and extract run_id from logs/response
@@ -472,99 +589,189 @@ export default function App() {
 
       {/* Content */}
       {activeTab === 'classic' ? (
-        <div className="mx-auto max-w-6xl px-4 py-6 grid gap-6">
-          {/* Control panel */}
-          <div className="card p-5">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="mx-auto max-w-6xl px-4 py-6 space-y-6">
+          {/* Main Layout: Control Panel + Test Data side by side */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Control panel - Left side */}
+            <div className="card p-5">
+              <div className="space-y-4">
+            {/* Target Mode Selection */}
             <div>
               <label className="label">Target Mode</label>
-              <select className="input" value={targetMode} onChange={e=>setTargetMode(e.target.value as any)}>
+              <select className="input max-w-48" value={targetMode} onChange={e=>setTargetMode(e.target.value as any)}>
+                <option value="">Select target mode...</option>
                 <option value="api">API (HTTP)</option>
                 <option value="mcp">MCP</option>
               </select>
               <p className="text-xs text-slate-500 mt-1">
                 {targetMode === "api" 
                   ? "Adapter selection is required; it defines the HTTP schema used to call your LLM."
-                  : "MCP uses a standard protocol; no adapter/model selection is needed."
+                  : targetMode === "mcp"
+                  ? "MCP uses a standard protocol; no adapter/model selection is needed."
+                  : "Choose how you want to connect to your system for testing."
                 }
               </p>
             </div>
 
-            {targetMode === "api" ? (
-              <div>
-                <label className="label">Server URL</label>
-                <input className="input" placeholder="http://localhost:8000" value={apiBaseUrl} onChange={e=>{
-                  const newUrl = e.target.value;
-                  setApiBaseUrl(newUrl);
-                  
-                  // Auto-infer provider from URL if provider is not set
-                  if (targetMode === "api" && !provider) {
-                    import('../lib/ui').then(({ inferAdapterFromUrl }) => {
-                      const inferred = inferAdapterFromUrl(newUrl);
-                      if (inferred) {
-                        setProvider(inferred);
-                        // Auto-update model based on inferred provider
-                        if (inferred === "openai") setModel("gpt-4");
-                        else if (inferred === "anthropic") setModel("claude-3-5-sonnet");
-                        else if (inferred === "gemini") setModel("gemini-1.5-pro");
-                      }
-                    });
-                  }
-                }} />
-              </div>
-            ) : (
-              <div>
-                <label className="label">Server URL</label>
-                <input className="input" placeholder="http://localhost:3000" value={mcpServerUrl} onChange={e=>setMcpServerUrl(e.target.value)} />
+            {/* Dynamic Connection Settings - Appears after Target Mode selection */}
+            {targetMode && (
+              <div className="animate-slideDown space-y-4">
+                {targetMode === "api" ? (
+                  <div>
+                    <label className="label">Server URL</label>
+                    <input 
+                      className="input max-w-lg" 
+                      placeholder="Enter your API endpoint (e.g., https://your-chatbot.com/api/chat)" 
+                      value={apiBaseUrl} 
+                      onChange={e=>{
+                        const newUrl = e.target.value;
+                        setApiBaseUrl(newUrl);
+                        
+                        // Auto-infer provider from URL if provider is not set
+                        if (targetMode === "api" && !provider) {
+                          import('../lib/ui').then(({ inferAdapterFromUrl }) => {
+                            const inferred = inferAdapterFromUrl(newUrl);
+                            if (inferred) {
+                              setProvider(inferred);
+                              // Auto-update model based on inferred provider
+                              if (inferred === "openai") setModel("gpt-4");
+                              else if (inferred === "anthropic") setModel("claude-3-5-sonnet");
+                              else if (inferred === "gemini") setModel("gemini-1.5-pro");
+                            }
+                          });
+                        }
+                      }} 
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="label">MCP Server URL</label>
+                    <input 
+                      className="input max-w-lg" 
+                      placeholder="Enter your MCP server endpoint (e.g., https://your-mcp-server.com:3000)" 
+                      value={mcpServerUrl} 
+                      onChange={e=>setMcpServerUrl(e.target.value)} 
+                    />
+                  </div>
+                )}
+                
+                {/* Bearer Token */}
+                <div>
+                  <label className="label">Bearer Token (optional)</label>
+                  <input className="input max-w-xs" type="password" placeholder="Optional: your-auth-token" value={token} onChange={e=>setToken(e.target.value)} />
+                </div>
               </div>
             )}
 
-            <div>
-              <label className="label">Bearer Token (kept in memory)</label>
-              <input className="input" type="password" placeholder="SECRET_USER" value={token} onChange={e=>setToken(e.target.value)} />
+            {/* Adapter Selection - Only for API mode */}
+            {targetMode === "api" && (
+              <div>
+                <label className="label">Adapter (Provider Preset)</label>
+                <div className="flex items-end gap-4">
+                  <div>
+                    <select className="input max-w-xs" value={provider} onChange={e=>{
+                      const newProvider = e.target.value as Provider;
+                      setProvider(newProvider);
+                      
+                      // Auto-update model based on provider
+                      if (newProvider === "openai") {
+                        setModel("gpt-4");
+                      } else if (newProvider === "anthropic") {
+                        setModel("claude-3-5-sonnet");
+                      } else if (newProvider === "gemini") {
+                        setModel("gemini-1.5-pro");
+                      } else if (newProvider === "synthetic") {
+                        setModel("synthetic-v1");
+                      } else if (newProvider === "custom_rest") {
+                        setModel("custom-model");
+                      } else {
+                        // If no provider selected, clear model
+                        setModel("");
+                      }
+                    }}>
+                      <option value="">Select adapter...</option>
+                      <option value="openai">OpenAI (Real LLM)</option>
+                      <option value="anthropic">Anthropic (Real LLM)</option>
+                      <option value="gemini">Gemini (Real LLM)</option>
+                      <option value="custom_rest">Custom REST (Real LLM)</option>
+                      <option value="synthetic">Synthetic (Smart Test Data)</option>
+                    </select>
+                  </div>
+
+                  {/* Model Field - Appears inline next to Adapter */}
+                  {provider && (
+                    <div className="animate-slideInRight">
+                      <label className="label">Model</label>
+                      <input className="input max-w-xs" placeholder="gpt-4 / your-model" value={model} onChange={e=>setModel(e.target.value)} />
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  {provider 
+                    ? "Select how we talk to your LLM API and specify which model your system uses"
+                    : "Select how we talk to your LLM API. For MCP targets, an adapter is not required."
+                  }
+                </p>
+              </div>
+            )}
+
+            {/* MCP Mode Info */}
+            {targetMode === "mcp" && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mt-4">
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  <strong>MCP selected:</strong> Adapter/Model not required. MCP uses a standard protocol; no adapter/model selection is needed.
+                </p>
+              </div>
+            )}
+
+            {/* Synthetic Provider Info */}
+            {targetMode === "api" && provider === "synthetic" && (
+              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3 mt-4">
+                <p className="text-sm text-green-800 dark:text-green-200">
+                  <strong>🤖 Synthetic Provider:</strong> Using intelligent test data generation. Perfect for development, testing, and CI/CD. 
+                  <strong>Note:</strong> This is NOT testing a real LLM - use OpenAI/Anthropic/Gemini for actual LLM evaluation.
+                </p>
+              </div>
+            )}
+
+          {/* Mock Provider Info removed - Mock is now only for backend unit tests */}
+              </div>
+            </div>
+
+            {/* Test Data Panel - Right side */}
+            <div className="card p-5">
+              <div className="flex items-center gap-3 mb-4">
+                <span className="text-lg font-semibold">Test Data</span>
+                <span className="text-sm text-slate-500 dark:text-slate-400">
+                  Upload, fetch from URLs, or paste custom test data
+                </span>
+              </div>
+              
+              {/* Requirements Banner */}
+              {suites.length > 0 && (
+                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Info size={16} className="text-blue-600" />
+                      <span className="text-sm text-blue-800">
+                        View which data are required by your selected suites.
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setShowRequirementsModal(true)}
+                      className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                    >
+                      Show Requirements
+                    </button>
+                  </div>
+                </div>
+              )}
+              <TestDataPanel token={token} />
             </div>
           </div>
 
-          {/* Provider and Model - Only for API mode */}
-          {targetMode === "api" && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-              <div>
-                <label className="label">Adapter (Provider Preset)</label>
-                <select className="input" value={provider} onChange={e=>{
-                  const newProvider = e.target.value as Provider;
-                  setProvider(newProvider);
-                  // Auto-update model based on provider
-                  if (newProvider === "openai") setModel("gpt-4");
-                  else if (newProvider === "anthropic") setModel("claude-3-5-sonnet");
-                  else if (newProvider === "gemini") setModel("gemini-1.5-pro");
-                  else if (newProvider === "mock") setModel("mock-1");
-                  else setModel("custom-model");
-                }}>
-                  <option value="openai">OpenAI</option>
-                  <option value="anthropic">Anthropic</option>
-                  <option value="gemini">Gemini</option>
-                  <option value="custom_rest">Custom REST (local)</option>
-                  <option value="mock">Mock (offline)</option>
-                </select>
-                <p className="text-xs text-slate-500 mt-1">Select how we talk to your LLM API. For MCP targets, an adapter is not required.</p>
-              </div>
-              <div>
-                <label className="label">Model</label>
-                <input className="input" placeholder="gpt-4o-mini / claude-3-5-sonnet / gemini-1.5-pro / custom / mock-1" value={model} onChange={e=>setModel(e.target.value)} />
-              </div>
-            </div>
-          )}
-
-          {/* MCP Mode Info */}
-          {targetMode === "mcp" && (
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mt-4">
-              <p className="text-sm text-blue-800 dark:text-blue-200">
-                <strong>MCP selected:</strong> Adapter/Model not required. MCP uses a standard protocol; no adapter/model selection is needed.
-              </p>
-            </div>
-          )}
-
-          <div className="mt-4">
+          {/* Test Suite Selection - Full width below */}
+          <div className="card p-5">
             <TestSuiteSelector
               onSelectionChange={(tests) => {
                 setSelectedTests(tests);
@@ -581,12 +788,9 @@ export default function App() {
                 }));
               }}
             />
-          </div>
-
-
-
-          {/* Global Controls */}
-          <div className="mt-6 border-t border-slate-200 dark:border-slate-700 pt-6">
+            
+            {/* Global Controls */}
+            <div className="mt-6 border-t border-slate-200 dark:border-slate-700 pt-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <div>
                 <label className="label">Test Profiles</label>
@@ -609,6 +813,7 @@ export default function App() {
                   Based on selected suites and their individual configurations
                 </small>
               </div>
+            </div>
             </div>
           </div>
 
@@ -872,17 +1077,35 @@ export default function App() {
             <small className="block text-slate-500 dark:text-slate-400 mt-1">
               When provided, overrides default passages, qaset, and attacks data sources
             </small>
-          </div>
-
-          <div className="mt-5 flex items-center gap-3">
-            <button className="btn btn-primary" onClick={runTests} disabled={!canRun}>
-              {busy ? <span className="animate-pulse">Running…</span> : <><Play size={16}/> Run tests</>}
-            </button>
-            {busy && (
-              <button className="btn btn-secondary" onClick={cancelTests}>
-                <X size={16}/> Cancel Test
+            
+            {/* Run controls */}
+            <div className="flex flex-wrap items-center gap-3 mt-4">
+              <button 
+                onClick={runTests} 
+                disabled={busy || !targetMode || (targetMode === "api" && (!apiBaseUrl || !provider))} 
+                className="btn-primary flex items-center gap-2"
+              >
+                {busy ? <RefreshCw className="animate-spin" size={16} /> : <Play size={16} />}
+                {busy ? "Running..." : "Run Tests"}
               </button>
-            )}
+              
+              <button 
+                onClick={planTests} 
+                disabled={busy || !targetMode || (targetMode === "api" && (!apiBaseUrl || !provider))} 
+                className="btn-secondary flex items-center gap-2"
+              >
+                <CheckCircle2 size={16} />
+                Dry Run (Plan Only)
+              </button>
+              
+              {busy && (
+                <button onClick={cancelTests} className="btn-danger flex items-center gap-2">
+                  <XCircle size={16} />
+                  Cancel
+                </button>
+              )}
+            </div>
+            
             {message && <span className="text-sm text-slate-600 dark:text-slate-300">{message}</span>}
             {testdataId.trim() && testdataValid === false && (
               <span className="text-sm text-red-600 dark:text-red-400">
@@ -890,55 +1113,9 @@ export default function App() {
               </span>
             )}
           </div>
-        </div>
 
-        {/* Test Data Section */}
-        <div className="card p-5">
-          <button
-            onClick={() => setTestDataExpanded(!testDataExpanded)}
-            className="w-full flex items-center justify-between p-0 bg-transparent border-0 text-left"
-          >
-            <div className="flex items-center gap-3">
-              <span className="text-lg font-semibold">Test Data</span>
-              <span className="text-sm text-slate-500 dark:text-slate-400">
-                Upload, fetch from URLs, or paste custom test data
-              </span>
-            </div>
-            {testDataExpanded ? (
-              <ChevronDown size={20} className="text-slate-400" />
-            ) : (
-              <ChevronRight size={20} className="text-slate-400" />
-            )}
-          </button>
-          
-          {testDataExpanded && (
-            <div className="mt-4">
-              {/* Requirements Banner */}
-              {suites.length > 0 && (
-                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <Info size={16} className="text-blue-600" />
-                      <span className="text-sm text-blue-800">
-                        View which data are required by your selected suites.
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => setShowRequirementsModal(true)}
-                      className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
-                    >
-                      Show Requirements
-                    </button>
-                  </div>
-                </div>
-              )}
-              <TestDataPanel token={token} />
-            </div>
-          )}
-        </div>
-
-        {/* Summary row */}
-        {run?.summary && (
+          {/* Summary row */}
+          {run?.summary && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="kpi">
               <div className="title">Run</div>

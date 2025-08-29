@@ -7,6 +7,7 @@ import sys
 import tempfile
 from pathlib import Path
 import httpx
+import pytest
 
 # Add parent directory to Python path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -14,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from apps.orchestrator.run_tests import TestRunner, OrchestratorRequest
 
 
+@pytest.mark.asyncio
 async def test_compliance_smoke_e2e():
     """Test compliance_smoke suite end-to-end."""
     print("🔍 Testing compliance_smoke suite...")
@@ -83,6 +85,7 @@ async def test_compliance_smoke_e2e():
         Path(patterns_file).unlink(missing_ok=True)
 
 
+@pytest.mark.asyncio
 async def test_bias_smoke_e2e():
     """Test bias_smoke suite end-to-end."""
     print("⚖️  Testing bias_smoke suite...")
@@ -132,6 +135,7 @@ async def test_bias_smoke_e2e():
     return True
 
 
+@pytest.mark.asyncio
 async def test_sharding_e2e():
     """Test sharding functionality."""
     print("🗂️  Testing sharding functionality...")
@@ -169,6 +173,7 @@ async def test_sharding_e2e():
     return True
 
 
+@pytest.mark.asyncio
 async def test_json_reporting_e2e():
     """Test JSON reporting for smoke suites."""
     print("📄 Testing JSON reporting...")
@@ -258,6 +263,7 @@ async def test_json_reporting_e2e():
     return True
 
 
+@pytest.mark.asyncio
 async def test_excel_reporting_e2e():
     """Test Excel reporting for smoke suites."""
     print("📊 Testing Excel reporting...")

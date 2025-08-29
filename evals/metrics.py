@@ -57,9 +57,9 @@ def eval_batch(samples: List[Dict[str, Any]]) -> Dict[str, float]:
             'contexts': [sample['contexts'] for sample in samples],
         }
         
-        # Add ground truth if available (Ragas expects 'ground_truths' as list of lists)
+        # Add ground truth if available (Ragas v2 expects 'reference' field)
         if all('ground_truth' in sample for sample in samples):
-            eval_data['ground_truths'] = [[sample['ground_truth']] for sample in samples]
+            eval_data['reference'] = [sample['ground_truth'] for sample in samples]
         
         # Create dataset
         dataset = Dataset.from_dict(eval_data)
@@ -68,7 +68,7 @@ def eval_batch(samples: List[Dict[str, Any]]) -> Dict[str, float]:
         metrics_to_eval = [faithfulness, answer_relevancy]
         
         # Add metrics that require ground truth
-        if 'ground_truths' in eval_data:
+        if 'reference' in eval_data:
             metrics_to_eval.extend([
                 context_recall,
                 context_precision,

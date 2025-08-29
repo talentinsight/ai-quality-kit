@@ -1,5 +1,5 @@
 export type TargetMode = 'api' | 'mcp';
-export type Provider = 'openai' | 'anthropic' | 'gemini' | 'custom_rest' | 'mock';
+export type Provider = 'openai' | 'anthropic' | 'gemini' | 'custom_rest' | 'synthetic' | 'mock';
 
 export interface Thresholds {
   faithfulness_min?: number;

@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request, Response, Backgr
 from fastapi.responses import FileResponse
 from typing import Optional
 
-from .run_tests import OrchestratorRequest, OrchestratorResult, TestRunner
+from .run_tests import OrchestratorRequest, OrchestratorResult, OrchestratorPlan, TestRunner
 from apps.security.auth import require_user_or_admin, Principal, _get_client_ip
 from apps.audit import audit_orchestrator_run_started, audit_orchestrator_run_finished, audit_request_accepted
 from pydantic import BaseModel
@@ -66,22 +66,24 @@ def get_reports_dir() -> Path:
     return reports_dir
 
 
-@router.post("/run_tests", response_model=OrchestratorResult)
+@router.post("/run_tests")
 async def run_tests(
     http_request: Request,
     request: OrchestratorRequest,
+    dry_run: bool = False,
     principal: Optional[Principal] = Depends(require_user_or_admin())
-) -> OrchestratorResult:
+):
     """
-    Run multiple test suites and generate reports.
+    Run multiple test suites and generate reports, or create a test plan.
     
     Args:
         http_request: FastAPI request object for audit logging
         request: Orchestrator request with test configuration
+        dry_run: If True, return a test plan instead of executing tests
         principal: Authenticated principal (if auth enabled)
         
     Returns:
-        Orchestrator result with run ID and artifact paths
+        Orchestrator result with run ID and artifact paths, or test plan if dry_run=True
     """
     start_time = time.time()
     actor = principal.token_hash_prefix if principal else "anonymous"
@@ -95,8 +97,13 @@ async def run_tests(
     )
     
     try:
-        # Create and run test runner
+        # Create test runner
         runner = TestRunner(request)
+        
+        # Handle dry run (planning)
+        if dry_run:
+            plan = runner.create_test_plan()
+            return plan
         
         # Register running test
         _running_tests[runner.run_id] = {

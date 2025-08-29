@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, BarChart3, Shield, ShieldCheck, Zap, TrendingUp, Layers, CheckSquare, Square, AlertTriangle, Clock, Database } from 'lucide-react';
+import { ChevronDown, ChevronRight, BarChart3, Shield, ShieldCheck, Zap, TrendingUp, Layers, CheckSquare, Square, AlertTriangle, Clock, Database, LucideIcon } from 'lucide-react';
 
 interface TestDefinition {
   id: string;
@@ -15,7 +15,7 @@ interface TestSuite {
   id: string;
   name: string;
   description: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: LucideIcon;
   color: string;
   enabled: boolean;
   expanded: boolean;
@@ -256,7 +256,37 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
       }
     });
     onSelectionChange(selectedTests);
-  }, [testSuites, onSelectionChange]);
+
+    // Generate suite configs based on selected tests
+    testSuites.forEach(suite => {
+      if (suite.id === 'rag_reliability_robustness') {
+        // Build complete configuration for all sub-tests
+        const faithfulnessEnabled = suite.tests.find(t => t.id === 'basic_faithfulness')?.enabled || false;
+        const contextRecallEnabled = suite.tests.find(t => t.id === 'context_recall')?.enabled || false;
+        const groundTruthEnabled = suite.tests.find(t => t.id === 'ground_truth_evaluation')?.enabled || false;
+        const promptRobustnessEnabled = suite.tests.find(t => t.id === 'prompt_robustness')?.enabled || false;
+        
+        const config = {
+          faithfulness_eval: {
+            enabled: faithfulnessEnabled
+          },
+          context_recall: {
+            enabled: contextRecallEnabled
+          },
+          ground_truth_eval: {
+            enabled: groundTruthEnabled
+          },
+          prompt_robustness: {
+            enabled: promptRobustnessEnabled,
+            prompt_source: 'built_in',
+            include_prompts: true
+          }
+        };
+        
+        onSuiteConfigChange('rag_reliability_robustness', config);
+      }
+    });
+  }, [testSuites, onSelectionChange, onSuiteConfigChange]);
 
   const toggleSuite = (suiteId: string) => {
     setTestSuites(prev => prev.map(suite => {

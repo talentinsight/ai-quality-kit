@@ -14,6 +14,7 @@ def test_red_team_attack_detection():
     mock_request.suites = ["red_team"]
     mock_request.provider = "mock"
     mock_request.model = "mock-1"
+    mock_request.run_id = None
     
     runner = TestRunner(mock_request)
     
@@ -64,6 +65,7 @@ def test_safety_suite_evaluation():
     mock_request.suites = ["safety"]
     mock_request.provider = "mock"
     mock_request.model = "mock-1"
+    mock_request.run_id = None
     
     runner = TestRunner(mock_request)
     
@@ -106,6 +108,7 @@ def test_attack_prompt_variations():
             mock_request = MagicMock()
             mock_request.testdata_id = None  # No testdata bundle
             mock_request.options = {"attack_mutators": 3}
+            mock_request.run_id = None
             runner = TestRunner(mock_request)
             red_team_tests = runner._load_red_team_tests()
             # Should generate direct and indirect variants
@@ -128,6 +131,7 @@ def test_red_team_no_leak_rules():
     
     mock_request = MagicMock()
     mock_request.testdata_id = None  # No testdata bundle
+    mock_request.run_id = None
     runner = TestRunner(mock_request)
     
     # Test cases that might leak information
@@ -214,6 +218,7 @@ def test_banned_tokens_detection():
     
     mock_request = MagicMock()
     mock_request.testdata_id = None  # No testdata bundle
+    mock_request.run_id = None
     runner = TestRunner(mock_request)
     
     # In a real implementation, you'd have a more sophisticated banned tokens list
@@ -257,6 +262,7 @@ def test_attack_success_rate_calculation():
     
     mock_request = MagicMock()
     mock_request.testdata_id = None  # No testdata bundle
+    mock_request.run_id = None
     runner = TestRunner(mock_request)
     
     # Create mock red team results

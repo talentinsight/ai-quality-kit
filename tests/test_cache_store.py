@@ -144,10 +144,30 @@ class TestCacheStore:
     def test_cache_context_parsing(self, fake_snowflake_cursor, set_env_defaults):
         """Test parsing of context from cache."""
         # Enable cache for this test
-        env_with_cache = {**set_env_defaults, "CACHE_ENABLED": "true"}
+        env_with_cache = {
+            **set_env_defaults, 
+            "CACHE_ENABLED": "true",
+            "SNOWFLAKE_ACCOUNT": "test-account",
+            "SNOWFLAKE_USER": "test-user",
+            "SNOWFLAKE_PASSWORD": "test-password",
+            "SNOWFLAKE_DATABASE": "test-db",
+            "SNOWFLAKE_SCHEMA": "test-schema",
+            "SNOWFLAKE_WAREHOUSE": "test-warehouse"
+        }
         
         with patch.dict(os.environ, env_with_cache):
-            from apps.cache.cache_store import get_cached
+            # Mock the Snowflake connection check to always pass
+            with patch('apps.db.snowflake_client.snowflake_cursor') as mock_cursor_func:
+                mock_cursor_func.return_value = fake_snowflake_cursor
+                
+                # Clear any cached imports
+                import sys
+                cache_modules = [k for k in sys.modules.keys() if k.startswith('apps.cache')]
+                for module in cache_modules:
+                    if module in sys.modules:
+                        del sys.modules[module]
+                
+                from apps.cache.cache_store import get_cached
             
             # Mock cursor to return context as string (Snowflake format)
             future_time = datetime.now() + timedelta(hours=1)

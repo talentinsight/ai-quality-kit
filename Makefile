@@ -10,7 +10,7 @@ clean:
 	rm -rf htmlcov/
 	rm -rf .coverage
 	rm -rf .pytest_cache/
-	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+Snowflek	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
 quickcheck:
 	QUICKCHECK_START_SERVER=true python3 scripts/quickcheck.py

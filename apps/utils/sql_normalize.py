@@ -31,12 +31,13 @@ def canonicalize_sql(sql: str) -> str:
     sql = sql.replace('\r\n', '\n').replace('\r', '\n')
     sql = re.sub(r'\s+', ' ', sql)
     
-    # Step 4: Uppercase SQL keywords
+    # Step 4: Uppercase SQL keywords and functions
     sql_keywords = [
         'SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'ON',
         'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'OFFSET', 'UNION', 'ALL', 'DISTINCT',
         'AND', 'OR', 'NOT', 'IN', 'BETWEEN', 'LIKE', 'AS', 'CASE', 'WHEN', 'THEN',
-        'ELSE', 'END', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'ALTER', 'TABLE'
+        'ELSE', 'END', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'ALTER', 'TABLE',
+        'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'UPPER', 'LOWER', 'SUBSTRING', 'LENGTH'
     ]
     
     # Sort by length (longest first) to avoid partial matches
@@ -73,8 +74,8 @@ def split_where_and_predicates(sql: str) -> List[str]:
     Returns:
         List of normalized predicates if WHERE contains only AND, empty list otherwise
     """
-    # Find WHERE clause
-    where_match = re.search(r'\bWHERE\b\s+(.*?)(?:\s+(?:GROUP BY|ORDER BY|HAVING|LIMIT|OFFSET|UNION|$))', sql, re.IGNORECASE)
+    # Find WHERE clause - improved regex to handle end of string properly
+    where_match = re.search(r'\bWHERE\b\s+(.*?)(?:\s+(?:GROUP BY|ORDER BY|HAVING|LIMIT|OFFSET|UNION)\b|$)', sql, re.IGNORECASE)
     if not where_match:
         return []
     
