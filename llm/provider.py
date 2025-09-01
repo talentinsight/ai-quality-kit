@@ -24,16 +24,19 @@ def get_chat() -> Callable[[List[str]], str]:
         Callable that takes a list of messages and returns a response string.
     """
     provider = os.getenv("PROVIDER", "openai").lower()
-    return get_chat_for(provider)
+    return get_chat_for(provider, deterministic=True)
 
 
-def get_chat_for(provider: Optional[str] = None, model: Optional[str] = None) -> Callable[[List[str]], str]:
+def get_chat_for(provider: Optional[str] = None, model: Optional[str] = None, 
+                 deterministic: bool = True, test_flag_override: Optional[dict] = None) -> Callable[[List[str]], str]:
     """
     Factory function that returns a chat callable for specific provider/model.
     
     Args:
         provider: Provider name (openai, anthropic, gemini, custom_rest, mock)
         model: Model name (overrides environment default)
+        deterministic: Whether to force deterministic parameters (temperature=0, top_p=1, seed)
+        test_flag_override: Optional dict to override deterministic behavior for specific tests
         
     Returns:
         Callable that takes a list of messages and returns a response string.
@@ -45,21 +48,25 @@ def get_chat_for(provider: Optional[str] = None, model: Optional[str] = None) ->
         provider = provider.lower()
     
     if provider == "openai":
-        return _get_openai_chat(model)
+        return _get_openai_chat(model, deterministic, test_flag_override)
     elif provider == "anthropic":
-        return _get_anthropic_chat(model)
+        return _get_anthropic_chat(model, deterministic, test_flag_override)
     elif provider == "gemini":
-        return _get_gemini_chat(model)
+        return _get_gemini_chat(model, deterministic, test_flag_override)
     elif provider == "custom_rest":
-        return _get_custom_rest_chat(model)
+        return _get_custom_rest_chat(model, deterministic, test_flag_override)
     elif provider == "mock":
-        return _get_mock_chat(model)
+        return _get_mock_chat(model, deterministic, test_flag_override)
     else:
         raise ValueError(f"Unsupported provider: {provider}")
 
 
-def _get_openai_chat(model_override: Optional[str] = None) -> Callable[[List[str]], str]:
-    """Get OpenAI chat function."""
+def _get_openai_chat(model_override: Optional[str] = None, deterministic: bool = True, 
+                     test_flag_override: Optional[dict] = None) -> Callable[[List[str]], str]:
+    """Get OpenAI chat function with deterministic parameters."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise ValueError("OPENAI_API_KEY environment variable is required for OpenAI provider")
@@ -67,6 +74,18 @@ def _get_openai_chat(model_override: Optional[str] = None) -> Callable[[List[str
     model_name = model_override or os.getenv("MODEL_NAME", "gpt-4o-mini")
     client = openai.OpenAI(api_key=api_key)
     resilient_client = get_resilient_client()
+    
+    # Determine generation parameters
+    if test_flag_override:
+        # Allow test-specific overrides
+        temperature = test_flag_override.get("temperature", 0.0 if deterministic else 0.7)
+        top_p = test_flag_override.get("top_p", 1.0 if deterministic else 1.0)
+        seed = test_flag_override.get("seed", 42 if deterministic else None)
+    else:
+        # Use deterministic defaults for evaluation
+        temperature = 0.0 if deterministic else 0.7
+        top_p = 1.0 if deterministic else 1.0
+        seed = 42 if deterministic else None
     
     def chat(messages: List[str]) -> str:
         """Call OpenAI API with messages."""
@@ -76,12 +95,23 @@ def _get_openai_chat(model_override: Optional[str] = None) -> Callable[[List[str
                 role = "system" if i == 0 else "user"
                 formatted_messages.append({"role": role, "content": msg})
             
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=formatted_messages,
-                temperature=0.0,  # Deterministic as much as possible
-                max_tokens=1000
-            )
+            # Build parameters dict
+            params = {
+                "model": model_name,
+                "messages": formatted_messages,
+                "temperature": temperature,
+                "top_p": top_p,
+                "max_tokens": 1000
+            }
+            
+            # Add seed if supported (OpenAI supports seed parameter)
+            if seed is not None:
+                params["seed"] = seed
+            
+            # Log effective generation parameters
+            logger.debug(f"OpenAI generation params: {params}")
+            
+            response = client.chat.completions.create(**params)
             return response.choices[0].message.content or ""
         
         # For now, just call the function directly without resilience
@@ -91,8 +121,12 @@ def _get_openai_chat(model_override: Optional[str] = None) -> Callable[[List[str
     return chat
 
 
-def _get_anthropic_chat(model_override: Optional[str] = None) -> Callable[[List[str]], str]:
-    """Get Anthropic chat function."""
+def _get_anthropic_chat(model_override: Optional[str] = None, deterministic: bool = True, 
+                        test_flag_override: Optional[dict] = None) -> Callable[[List[str]], str]:
+    """Get Anthropic chat function with deterministic parameters."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         raise ValueError("ANTHROPIC_API_KEY environment variable is required for Anthropic provider")
@@ -100,6 +134,16 @@ def _get_anthropic_chat(model_override: Optional[str] = None) -> Callable[[List[
     model_name = model_override or os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet")
     client = Anthropic(api_key=api_key)
     resilient_client = get_resilient_client()
+    
+    # Determine generation parameters
+    if test_flag_override:
+        # Allow test-specific overrides
+        temperature = test_flag_override.get("temperature", 0.0 if deterministic else 0.7)
+        top_p = test_flag_override.get("top_p", 1.0 if deterministic else 1.0)
+    else:
+        # Use deterministic defaults for evaluation
+        temperature = 0.0 if deterministic else 0.7
+        top_p = 1.0 if deterministic else 1.0
     
     def chat(messages: List[str]) -> str:
         """Call Anthropic API with messages."""
@@ -110,13 +154,20 @@ def _get_anthropic_chat(model_override: Optional[str] = None) -> Callable[[List[
             # Combine user messages if multiple
             user_content = "\n\n".join(user_messages)
             
-            response = client.messages.create(
-                model=model_name,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_content}],
-                temperature=0.0,  # Deterministic as much as possible
-                max_tokens=1000
-            )
+            # Build parameters dict
+            params = {
+                "model": model_name,
+                "system": system_prompt,
+                "messages": [{"role": "user", "content": user_content}],
+                "temperature": temperature,
+                "top_p": top_p,
+                "max_tokens": 1000
+            }
+            
+            # Log effective generation parameters
+            logger.debug(f"Anthropic generation params: {params}")
+            
+            response = client.messages.create(**params)
             # Handle different response types from Anthropic API
             if response.content and len(response.content) > 0:
                 content_block = response.content[0]
@@ -138,7 +189,8 @@ def _get_anthropic_chat(model_override: Optional[str] = None) -> Callable[[List[
     return chat
 
 
-def _get_gemini_chat(model_override: Optional[str] = None) -> Callable[[List[str]], str]:
+def _get_gemini_chat(model_override: Optional[str] = None, deterministic: bool = True, 
+                     test_flag_override: Optional[dict] = None) -> Callable[[List[str]], str]:
     """Get Google Gemini chat function."""
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
@@ -170,7 +222,8 @@ def _get_gemini_chat(model_override: Optional[str] = None) -> Callable[[List[str
     return chat
 
 
-def _get_custom_rest_chat(model_override: Optional[str] = None) -> Callable[[List[str]], str]:
+def _get_custom_rest_chat(model_override: Optional[str] = None, deterministic: bool = True, 
+                          test_flag_override: Optional[dict] = None) -> Callable[[List[str]], str]:
     """Get custom REST API chat function."""
     base_url = os.getenv("CUSTOM_LLM_BASE_URL")
     if not base_url:
@@ -218,7 +271,8 @@ def _get_custom_rest_chat(model_override: Optional[str] = None) -> Callable[[Lis
     return chat
 
 
-def _get_mock_chat(model_override: Optional[str] = None) -> Callable[[List[str]], str]:
+def _get_mock_chat(model_override: Optional[str] = None, deterministic: bool = True, 
+                   test_flag_override: Optional[dict] = None) -> Callable[[List[str]], str]:
     """Get mock chat function for testing."""
     model_name = model_override or "mock-model"
     

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Download, Play, ShieldCheck, Settings2, MoonStar, Sun, Server, CheckCircle2, XCircle, Rocket, ChevronDown, ChevronRight, RefreshCw, X, MessageCircle, Info } from "lucide-react";
+import { Download, Play, ShieldCheck, Settings2, MoonStar, Sun, Server, CheckCircle2, XCircle, Rocket, ChevronDown, ChevronRight, RefreshCw, X, MessageCircle, Info, Upload } from "lucide-react";
 import clsx from "clsx";
 import type { Provider, TestSuite, OrchestratorRequest, OrchestratorResult } from "../types";
 import TestDataPanel from "../features/testdata/TestDataPanel";
@@ -32,6 +32,12 @@ export default function App() {
   const [mcpServerUrl, setMcpServerUrl] = useState("");
   const [token, setToken] = useState("");
   const [targetMode, setTargetMode] = useState<"api"|"mcp"|"">("");
+  
+  // LLM Model Type
+  const [llmModelType, setLlmModelType] = useState<"rag"|"agent"|"tool"|"">("");
+  
+  // Ground Truth availability
+  const [hasGroundTruth, setHasGroundTruth] = useState<boolean>(false);
 
   // Provider & model
   const [provider, setProvider] = useState<Provider|"">("");
@@ -613,6 +619,171 @@ export default function App() {
               </p>
             </div>
 
+            {/* LLM Options - Appears after Target Mode selection */}
+            {targetMode && (
+              <div className="animate-slideDown">
+                <label className="label">LLM Options</label>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <label className="flex items-center gap-3 p-3 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                    <input 
+                      type="radio" 
+                      name="llmModelType" 
+                      value="rag" 
+                      className="radio" 
+                      checked={llmModelType === "rag"}
+                      onChange={e => setLlmModelType(e.target.value as any)}
+                    />
+                    <div>
+                      <div className="text-sm font-medium">🔍 RAG System</div>
+                      <div className="text-xs text-slate-500">Retrieval-Augmented Generation</div>
+                    </div>
+                  </label>
+                  
+                  <label className="flex items-center gap-3 p-3 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                    <input 
+                      type="radio" 
+                      name="llmModelType" 
+                      value="agent" 
+                      className="radio" 
+                      checked={llmModelType === "agent"}
+                      onChange={e => setLlmModelType(e.target.value as any)}
+                    />
+                    <div>
+                      <div className="text-sm font-medium">🤖 AI Agent</div>
+                      <div className="text-xs text-slate-500">Agent with Tools</div>
+                    </div>
+                  </label>
+                  
+                  <label className="flex items-center gap-3 p-3 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                    <input 
+                      type="radio" 
+                      name="llmModelType" 
+                      value="tool" 
+                      className="radio" 
+                      checked={llmModelType === "tool"}
+                      onChange={e => setLlmModelType(e.target.value as any)}
+                    />
+                    <div>
+                      <div className="text-sm font-medium">🛠️ Function/Tool</div>
+                      <div className="text-xs text-slate-500">Function Testing</div>
+                    </div>
+                  </label>
+                </div>
+                <p className="text-xs text-slate-500 mt-2">
+                  Choose the type of LLM system you want to test for optimized evaluation options.
+                </p>
+              </div>
+            )}
+
+            {/* Ground Truth Data Availability - Only for RAG */}
+            {llmModelType === "rag" && (
+              <div className="animate-slideDown">
+                <label className="label">Ground Truth Data</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2">
+                    <input 
+                      type="radio" 
+                      name="groundTruth" 
+                      value="no" 
+                      className="radio" 
+                      checked={!hasGroundTruth}
+                      onChange={() => setHasGroundTruth(false)}
+                    />
+                    <span className="text-sm">No Ground Truth Available</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input 
+                      type="radio" 
+                      name="groundTruth" 
+                      value="yes" 
+                      className="radio" 
+                      checked={hasGroundTruth}
+                      onChange={() => setHasGroundTruth(true)}
+                    />
+                    <span className="text-sm">Ground Truth Available</span>
+                  </label>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  {hasGroundTruth 
+                    ? "🎯 With ground truth: 8 RAGas evaluation metrics available (3 required + 5 advanced: Faithfulness, Context Recall, Answer Relevancy, Context Precision, Answer Correctness, Answer Similarity, Context Entities Recall, Context Relevancy)"
+                    : "📊 Without ground truth: 3 required RAGas metrics (Faithfulness, Context Recall, Answer Relevancy)"
+                  }
+                </p>
+                
+                {hasGroundTruth && (
+                  <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                    <div className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-3">Ground Truth Data Setup</div>
+                    
+                    {/* Step 1: Download Template */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-2 bg-white dark:bg-slate-800 rounded border">
+                        <div>
+                          <div className="text-sm font-medium">📋 Step 1: Download Excel Template</div>
+                          <div className="text-xs text-slate-600 dark:text-slate-400">Get the template with proper columns for questions, contexts, and answers</div>
+                        </div>
+                        <button 
+                          className="btn btn-sm btn-secondary flex items-center gap-2"
+                          onClick={() => {
+                            // Create CSV template (Excel-compatible)
+                            const csvContent = [
+                              'Question,Context,Expected Answer,Metadata',
+                              '"What is the capital of France?","France is a country in Europe. Paris is its capital city.","Paris","geography"',
+                              '"How do you calculate compound interest?","Compound interest formula: A = P(1 + r/n)^(nt)","A = P(1 + r/n)^(nt) where A is final amount, P is principal, r is annual rate, n is compounds per year, t is time","finance"',
+                              '"What are the benefits of renewable energy?","Renewable energy sources include solar, wind, hydro, and geothermal power.","Environmental benefits, cost savings, sustainability, reduced carbon emissions","environment"',
+                              ',,,'  // Empty row for user to fill
+                            ].join('\n');
+                            
+                            const blob = new Blob([csvContent], { type: 'text/csv' });
+                            const url = window.URL.createObjectURL(blob);
+                            const link = document.createElement('a');
+                            link.href = url;
+                            link.download = 'rag-ground-truth-template.csv';
+                            link.click();
+                            window.URL.revokeObjectURL(url);
+                          }}
+                        >
+                          <Download size={14} />
+                          Download Template
+                        </button>
+                      </div>
+
+                      {/* Step 2: Upload Completed File */}
+                      <div className="flex items-center justify-between p-2 bg-white dark:bg-slate-800 rounded border">
+                        <div>
+                          <div className="text-sm font-medium">📤 Step 2: Upload Completed File</div>
+                          <div className="text-xs text-slate-600 dark:text-slate-400">Upload your completed Excel file or JSONL format</div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button className="btn btn-sm btn-primary flex items-center gap-2">
+                            <Upload size={14} />
+                            Upload Excel
+                          </button>
+                          <button className="btn btn-sm btn-ghost flex items-center gap-2">
+                            <Upload size={14} />
+                            Upload JSONL
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Template Info */}
+                    <div className="mt-3 p-2 bg-slate-100 dark:bg-slate-700 rounded text-xs">
+                      <div className="font-medium mb-1">📊 Template includes columns for:</div>
+                      <div className="text-slate-600 dark:text-slate-400">
+                        • <strong>Question:</strong> The query/question to ask<br/>
+                        • <strong>Context:</strong> Relevant context/documents<br/>
+                        • <strong>Expected Answer:</strong> Ground truth answer<br/>
+                        • <strong>Metadata:</strong> Additional tags or categories
+                      </div>
+                      <div className="mt-2 text-slate-500 dark:text-slate-500">
+                        💡 Template downloads as CSV (Excel-compatible) with sample data to guide you
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Dynamic Connection Settings - Appears after Target Mode selection */}
             {targetMode && (
               <div className="animate-slideDown space-y-4">
@@ -834,6 +1005,8 @@ export default function App() {
           {/* Test Suite Selection - Full width below */}
           <div className="card p-5">
             <TestSuiteSelector
+              llmModelType={llmModelType}
+              hasGroundTruth={hasGroundTruth}
               onSelectionChange={(tests) => {
                 setSelectedTests(tests);
                 // Update suites based on selected tests
@@ -847,6 +1020,18 @@ export default function App() {
                   ...prev,
                   [suiteId]: config
                 }));
+              }}
+              dataStatus={{
+                passages: true, // Assume data is available for now
+                qaSet: hasGroundTruth,
+                attacks: true
+              }}
+              onShowRequirements={() => {
+                // Scroll to test data panel
+                const testDataPanel = document.querySelector('[data-testid="test-data-panel"]');
+                if (testDataPanel) {
+                  testDataPanel.scrollIntoView({ behavior: 'smooth' });
+                }
               }}
             />
             
@@ -914,6 +1099,8 @@ export default function App() {
             </div>
             </div>
           </div>
+
+
 
           {/* Resilience Options Panel */}
           {suites.includes("resilience") && (

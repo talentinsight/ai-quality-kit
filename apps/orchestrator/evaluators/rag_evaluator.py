@@ -18,6 +18,7 @@ import logging
 
 from .base_evaluator import BaseEvaluator, EvaluationResult, TestCase, TestResponse
 from .simple_ground_truth_evaluator import evaluate_simple_ground_truth
+from .ragas_adapter import evaluate_ragas
 
 logger = logging.getLogger(__name__)
 
@@ -26,24 +27,63 @@ logger = logging.getLogger(__name__)
 class RAGMetrics:
     """RAG evaluation metrics."""
     
-    # Core RAG metrics
-    faithfulness_score: float
-    context_relevance_score: float
-    answer_relevance_score: float
-    context_recall_score: float
+    # Core RAG metrics (canonical names)
+    faithfulness: float
+    answer_relevancy: float
+    context_precision: float
+    context_recall: float
     
-    # Additional metrics
-    citation_accuracy: float
-    semantic_similarity: float
+    # Ground truth metrics
+    answer_correctness: Optional[float] = None
+    answer_similarity: Optional[float] = None
+    
+    # Retrieval ranking metrics
+    recall_at_k: Optional[float] = None
+    mrr_at_k: Optional[float] = None
+    ndcg_at_k: Optional[float] = None
+    top_k_used: Optional[int] = None
+    
+    # Citation and accuracy metrics
+    citation_accuracy: Optional[float] = None  # Can be NA
+    
+    # Retrieval trace information
+    retrieved_passage_ids: Optional[List[str]] = None
+    passage_ranks: Optional[List[int]] = None
+    similarity_scores: Optional[List[float]] = None
+    retriever_config: Optional[Dict[str, Any]] = None
+    
+    # Retrieval stability (for prompt robustness)
+    retrieval_stability: Optional[float] = None
     
     # Ground truth evaluation (hybrid)
-    ground_truth_ai: Optional[Dict[str, Any]]
-    ground_truth_rule_based: Optional[Dict[str, Any]]
-    ground_truth_comparison: Optional[Dict[str, Any]]
+    ground_truth_ai: Optional[Dict[str, Any]] = None
+    ground_truth_rule_based: Optional[Dict[str, Any]] = None
+    ground_truth_comparison: Optional[Dict[str, Any]] = None
     
     # Quality assessment
-    overall_quality: float
-    rag_quality_level: str
+    overall_quality: float = 0.0
+    rag_quality_level: str = "UNKNOWN"
+    
+    # Legacy aliases for backward compatibility
+    @property
+    def faithfulness_score(self) -> float:
+        return self.faithfulness
+    
+    @property
+    def context_relevance_score(self) -> float:
+        return self.context_precision
+    
+    @property
+    def answer_relevance_score(self) -> float:
+        return self.answer_relevancy
+    
+    @property
+    def context_recall_score(self) -> float:
+        return self.context_recall
+    
+    @property
+    def semantic_similarity(self) -> Optional[float]:
+        return self.answer_similarity
 
 
 class RAGEvaluator(BaseEvaluator):
@@ -93,6 +133,34 @@ class RAGEvaluator(BaseEvaluator):
             Detailed RAG evaluation result
         """
         try:
+            # Check Ragas availability and validate thresholds
+            ragas_available = self._check_ragas_availability()
+            ragas_thresholds_requested = any(
+                key.startswith(('min_', 'max_')) and 'ragas' in key.lower()
+                for key in self.thresholds.keys()
+            ) or any(
+                key in ['min_faithfulness', 'min_answer_relevancy', 'min_context_precision', 
+                       'min_context_recall', 'min_answer_correctness', 'min_answer_similarity']
+                for key in self.thresholds.keys()
+            )
+            
+            # If Ragas thresholds are requested but Ragas is unavailable, fail early
+            if ragas_thresholds_requested and not ragas_available:
+                return EvaluationResult(
+                    passed=False,
+                    score=0.0,
+                    confidence=0.0,
+                    details={
+                        "status": "RagasUnavailable",
+                        "error": "Ragas thresholds specified but Ragas library is not available",
+                        "ragas_thresholds_requested": ragas_thresholds_requested,
+                        "ragas_available": ragas_available
+                    },
+                    risk_level="HIGH",
+                    explanation="RAG Quality gate failed: Ragas evaluation required but unavailable",
+                    metrics={}
+                )
+            
             # Extract RAG-specific information
             query = test_case.query
             answer = response.answer
@@ -100,9 +168,10 @@ class RAGEvaluator(BaseEvaluator):
             expected_context = test_case.metadata.get("expected_context", [])
             ground_truth = test_case.metadata.get("ground_truth", "")
             
-            # Calculate RAG metrics
+            # Calculate RAG metrics with enhanced functionality
             rag_metrics = self._calculate_rag_metrics(
-                query, answer, context, expected_context, ground_truth
+                query, answer, context, expected_context, ground_truth,
+                test_case_metadata=test_case.metadata
             )
             
             # Determine overall RAG quality
@@ -112,6 +181,23 @@ class RAGEvaluator(BaseEvaluator):
             # Calculate confidence based on metric consistency
             confidence = self._calculate_confidence(rag_metrics)
             
+            # Calculate confidence intervals for key metrics
+            confidence_intervals = self._calculate_confidence_intervals(rag_metrics)
+            
+            # Check for At-Risk conditions based on CI lower bounds
+            at_risk_flags = self._check_at_risk_thresholds(confidence_intervals)
+            
+            # Determine if any metric is at risk
+            has_at_risk_metrics = any(at_risk_flags.values())
+            
+            # Adjust quality assessment based on At-Risk flags
+            if has_at_risk_metrics:
+                # If CI lower bound violates threshold, mark as At-Risk even if point estimate passes
+                is_high_quality = False
+                risk_level = "HIGH"  # At-Risk condition
+            else:
+                risk_level = "LOW" if is_high_quality else "MEDIUM"
+            
             # Determine quality level
             quality_level = self._determine_quality_level(rag_metrics.overall_quality)
             
@@ -120,16 +206,54 @@ class RAGEvaluator(BaseEvaluator):
                 is_high_quality, rag_metrics
             )
             
-            # Compile detailed metrics
+            # Compile detailed metrics with canonical names and legacy aliases
             metrics = {
+                # Canonical metric names
+                "faithfulness": rag_metrics.faithfulness,
+                "answer_relevancy": rag_metrics.answer_relevancy,
+                "context_precision": rag_metrics.context_precision,
+                "context_recall": rag_metrics.context_recall,
+                
+                # Ground truth metrics (when available)
+                "answer_correctness": rag_metrics.answer_correctness,
+                "answer_similarity": rag_metrics.answer_similarity,
+                
+                # Retrieval ranking metrics (when available)
+                "recall_at_k": rag_metrics.recall_at_k,
+                "mrr_at_k": rag_metrics.mrr_at_k,
+                "ndcg_at_k": rag_metrics.ndcg_at_k,
+                "top_k_used": rag_metrics.top_k_used,
+                
+                # Citation accuracy (can be None/NA)
+                "citation_accuracy": rag_metrics.citation_accuracy,
+                
+                # Retrieval stability (for prompt robustness)
+                "retrieval_stability": rag_metrics.retrieval_stability,
+                
+                # Overall assessment
+                "overall_quality": rag_metrics.overall_quality,
+                
+                # Legacy aliases for backward compatibility
                 "faithfulness_score": rag_metrics.faithfulness_score,
                 "context_relevance_score": rag_metrics.context_relevance_score,
                 "answer_relevance_score": rag_metrics.answer_relevance_score,
                 "context_recall_score": rag_metrics.context_recall_score,
-                "citation_accuracy": rag_metrics.citation_accuracy,
-                "semantic_similarity": rag_metrics.semantic_similarity,
-                "overall_quality": rag_metrics.overall_quality
+                "semantic_similarity": rag_metrics.semantic_similarity
             }
+            
+            # Add retrieval trace information to metrics
+            if rag_metrics.retrieved_passage_ids:
+                metrics.update({
+                    "retrieved_passage_ids": rag_metrics.retrieved_passage_ids,
+                    "passage_ranks": rag_metrics.passage_ranks,
+                    "similarity_scores": rag_metrics.similarity_scores,
+                    "retriever_config": rag_metrics.retriever_config
+                })
+            
+            # Add confidence intervals to metrics
+            if confidence_intervals:
+                metrics["confidence_intervals"] = confidence_intervals
+                metrics["at_risk_flags"] = at_risk_flags
             
             # Additional details for debugging/analysis
             details = {
@@ -138,15 +262,23 @@ class RAGEvaluator(BaseEvaluator):
                 "expected_context_count": len(expected_context),
                 "has_ground_truth": bool(ground_truth),
                 "threshold_used": quality_threshold,
-                "evaluation_method": "comprehensive_rag_v1"
+                "evaluation_method": "comprehensive_rag_v1",
+                "ragas_available": ragas_available,
+                "ragas_thresholds_requested": ragas_thresholds_requested,
+                "has_at_risk_metrics": has_at_risk_metrics,
+                "confidence_intervals_calculated": bool(confidence_intervals)
             }
+            
+            # Add warning if Ragas is unavailable but not required
+            if not ragas_available and not ragas_thresholds_requested:
+                details["ragas_warning"] = "Ragas library unavailable - using fallback evaluation methods"
             
             return EvaluationResult(
                 passed=is_high_quality,
                 score=rag_metrics.overall_quality,
                 confidence=confidence,
                 details=details,
-                risk_level="LOW" if is_high_quality else "MEDIUM",
+                risk_level=risk_level,
                 explanation=explanation,
                 metrics=metrics
             )
@@ -215,28 +347,57 @@ class RAGEvaluator(BaseEvaluator):
         }
     
     def _calculate_rag_metrics(self, query: str, answer: str, context: List[str],
-                             expected_context: List[str], ground_truth: str) -> RAGMetrics:
-        """Calculate comprehensive RAG metrics."""
+                             expected_context: List[str], ground_truth: str,
+                             test_case_metadata: Optional[Dict[str, Any]] = None) -> RAGMetrics:
+        """Calculate comprehensive RAG metrics with enhanced functionality."""
+        
+        # Extract retrieval information from metadata
+        retrieved_passage_ids = test_case_metadata.get("retrieved_passage_ids", []) if test_case_metadata else []
+        reference_passage_ids = test_case_metadata.get("reference_passage_ids", []) if test_case_metadata else []
+        similarity_scores = test_case_metadata.get("similarity_scores", []) if test_case_metadata else []
+        retriever_config = test_case_metadata.get("retriever_config", {}) if test_case_metadata else {}
+        top_k = test_case_metadata.get("top_k", len(retrieved_passage_ids)) if test_case_metadata else len(context)
         
         # 1. Faithfulness: How grounded is the answer in the context?
-        faithfulness_score = self._calculate_faithfulness(answer, context)
+        faithfulness = self._calculate_faithfulness(answer, context)
         
-        # 2. Context Relevance: How relevant is the retrieved context to the query?
-        context_relevance_score = self._calculate_context_relevance(query, context)
+        # 2. Context Precision: How relevant is the retrieved context to the query?
+        context_precision = self._calculate_context_relevance(query, context)
         
-        # 3. Answer Relevance: How well does the answer address the query?
-        answer_relevance_score = self._calculate_answer_relevance(query, answer)
+        # 3. Answer Relevancy: How well does the answer address the query?
+        answer_relevancy = self._calculate_answer_relevance(query, answer)
         
         # 4. Context Recall: How much of the expected context was retrieved?
-        context_recall_score = self._calculate_context_recall(context, expected_context)
+        # Use reference passages if available, otherwise fall back to expected_context
+        if reference_passage_ids and retrieved_passage_ids:
+            context_recall = self._calculate_context_recall_from_passages(
+                retrieved_passage_ids, reference_passage_ids
+            )
+        else:
+            context_recall = self._calculate_context_recall(context, expected_context)
         
-        # 5. Citation Accuracy: Are citations properly used?
-        citation_accuracy = self._calculate_citation_accuracy(answer, context)
+        # 5. Citation Accuracy: Are citations properly used? (can be NA)
+        citation_accuracy = self._calculate_citation_accuracy(answer, retrieved_passage_ids or context)
         
-        # 6. Semantic Similarity: Overall semantic alignment
-        semantic_similarity = self._calculate_semantic_similarity(answer, ground_truth)
+        # 6. Retrieval ranking metrics (if reference passages available)
+        ranking_metrics = {}
+        if reference_passage_ids and retrieved_passage_ids:
+            ranking_metrics = self._calculate_ranking_metrics(
+                retrieved_passage_ids, reference_passage_ids, top_k
+            )
         
-        # 7. Hybrid Ground Truth Evaluation
+        # 6.5. Retrieval stability (for prompt robustness testing)
+        retrieval_stability = None
+        if test_case_metadata:
+            previous_retrieved = test_case_metadata.get("previous_retrieved_passage_ids", [])
+            if previous_retrieved and retrieved_passage_ids:
+                retrieval_stability = self._calculate_retrieval_stability(
+                    retrieved_passage_ids, previous_retrieved, top_k
+                )
+        
+        # 7. Ground truth metrics (only if ground truth available)
+        answer_correctness = None
+        answer_similarity = None
         ground_truth_ai = None
         ground_truth_rule_based = None
         ground_truth_comparison = None
@@ -244,10 +405,13 @@ class RAGEvaluator(BaseEvaluator):
         if ground_truth:
             # Always run rule-based evaluation (fast, offline)
             ground_truth_rule_based = evaluate_simple_ground_truth(answer, ground_truth)
+            answer_similarity = ground_truth_rule_based.get("semantic_similarity", 0.0)
             
             # Try AI-based evaluation if adapter available
             try:
                 ground_truth_ai = self._evaluate_ground_truth_with_ai(answer, ground_truth)
+                if ground_truth_ai:
+                    answer_correctness = ground_truth_ai.get("answer_correctness", 0.0)
             except Exception as e:
                 logger.debug(f"AI-based ground truth evaluation failed: {e}")
                 ground_truth_ai = None
@@ -258,12 +422,12 @@ class RAGEvaluator(BaseEvaluator):
                     ground_truth_ai, ground_truth_rule_based
                 )
         
-        # Calculate overall quality score
+        # Calculate overall quality score using canonical metrics
         overall_quality = (
-            self.weights["faithfulness"] * faithfulness_score +
-            self.weights["context_relevance"] * context_relevance_score +
-            self.weights["answer_relevance"] * answer_relevance_score +
-            self.weights["context_recall"] * context_recall_score
+            self.weights.get("faithfulness", 0.3) * faithfulness +
+            self.weights.get("context_precision", 0.25) * context_precision +
+            self.weights.get("answer_relevancy", 0.25) * answer_relevancy +
+            self.weights.get("context_recall", 0.2) * context_recall
         )
         
         # Determine quality level
@@ -277,15 +441,40 @@ class RAGEvaluator(BaseEvaluator):
             rag_quality_level = "POOR"
         
         return RAGMetrics(
-            faithfulness_score=faithfulness_score,
-            context_relevance_score=context_relevance_score,
-            answer_relevance_score=answer_relevance_score,
-            context_recall_score=context_recall_score,
+            # Canonical metric names
+            faithfulness=faithfulness,
+            answer_relevancy=answer_relevancy,
+            context_precision=context_precision,
+            context_recall=context_recall,
+            
+            # Ground truth metrics
+            answer_correctness=answer_correctness,
+            answer_similarity=answer_similarity,
+            
+            # Retrieval ranking metrics
+            recall_at_k=ranking_metrics.get("recall_at_k"),
+            mrr_at_k=ranking_metrics.get("mrr_at_k"),
+            ndcg_at_k=ranking_metrics.get("ndcg_at_k"),
+            top_k_used=top_k,
+            
+            # Citation accuracy (can be None/NA)
             citation_accuracy=citation_accuracy,
-            semantic_similarity=semantic_similarity,
+            
+            # Retrieval trace information
+            retrieved_passage_ids=retrieved_passage_ids,
+            passage_ranks=list(range(1, len(retrieved_passage_ids) + 1)) if retrieved_passage_ids else None,
+            similarity_scores=similarity_scores,
+            retriever_config=retriever_config,
+            
+            # Retrieval stability (for prompt robustness)
+            retrieval_stability=retrieval_stability,
+            
+            # Ground truth evaluation results
             ground_truth_ai=ground_truth_ai,
             ground_truth_rule_based=ground_truth_rule_based,
             ground_truth_comparison=ground_truth_comparison,
+            
+            # Overall assessment
             overall_quality=overall_quality,
             rag_quality_level=rag_quality_level
         )
@@ -402,34 +591,6 @@ class RAGEvaluator(BaseEvaluator):
         
         recall = len(expected_words.intersection(retrieved_words)) / len(expected_words)
         return min(recall, 1.0)
-    
-    def _calculate_citation_accuracy(self, answer: str, context: List[str]) -> float:
-        """Calculate citation accuracy score."""
-        if not context:
-            return 1.0  # No context to cite
-        
-        # Find all citations in the answer
-        citations = []
-        for pattern in self.citation_patterns:
-            citations.extend(re.findall(pattern, answer, re.IGNORECASE))
-        
-        if not citations:
-            return 0.8  # No citations used, but not necessarily wrong
-        
-        # Check if cited sources exist
-        valid_citations = 0
-        for citation in citations:
-            try:
-                citation_num = int(citation) - 1  # Convert to 0-based index
-                if 0 <= citation_num < len(context):
-                    valid_citations += 1
-            except ValueError:
-                continue
-        
-        if not citations:
-            return 1.0
-        
-        return valid_citations / len(citations)
     
     def _calculate_semantic_similarity(self, answer: str, ground_truth: str) -> float:
         """Calculate semantic similarity (simplified version)."""
@@ -611,3 +772,384 @@ class RAGEvaluator(BaseEvaluator):
     def _get_required_config_keys(self) -> List[str]:
         """Get required configuration keys for RAG evaluator."""
         return []  # No required keys, all have defaults
+    
+    def _calculate_ranking_metrics(self, retrieved_passage_ids: List[str], 
+                                 reference_passage_ids: List[str], 
+                                 top_k: int) -> Dict[str, float]:
+        """
+        Calculate retrieval ranking metrics: recall@k, MRR@k, NDCG@k.
+        
+        Args:
+            retrieved_passage_ids: List of retrieved passage IDs in rank order
+            reference_passage_ids: List of ground truth relevant passage IDs
+            top_k: Number of top results to consider
+            
+        Returns:
+            Dictionary with ranking metrics
+        """
+        if not retrieved_passage_ids or not reference_passage_ids:
+            return {
+                'recall_at_k': 0.0,
+                'mrr_at_k': 0.0,
+                'ndcg_at_k': 0.0
+            }
+        
+        # Limit to top_k results
+        top_retrieved = retrieved_passage_ids[:top_k]
+        relevant_set = set(reference_passage_ids)
+        
+        # Calculate Recall@k
+        relevant_retrieved = len([pid for pid in top_retrieved if pid in relevant_set])
+        recall_at_k = relevant_retrieved / len(relevant_set) if relevant_set else 0.0
+        
+        # Calculate MRR@k (Mean Reciprocal Rank)
+        mrr_at_k = 0.0
+        for i, pid in enumerate(top_retrieved):
+            if pid in relevant_set:
+                mrr_at_k = 1.0 / (i + 1)  # Reciprocal of rank (1-indexed)
+                break
+        
+        # Calculate NDCG@k (Normalized Discounted Cumulative Gain)
+        dcg = 0.0
+        for i, pid in enumerate(top_retrieved):
+            if pid in relevant_set:
+                # Binary relevance: 1 if relevant, 0 if not
+                relevance = 1.0
+                dcg += relevance / (1.0 + i)  # log2(1 + i) ≈ 1 + i for small i
+        
+        # Ideal DCG (if all relevant docs were at top)
+        ideal_dcg = sum(1.0 / (1.0 + i) for i in range(min(len(relevant_set), top_k)))
+        ndcg_at_k = dcg / ideal_dcg if ideal_dcg > 0 else 0.0
+        
+        return {
+            'recall_at_k': round(recall_at_k, 4),
+            'mrr_at_k': round(mrr_at_k, 4),
+            'ndcg_at_k': round(ndcg_at_k, 4)
+        }
+    
+    def _calculate_retrieval_stability(self, current_retrieved: List[str], 
+                                     previous_retrieved: List[str], 
+                                     top_k: int) -> float:
+        """
+        Calculate retrieval stability using Jaccard similarity of top-k results.
+        
+        Args:
+            current_retrieved: Current retrieval results
+            previous_retrieved: Previous retrieval results (for comparison)
+            top_k: Number of top results to compare
+            
+        Returns:
+            Jaccard similarity score (0.0 to 1.0)
+        """
+        if not current_retrieved or not previous_retrieved:
+            return 0.0
+        
+        current_set = set(current_retrieved[:top_k])
+        previous_set = set(previous_retrieved[:top_k])
+        
+        if not current_set and not previous_set:
+            return 1.0  # Both empty, perfectly stable
+        
+        intersection = len(current_set.intersection(previous_set))
+        union = len(current_set.union(previous_set))
+        
+        return intersection / union if union > 0 else 0.0
+    
+    def _extract_citations(self, answer: str) -> List[int]:
+        """
+        Extract citation indices from answer text.
+        
+        Looks for patterns like [1], [2], (1), (2), etc.
+        
+        Args:
+            answer: The answer text to analyze
+            
+        Returns:
+            List of citation indices found
+        """
+        import re
+        
+        # Pattern to match citations: [1], [2], (1), (2), etc.
+        citation_patterns = [
+            r'\[(\d+)\]',  # [1], [2]
+            r'\((\d+)\)',  # (1), (2)
+            r'<(\d+)>',    # <1>, <2>
+        ]
+        
+        citations = []
+        for pattern in citation_patterns:
+            matches = re.findall(pattern, answer)
+            citations.extend([int(match) for match in matches])
+        
+        return sorted(list(set(citations)))  # Remove duplicates and sort
+    
+    def _calculate_citation_accuracy(self, answer: str, 
+                                   retrieved_passage_ids: List[str]) -> Optional[float]:
+        """
+        Calculate citation accuracy based on whether citations map to retrieved contexts.
+        
+        Args:
+            answer: The answer text with potential citations
+            retrieved_passage_ids: List of retrieved passage IDs
+            
+        Returns:
+            Citation accuracy score or None if no citations present
+        """
+        citations = self._extract_citations(answer)
+        
+        if not citations:
+            return None  # NA - no citations to evaluate
+        
+        if not retrieved_passage_ids:
+            return 0.0  # Citations present but no retrieved contexts
+        
+        # Check if citation indices are valid (within range of retrieved passages)
+        valid_citations = 0
+        for citation_idx in citations:
+            # Citation indices are typically 1-based
+            if 1 <= citation_idx <= len(retrieved_passage_ids):
+                valid_citations += 1
+        
+        return valid_citations / len(citations) if citations else 0.0
+    
+    def _calculate_context_recall_from_passages(self, retrieved_passage_ids: List[str], 
+                                              reference_passage_ids: List[str]) -> float:
+        """
+        Calculate context recall based on passage IDs.
+        
+        Args:
+            retrieved_passage_ids: List of retrieved passage IDs
+            reference_passage_ids: List of ground truth relevant passage IDs
+            
+        Returns:
+            Context recall score (0.0 to 1.0)
+        """
+        if not reference_passage_ids:
+            return 1.0  # No ground truth to compare against
+        
+        if not retrieved_passage_ids:
+            return 0.0  # Nothing retrieved
+        
+        retrieved_set = set(retrieved_passage_ids)
+        reference_set = set(reference_passage_ids)
+        
+        # How many of the reference passages were retrieved?
+        retrieved_relevant = len(retrieved_set.intersection(reference_set))
+        return retrieved_relevant / len(reference_set)
+    
+    def _calculate_wilson_ci(self, successes: int, total: int, confidence: float = 0.95) -> tuple:
+        """
+        Calculate Wilson confidence interval for a proportion.
+        
+        Args:
+            successes: Number of successful trials
+            total: Total number of trials
+            confidence: Confidence level (default 0.95 for 95% CI)
+            
+        Returns:
+            Tuple of (lower_bound, upper_bound)
+        """
+        if total == 0:
+            return (0.0, 0.0)
+        
+        import math
+        
+        # Z-score for given confidence level
+        z_scores = {0.90: 1.645, 0.95: 1.96, 0.99: 2.576}
+        z = z_scores.get(confidence, 1.96)
+        
+        p = successes / total
+        n = total
+        
+        # Wilson score interval
+        denominator = 1 + (z * z) / n
+        center = (p + (z * z) / (2 * n)) / denominator
+        margin = z * math.sqrt((p * (1 - p) + (z * z) / (4 * n)) / n) / denominator
+        
+        lower = max(0.0, center - margin)
+        upper = min(1.0, center + margin)
+        
+        return (round(lower, 4), round(upper, 4))
+    
+    def _calculate_bootstrap_ci(self, values: List[float], confidence: float = 0.95, 
+                              n_bootstrap: int = 1000) -> tuple:
+        """
+        Calculate bootstrap confidence interval for a metric.
+        
+        Args:
+            values: List of metric values
+            confidence: Confidence level (default 0.95 for 95% CI)
+            n_bootstrap: Number of bootstrap samples
+            
+        Returns:
+            Tuple of (lower_bound, upper_bound)
+        """
+        if not values or len(values) < 2:
+            return (0.0, 0.0)
+        
+        import random
+        import statistics
+        
+        # Generate bootstrap samples
+        bootstrap_means = []
+        for _ in range(n_bootstrap):
+            # Sample with replacement
+            bootstrap_sample = [random.choice(values) for _ in range(len(values))]
+            bootstrap_means.append(statistics.mean(bootstrap_sample))
+        
+        # Calculate percentiles for confidence interval
+        alpha = 1 - confidence
+        lower_percentile = (alpha / 2) * 100
+        upper_percentile = (1 - alpha / 2) * 100
+        
+        bootstrap_means.sort()
+        lower_idx = int(lower_percentile / 100 * len(bootstrap_means))
+        upper_idx = int(upper_percentile / 100 * len(bootstrap_means))
+        
+        lower = bootstrap_means[lower_idx] if lower_idx < len(bootstrap_means) else 0.0
+        upper = bootstrap_means[upper_idx] if upper_idx < len(bootstrap_means) else 1.0
+        
+        return (round(lower, 4), round(upper, 4))
+    
+    def _calculate_confidence_intervals(self, metrics: 'RAGMetrics', 
+                                     sample_size: int = 100) -> Dict[str, Dict[str, float]]:
+        """
+        Calculate confidence intervals for key metrics.
+        
+        Args:
+            metrics: RAG metrics object
+            sample_size: Assumed sample size for Wilson CI calculation
+            
+        Returns:
+            Dictionary with confidence intervals for each metric
+        """
+        confidence_intervals = {}
+        
+        # For proportion-based metrics, use Wilson CI
+        proportion_metrics = {
+            'faithfulness': metrics.faithfulness,
+            'answer_relevancy': metrics.answer_relevancy,
+            'context_precision': metrics.context_precision,
+            'context_recall': metrics.context_recall
+        }
+        
+        for metric_name, metric_value in proportion_metrics.items():
+            if metric_value is not None:
+                # Convert proportion to successes for Wilson CI
+                successes = int(metric_value * sample_size)
+                lower, upper = self._calculate_wilson_ci(successes, sample_size)
+                confidence_intervals[metric_name] = {
+                    'lower_bound': lower,
+                    'upper_bound': upper,
+                    'method': 'wilson'
+                }
+        
+        # For ground truth metrics, use Wilson CI if available
+        if metrics.answer_correctness is not None:
+            successes = int(metrics.answer_correctness * sample_size)
+            lower, upper = self._calculate_wilson_ci(successes, sample_size)
+            confidence_intervals['answer_correctness'] = {
+                'lower_bound': lower,
+                'upper_bound': upper,
+                'method': 'wilson'
+            }
+        
+        if metrics.answer_similarity is not None:
+            successes = int(metrics.answer_similarity * sample_size)
+            lower, upper = self._calculate_wilson_ci(successes, sample_size)
+            confidence_intervals['answer_similarity'] = {
+                'lower_bound': lower,
+                'upper_bound': upper,
+                'method': 'wilson'
+            }
+        
+        # For ranking metrics, use Wilson CI
+        ranking_metrics = {
+            'recall_at_k': metrics.recall_at_k,
+            'mrr_at_k': metrics.mrr_at_k,
+            'ndcg_at_k': metrics.ndcg_at_k
+        }
+        
+        for metric_name, metric_value in ranking_metrics.items():
+            if metric_value is not None:
+                successes = int(metric_value * sample_size)
+                lower, upper = self._calculate_wilson_ci(successes, sample_size)
+                confidence_intervals[metric_name] = {
+                    'lower_bound': lower,
+                    'upper_bound': upper,
+                    'method': 'wilson'
+                }
+        
+        return confidence_intervals
+    
+    def _check_at_risk_thresholds(self, confidence_intervals: Dict[str, Dict[str, float]]) -> Dict[str, bool]:
+        """
+        Check if confidence interval lower bounds violate thresholds (At-Risk gating).
+        
+        Args:
+            confidence_intervals: Confidence intervals for metrics
+            
+        Returns:
+            Dictionary indicating which metrics are at risk
+        """
+        at_risk_flags = {}
+        
+        # Check each metric against its threshold
+        threshold_mapping = {
+            'faithfulness': self.thresholds.get('min_faithfulness', 0.7),
+            'answer_relevancy': self.thresholds.get('min_answer_relevancy', 0.7),
+            'context_precision': self.thresholds.get('min_context_precision', 0.7),
+            'context_recall': self.thresholds.get('min_context_recall', 0.7),
+            'answer_correctness': self.thresholds.get('min_answer_correctness', 0.7),
+            'answer_similarity': self.thresholds.get('min_answer_similarity', 0.7),
+            'recall_at_k': self.thresholds.get('min_recall_at_k', 0.5),
+            'mrr_at_k': self.thresholds.get('min_mrr_at_k', 0.5),
+            'ndcg_at_k': self.thresholds.get('min_ndcg_at_k', 0.5)
+        }
+        
+        for metric_name, threshold in threshold_mapping.items():
+            if metric_name in confidence_intervals:
+                ci = confidence_intervals[metric_name]
+                lower_bound = ci['lower_bound']
+                # At-Risk if CI lower bound is below threshold
+                at_risk_flags[metric_name] = lower_bound < threshold
+        
+        return at_risk_flags
+    
+    def _check_ragas_availability(self) -> bool:
+        """
+        Check if Ragas is available for evaluation.
+        
+        Returns:
+            True if Ragas can be imported and used, False otherwise
+        """
+        try:
+            # Test import - same as ragas_adapter does
+            from ragas import evaluate
+            from ragas.metrics import faithfulness, answer_relevancy, context_precision
+            return True
+        except ImportError:
+            return False
+    
+    def _evaluate_with_ragas(self, samples: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Evaluate samples using Ragas with proper error handling.
+        
+        Args:
+            samples: List of evaluation samples
+            
+        Returns:
+            Ragas evaluation results or empty dict if unavailable
+        """
+        if not samples:
+            return {}
+        
+        # Use the ragas_adapter which handles all error cases
+        ragas_results = evaluate_ragas(samples)
+        
+        # Check if Ragas evaluation failed (returns empty dict)
+        if not ragas_results:
+            logger.warning("Ragas evaluation unavailable or failed")
+            return {}
+        
+        return ragas_results

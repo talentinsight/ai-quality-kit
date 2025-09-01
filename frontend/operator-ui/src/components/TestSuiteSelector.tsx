@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, BarChart3, Shield, ShieldCheck, Zap, TrendingUp, Layers, CheckSquare, Square, AlertTriangle, Clock, Database, Scale, LucideIcon } from 'lucide-react';
+import { ChevronDown, ChevronRight, BarChart3, Shield, ShieldCheck, Zap, TrendingUp, Layers, CheckSquare, Square, AlertTriangle, Clock, Database, Scale, LucideIcon, Upload, Lock, Info } from 'lucide-react';
+import { DataRequirements, SUITE_DATA_REQUIREMENTS } from '../types/metrics';
+import { getDefaultRagSelection, isTestDisabledByBundle, getUniqueTestCount, normalizeSelectedTests } from '../utils/test-selection';
 
 interface TestDefinition {
   id: string;
@@ -9,6 +11,7 @@ interface TestDefinition {
   required?: boolean; // Some tests might be mandatory
   estimatedDuration?: string;
   dependencies?: string[]; // Other test IDs this test depends on
+
 }
 
 interface TestSuite {
@@ -20,17 +23,114 @@ interface TestSuite {
   enabled: boolean;
   expanded: boolean;
   tests: TestDefinition[];
+  dataRequirements?: Partial<DataRequirements>;
 }
 
 interface TestSuiteSelectorProps {
+  llmModelType: "rag" | "agent" | "tool" | "";
+  hasGroundTruth: boolean;
   onSelectionChange: (selectedTests: Record<string, string[]>) => void;
   onSuiteConfigChange: (suiteId: string, config: any) => void;
+  dataStatus?: Partial<DataRequirements>; // Current data availability status
+  onShowRequirements?: () => void; // Callback to scroll to data requirements section
 }
 
 const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
+  llmModelType,
+  hasGroundTruth,
   onSelectionChange,
-  onSuiteConfigChange
+  onSuiteConfigChange,
+  dataStatus,
+  onShowRequirements
 }) => {
+  // Track previous GT state to handle transitions
+  const prevGtState = React.useRef(hasGroundTruth);
+  
+  // Update test selection based on RAG mode and GT availability
+  useEffect(() => {
+    if (llmModelType === 'rag') {
+      // Handle GT state transitions
+      const isGtTransition = prevGtState.current !== hasGroundTruth;
+      prevGtState.current = hasGroundTruth;
+      
+      // Get default RAG selection based on GT availability (only affects RAG suite)
+      const ragDefaults = hasGroundTruth 
+        ? ['basic_faithfulness', 'context_recall', 'answer_relevancy', 'context_precision', 'answer_correctness', 'answer_similarity', 'context_entities_recall', 'context_relevancy']
+        : ['basic_faithfulness', 'context_recall', 'answer_relevancy'];
+      
+      // Default selection for companion suites (always all tests enabled)
+      const companionDefaults = {
+        red_team: ['prompt_injection', 'jailbreak_attempts', 'data_extraction', 'context_manipulation', 'social_engineering'],
+        safety: ['toxicity_detection', 'hate_speech', 'violence_content', 'adult_content', 'misinformation'],
+        performance: ['cold_start_latency', 'warm_performance', 'throughput_testing', 'stress_testing', 'memory_usage']
+      };
+      
+      // Update test suites with RAG-specific behavior
+      setTestSuites(prev => prev.map(suite => {
+        if (!['rag_reliability_robustness', 'red_team', 'safety', 'performance'].includes(suite.id)) {
+          return { ...suite, enabled: false };
+        }
+        
+        // Set data requirements
+        const requirements = suite.id === 'rag_reliability_robustness' 
+          ? hasGroundTruth ? SUITE_DATA_REQUIREMENTS.rag_with_gt : SUITE_DATA_REQUIREMENTS.rag_no_gt
+          : SUITE_DATA_REQUIREMENTS[suite.id];
+          
+        return {
+          ...suite,
+          enabled: true,
+          expanded: true,
+          dataRequirements: requirements,
+          tests: suite.tests.map(test => {
+            if (suite.id === 'rag_reliability_robustness') {
+              // RAG suite: handle GT transitions and defaults
+              if (isGtTransition) {
+                // On GT transitions, only update GT-specific tests
+                if (!hasGroundTruth) {
+                  // GT → No-GT: Disable GT-only metrics
+                  if (['answer_correctness', 'answer_similarity', 'context_entities_recall', 'context_relevancy'].includes(test.id)) {
+                    return { ...test, enabled: false };
+                  }
+                } else {
+                  // No-GT → GT: Enable GT metrics based on defaults
+                  if (['answer_correctness', 'answer_similarity', 'context_entities_recall', 'context_relevancy'].includes(test.id)) {
+                    return { ...test, enabled: ragDefaults.includes(test.id) };
+                  }
+                }
+                // Keep existing state for other tests during GT transitions
+                return test;
+              } else {
+                // Initial RAG selection: use defaults
+                return { ...test, enabled: ragDefaults.includes(test.id) };
+              }
+            } else {
+              // Companion suites: always enable all tests on initial selection, preserve on GT transitions
+              if (isGtTransition) {
+                return test; // Keep existing state during GT transitions
+              } else {
+                // Initial selection: enable all tests in companion suites
+                const suiteDefaults = companionDefaults[suite.id as keyof typeof companionDefaults] || [];
+                return { ...test, enabled: suiteDefaults.includes(test.id) };
+              }
+            }
+          })
+        };
+      }));
+      
+      // Notify parent of selection
+      if (!isGtTransition) {
+        // Only update selection on initial RAG selection, not GT transitions
+        const initialSelection: Record<string, string[]> = {
+          rag_reliability_robustness: ragDefaults,
+          red_team: companionDefaults.red_team,
+          safety: companionDefaults.safety,
+          performance: companionDefaults.performance
+        };
+        onSelectionChange(normalizeSelectedTests(initialSelection));
+      }
+    }
+  }, [llmModelType, hasGroundTruth]); // Removed onSelectionChange to prevent infinite loops
+
   const [testSuites, setTestSuites] = useState<TestSuite[]>([
     {
       id: 'rag_reliability_robustness',
@@ -61,17 +161,11 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
           id: 'answer_relevancy',
           name: 'Answer Relevancy',
           description: 'Measures how relevant the answer is to the question',
-          enabled: false,
+          enabled: true,
+          required: true,
           estimatedDuration: '3-7 min',
         },
-        {
-          id: 'ground_truth_evaluation',
-          name: 'Ground Truth Evaluation (6 Metrics)',
-          description: 'Comprehensive evaluation with uploaded ground truth data',
-          enabled: false,
-          estimatedDuration: '5-15 min',
-          dependencies: ['basic_faithfulness', 'context_recall']
-        },
+
         {
           id: 'context_precision',
           name: 'Context Precision',
@@ -85,6 +179,27 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
           description: 'Measures the accuracy of the answer compared to ground truth',
           enabled: false,
           estimatedDuration: '4-8 min',
+        },
+        {
+          id: 'answer_similarity',
+          name: 'Answer Similarity',
+          description: 'Measures semantic similarity between generated and ground truth answers',
+          enabled: false,
+          estimatedDuration: '3-6 min',
+        },
+        {
+          id: 'context_entities_recall',
+          name: 'Context Entities Recall',
+          description: 'Measures how well entities from ground truth are captured in retrieved contexts',
+          enabled: false,
+          estimatedDuration: '4-7 min',
+        },
+        {
+          id: 'context_relevancy',
+          name: 'Context Relevancy',
+          description: 'Measures how relevant the retrieved contexts are to the question',
+          enabled: false,
+          estimatedDuration: '3-6 min',
         },
         {
           id: 'prompt_robustness',
@@ -272,60 +387,8 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
     }
   ]);
 
-  // Calculate selected tests and notify parent
-  useEffect(() => {
-    const selectedTests: Record<string, string[]> = {};
-    testSuites.forEach(suite => {
-      if (suite.enabled) {
-        selectedTests[suite.id] = suite.tests
-          .filter(test => test.enabled)
-          .map(test => test.id);
-      }
-    });
-    onSelectionChange(selectedTests);
-
-    // Generate suite configs based on selected tests
-    testSuites.forEach(suite => {
-      if (suite.id === 'rag_reliability_robustness') {
-        // Build complete configuration for all sub-tests
-        const faithfulnessEnabled = suite.tests.find(t => t.id === 'basic_faithfulness')?.enabled || false;
-        const contextRecallEnabled = suite.tests.find(t => t.id === 'context_recall')?.enabled || false;
-        const answerRelevancyEnabled = suite.tests.find(t => t.id === 'answer_relevancy')?.enabled || false;
-        const contextPrecisionEnabled = suite.tests.find(t => t.id === 'context_precision')?.enabled || false;
-        const answerCorrectnessEnabled = suite.tests.find(t => t.id === 'answer_correctness')?.enabled || false;
-        const groundTruthEnabled = suite.tests.find(t => t.id === 'ground_truth_evaluation')?.enabled || false;
-        const promptRobustnessEnabled = suite.tests.find(t => t.id === 'prompt_robustness')?.enabled || false;
-        
-        const config = {
-          faithfulness_eval: {
-            enabled: faithfulnessEnabled
-          },
-          context_recall: {
-            enabled: contextRecallEnabled
-          },
-          answer_relevancy: {
-            enabled: answerRelevancyEnabled
-          },
-          context_precision: {
-            enabled: contextPrecisionEnabled
-          },
-          answer_correctness: {
-            enabled: answerCorrectnessEnabled
-          },
-          ground_truth_eval: {
-            enabled: groundTruthEnabled
-          },
-          prompt_robustness: {
-            enabled: promptRobustnessEnabled,
-            prompt_source: 'built_in',
-            include_prompts: true
-          }
-        };
-        
-        onSuiteConfigChange('rag_reliability_robustness', config);
-      }
-    });
-  }, [testSuites, onSelectionChange, onSuiteConfigChange]);
+  // Note: Selection change notifications are handled directly in toggle functions
+  // to prevent state conflicts and infinite re-renders
 
   const toggleSuite = (suiteId: string) => {
     setTestSuites(prev => prev.map(suite => {
@@ -359,21 +422,43 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
     ));
   };
 
+  const generateSelectedTests = (suites: typeof testSuites) => {
+    const selectedTests: { [key: string]: string[] } = {};
+    suites.forEach(suite => {
+      selectedTests[suite.id] = suite.tests
+        .filter(test => test.enabled)
+        .map(test => test.id);
+    });
+    return selectedTests;
+  };
+
   const toggleTest = (suiteId: string, testId: string) => {
-    setTestSuites(prev => prev.map(suite => {
-      if (suite.id === suiteId) {
-        return {
-          ...suite,
-          tests: suite.tests.map(test => {
-            if (test.id === testId && !test.required) {
-              return { ...test, enabled: !test.enabled };
-            }
-            return test;
-          })
-        };
-      }
-      return suite;
-    }));
+    console.log('toggleTest called:', suiteId, testId); // Debug log
+    
+    setTestSuites(prevSuites => {
+      const updatedSuites = prevSuites.map(suite => {
+        if (suite.id === suiteId) {
+          return {
+            ...suite,
+            tests: suite.tests.map(test => {
+              if (test.id === testId) {
+                console.log('Toggling test:', test.id, 'from', test.enabled, 'to', !test.enabled); // Debug log
+                return { ...test, enabled: !test.enabled };
+              }
+              return test;
+            })
+          };
+        }
+        return suite;
+      });
+      
+      // Notify parent component of selection change
+      const selectedTests = generateSelectedTests(updatedSuites);
+      console.log('Selected tests:', selectedTests); // Debug log
+      onSelectionChange(selectedTests);
+      
+      return updatedSuites;
+    });
   };
 
   const selectAllTests = (suiteId: string) => {
@@ -395,7 +480,7 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
           ...suite,
           tests: suite.tests.map(test => ({
             ...test,
-            enabled: test.required || false
+            enabled: false // All tests can now be deselected
           }))
         };
       }
@@ -470,7 +555,16 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
             Test Suites & Individual Tests
           </h3>
           <p className="text-sm text-slate-600 dark:text-slate-400">
-            Select test suites and choose specific tests to run
+            {llmModelType === "rag" 
+              ? hasGroundTruth 
+                ? "RAG System with Ground Truth - 4 test suites available with Red Team, Safety, and Performance pre-selected"
+                : "RAG System without Ground Truth - 4 test suites available with Red Team, Safety, and Performance pre-selected"
+              : llmModelType === "agent"
+              ? "AI Agent testing - Tool usage and reasoning evaluation"
+              : llmModelType === "tool"
+              ? "Function/Tool testing - Performance and error handling evaluation"
+              : "Select an LLM option above to see available test suites"
+            }
           </p>
         </div>
         <div className="text-right">
@@ -483,9 +577,79 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
         </div>
       </div>
 
+
+
+      {/* Show message if no LLM type selected */}
+      {!llmModelType && (
+        <div className="text-center py-8 text-slate-500 dark:text-slate-400">
+          <div className="text-4xl mb-2">🎯</div>
+          <div className="text-lg font-medium mb-1">Choose Your LLM Type</div>
+          <div className="text-sm">Select RAG, Agent, or Tool above to see available test suites</div>
+        </div>
+      )}
+
+      {/* RAG-specific metrics info */}
+      {llmModelType === "rag" && (
+        <>
+          {/* Ragas Warning Banner */}
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mb-4">
+            <div className="flex items-start space-x-3">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h4 className="text-sm font-semibold text-yellow-900 dark:text-yellow-100">
+                  RAG Evaluation Dependencies
+                </h4>
+                <div className="mt-1 text-xs text-yellow-800 dark:text-yellow-200">
+                  <p>Some advanced RAG metrics require the Ragas library. If Ragas is unavailable:</p>
+                  <ul className="mt-1 ml-4 list-disc space-y-1">
+                    <li>Fallback evaluation methods will be used automatically</li>
+                    <li>Tests will continue to run with reduced metric coverage</li>
+                    <li>If Ragas thresholds are specified, the RAG Quality gate will fail with a clear warning</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-2">
+              🎯 RAG System Testing - 4 Test Suites Available
+            </h4>
+            <div className="text-xs text-blue-800 dark:text-blue-200 space-y-1">
+              <div>✅ <strong>RAG Reliability & Robustness:</strong> {hasGroundTruth ? '8 metrics available' : '3 basic metrics'} - Faithfulness, Context Recall, Answer Relevancy{hasGroundTruth ? ', plus 5 ground truth metrics' : ''}</div>
+              <div>✅ <strong>Red Team (Pre-selected):</strong> All adversarial tests enabled - Prompt Injection, Jailbreak, Data Extraction, Context Manipulation, Social Engineering</div>
+              <div>✅ <strong>Safety (Pre-selected):</strong> All safety tests enabled - Toxicity, Hate Speech, Violence, Adult Content, Misinformation</div>
+              <div>✅ <strong>Performance (Pre-selected):</strong> All performance tests enabled - Cold Start, Warm Performance, Throughput, Stress, Memory</div>
+              {!hasGroundTruth && (
+                <div>⚠️ <strong>Upload ground truth data to unlock 5 additional RAG metrics</strong></div>
+              )}
+            </div>
+            
+            {/* Ground Truth behavior note */}
+            <div className="mt-3 text-xs text-blue-800 dark:text-blue-200">
+              <strong>Note:</strong> Ground Truth toggle only affects RAG suite defaults. Red Team, Safety, and Performance suites remain selected and visible.
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Test Suites */}
-      <div className="space-y-3">
-        {testSuites.map((suite) => {
+      {llmModelType && (
+        <div className="space-y-3">
+          {testSuites
+            .filter(suite => {
+              // Show only relevant suites based on LLM model type
+              if (llmModelType === 'rag') {
+                return ['rag_reliability_robustness', 'red_team', 'safety', 'performance'].includes(suite.id);
+              }
+              // For other types, show all suites except RAG-specific ones
+              return !['rag_reliability_robustness'].includes(suite.id);
+            })
+            .map((suite) => {
           const Icon = suite.icon;
           const enabledTestsCount = suite.tests.filter(test => test.enabled).length;
           const totalTestsCount = suite.tests.length;
@@ -528,13 +692,52 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
                           </span>
                         )}
                       </div>
-                      <p className={`text-sm ${
-                        suite.enabled 
-                          ? 'text-slate-600 dark:text-slate-400' 
-                          : 'text-slate-400 dark:text-slate-500'
-                      }`}>
-                        {suite.description}
-                      </p>
+                      <div className="space-y-1">
+                        <p className={`text-sm ${
+                          suite.enabled 
+                            ? 'text-slate-600 dark:text-slate-400' 
+                            : 'text-slate-400 dark:text-slate-500'
+                        }`}>
+                          {suite.description}
+                        </p>
+                        {suite.dataRequirements && dataStatus && (
+                          <div className="flex items-center space-x-2">
+                            {Object.entries(suite.dataRequirements).map(([key, required]) => {
+                              if (!required) return null;
+                              const isAvailable = dataStatus[key as keyof DataRequirements];
+                              return (
+                                <div 
+                                  key={key}
+                                  className={`flex items-center space-x-1 text-xs px-2 py-1 rounded ${
+                                    isAvailable
+                                      ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                                      : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300'
+                                  }`}
+                                >
+                                  {isAvailable ? (
+                                    <CheckSquare size={12} />
+                                  ) : (
+                                    <Lock size={12} />
+                                  )}
+                                  <span>
+                                    {key === 'passages' ? 'Passages' : 
+                                     key === 'qaSet' ? 'QA Set' : 
+                                     key === 'attacks' ? 'Attacks' : key}
+                                  </span>
+                                  {!isAvailable && (
+                                    <button
+                                      onClick={onShowRequirements}
+                                      className="ml-1 text-yellow-600 dark:text-yellow-400 hover:text-yellow-800 dark:hover:text-yellow-200"
+                                    >
+                                      <Info size={12} />
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -571,32 +774,35 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
               {suite.expanded && suite.enabled && (
                 <div className="border-t border-slate-200 dark:border-slate-700 p-4 space-y-3">
                   {suite.tests.map((test) => (
-                    <div
-                      key={test.id}
+                                          <div
+                      key={`${suite.id}-${test.id}-${test.enabled}`}
                       className={`flex items-start space-x-3 p-3 rounded-lg border transition-all ${
                         test.enabled
                           ? 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800'
                           : 'border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50'
+                      } ${
+                        !suite.dataRequirements || !dataStatus || Object.entries(suite.dataRequirements).every(
+                          ([key, required]) => !required || dataStatus[key as keyof DataRequirements]
+                        ) ? '' : 'opacity-50'
                       }`}
                     >
                       <div className="flex items-center mt-1">
-                        {test.required ? (
-                          <CheckSquare 
-                            size={16} 
-                            className="text-blue-600 dark:text-blue-400" 
-                          />
-                        ) : (
-                          <button
-                            onClick={() => toggleTest(suite.id, test.id)}
-                            className="hover:bg-slate-100 dark:hover:bg-slate-700 rounded p-1"
-                          >
-                            {test.enabled ? (
-                              <CheckSquare size={16} className="text-blue-600 dark:text-blue-400" />
-                            ) : (
-                              <Square size={16} className="text-slate-400" />
-                            )}
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            toggleTest(suite.id, test.id);
+                          }}
+                          className="hover:bg-slate-100 dark:hover:bg-slate-700 rounded p-1 cursor-pointer"
+                          style={{ pointerEvents: 'auto' }}
+                        >
+                          {test.enabled ? (
+                            <CheckSquare size={16} className="text-blue-600 dark:text-blue-400" />
+                          ) : (
+                            <Square size={16} className="text-slate-400" />
+                          )}
+                        </button>
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center space-x-2 mb-1">
@@ -612,6 +818,7 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
                               Required
                             </span>
                           )}
+
                           {test.estimatedDuration && (
                             <span className="flex items-center space-x-1 text-xs text-slate-500 dark:text-slate-400">
                               <Clock size={12} />
@@ -642,11 +849,65 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
             </div>
           );
         })}
-      </div>
+        </div>
+      )}
 
-      {/* Quick Actions */}
+      {/* Quick Actions - Only show if LLM type is selected */}
+      {llmModelType && (
       <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-700">
         <div className="flex space-x-2">
+          {llmModelType === 'rag' && (
+            <button
+              onClick={() => {
+                // Get default RAG selection based on GT availability (only affects RAG suite)
+                const ragDefaults = hasGroundTruth 
+                  ? ['basic_faithfulness', 'context_recall', 'answer_relevancy', 'context_precision', 'answer_correctness', 'answer_similarity', 'context_entities_recall', 'context_relevancy']
+                  : ['basic_faithfulness', 'context_recall', 'answer_relevancy'];
+                
+                // Default selection for companion suites (always all tests enabled)
+                const companionDefaults = {
+                  red_team: ['prompt_injection', 'jailbreak_attempts', 'data_extraction', 'context_manipulation', 'social_engineering'],
+                  safety: ['toxicity_detection', 'hate_speech', 'violence_content', 'adult_content', 'misinformation'],
+                  performance: ['cold_start_latency', 'warm_performance', 'throughput_testing', 'stress_testing', 'memory_usage']
+                };
+                
+                // Reset to recommended selection
+                setTestSuites(prev => prev.map(suite => {
+                  if (!['rag_reliability_robustness', 'red_team', 'safety', 'performance'].includes(suite.id)) {
+                    return { ...suite, enabled: false };
+                  }
+                  
+                  return {
+                    ...suite,
+                    enabled: true,
+                    expanded: true,
+                    tests: suite.tests.map(test => {
+                      if (suite.id === 'rag_reliability_robustness') {
+                        // RAG suite: use GT-aware defaults
+                        return { ...test, enabled: ragDefaults.includes(test.id) };
+                      } else {
+                        // Companion suites: enable all tests
+                        const suiteDefaults = companionDefaults[suite.id as keyof typeof companionDefaults] || [];
+                        return { ...test, enabled: suiteDefaults.includes(test.id) };
+                      }
+                    })
+                  };
+                }));
+                
+                // Notify parent of selection
+                const resetSelection: Record<string, string[]> = {
+                  rag_reliability_robustness: ragDefaults,
+                  red_team: companionDefaults.red_team,
+                  safety: companionDefaults.safety,
+                  performance: companionDefaults.performance
+                };
+                onSelectionChange(normalizeSelectedTests(resetSelection));
+              }}
+              className="btn btn-primary btn-sm"
+            >
+              Reset to Recommended
+            </button>
+          )}
           <button
             onClick={() => {
               setTestSuites(prev => prev.map(suite => ({
@@ -676,6 +937,7 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
           {getTotalSelectedTests()} tests selected • ~{getTotalEstimatedTime()} min estimated
         </div>
       </div>
+      )}
     </div>
   );
 };
