@@ -38,6 +38,18 @@ export default function App() {
   
   // Ground Truth availability
   const [hasGroundTruth, setHasGroundTruth] = useState<boolean>(false);
+  
+  // RAG Advanced Options
+  const [retrievalJsonPath, setRetrievalJsonPath] = useState<string>("");
+  const [retrievalTopK, setRetrievalTopK] = useState<string>("");
+  const [runProfile, setRunProfile] = useState<"smoke" | "full">("smoke");
+  
+  // Test data tracking
+  const [testdataId, setTestdataId] = useState<string>("");
+  const [uploadedArtifacts, setUploadedArtifacts] = useState<string[]>([]);
+  
+  // Sticky CTA state
+  const [isDryRun, setIsDryRun] = useState<boolean>(false);
 
   // Provider & model
   const [provider, setProvider] = useState<Provider|"">("");
@@ -91,7 +103,6 @@ export default function App() {
 
   // Test data state
   const [testDataExpanded, setTestDataExpanded] = useState(false);
-  const [testdataId, setTestdataId] = useState("");
   const [testdataValid, setTestdataValid] = useState<boolean | null>(null);
   const [validatingTestdata, setValidatingTestdata] = useState(false);
 
@@ -158,14 +169,17 @@ export default function App() {
       setQaSampleSize("2");
       setAttackMutators("1");
       setPerfRepeats("2");
+      setRunProfile("smoke");  // Sync with RAG Advanced Options
     } else if (profile === "full") {
       setQaSampleSize("20");
       setAttackMutators("3");
       setPerfRepeats("5");
+      setRunProfile("full");  // Sync with RAG Advanced Options
     } else if (profile === "red_team_heavy") {
       setQaSampleSize("5");
       setAttackMutators("5");
       setPerfRepeats("3");
+      // Red Team Heavy doesn't change RAG profile, keep current
     }
   }
 
@@ -327,6 +341,27 @@ export default function App() {
         use_expanded: true,  // Enable expanded dataset by default
         use_ragas: useGroundTruth,  // Enable Ragas evaluation when ground truth is selected
         run_id: tempRunId,  // Send our generated run_id for cancel
+        
+        // Phase-RAG extensions
+        server_url: targetMode === "api" ? apiBaseUrl : undefined,
+        mcp_endpoint: targetMode === "mcp" ? mcpServerUrl : undefined,
+        llm_option: llmModelType || "rag",
+        ground_truth: hasGroundTruth ? "available" : "not_available",
+        determinism: {
+          temperature: 0.0,
+          top_p: 1.0,
+          seed: 42
+        },
+        
+        // Retrieval metrics
+        retrieval: retrievalJsonPath ? {
+          contexts_jsonpath: retrievalJsonPath,
+          top_k: retrievalTopK ? parseInt(retrievalTopK) : undefined,
+          note: "UI configured retrieval metrics"
+        } : undefined,
+        
+        // Run profile
+        profile: runProfile,
         options: { 
           provider: provider || undefined,  // Send provider in options
           model: model,        // Send model in options
@@ -398,7 +433,10 @@ export default function App() {
         }
       };
       // Make request and extract run_id from logs/response
-      const res = await postJSON(`${apiBaseUrl}/orchestrator/run_tests`, payload);
+      const endpoint = isDryRun 
+        ? `${apiBaseUrl}/orchestrator/run_tests?dry_run=true`
+        : `${apiBaseUrl}/orchestrator/run_tests`;
+      const res = await postJSON(endpoint, payload);
       
       // Try to extract run_id from response headers if available
       const runIdHeader = res.headers.get('X-Run-ID');
@@ -712,75 +750,102 @@ export default function App() {
                 
                 {hasGroundTruth && (
                   <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                    <div className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-3">Ground Truth Data Setup</div>
-                    
-                    {/* Step 1: Download Template */}
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between p-2 bg-white dark:bg-slate-800 rounded border">
-                        <div>
-                          <div className="text-sm font-medium">📋 Step 1: Download Excel Template</div>
-                          <div className="text-xs text-slate-600 dark:text-slate-400">Get the template with proper columns for questions, contexts, and answers</div>
-                        </div>
-                        <button 
-                          className="btn btn-sm btn-secondary flex items-center gap-2"
-                          onClick={() => {
-                            // Create CSV template (Excel-compatible)
-                            const csvContent = [
-                              'Question,Context,Expected Answer,Metadata',
-                              '"What is the capital of France?","France is a country in Europe. Paris is its capital city.","Paris","geography"',
-                              '"How do you calculate compound interest?","Compound interest formula: A = P(1 + r/n)^(nt)","A = P(1 + r/n)^(nt) where A is final amount, P is principal, r is annual rate, n is compounds per year, t is time","finance"',
-                              '"What are the benefits of renewable energy?","Renewable energy sources include solar, wind, hydro, and geothermal power.","Environmental benefits, cost savings, sustainability, reduced carbon emissions","environment"',
-                              ',,,'  // Empty row for user to fill
-                            ].join('\n');
-                            
-                            const blob = new Blob([csvContent], { type: 'text/csv' });
-                            const url = window.URL.createObjectURL(blob);
-                            const link = document.createElement('a');
-                            link.href = url;
-                            link.download = 'rag-ground-truth-template.csv';
-                            link.click();
-                            window.URL.revokeObjectURL(url);
-                          }}
-                        >
-                          <Download size={14} />
-                          Download Template
-                        </button>
-                      </div>
-
-                      {/* Step 2: Upload Completed File */}
-                      <div className="flex items-center justify-between p-2 bg-white dark:bg-slate-800 rounded border">
-                        <div>
-                          <div className="text-sm font-medium">📤 Step 2: Upload Completed File</div>
-                          <div className="text-xs text-slate-600 dark:text-slate-400">Upload your completed Excel file or JSONL format</div>
-                        </div>
-                        <div className="flex gap-2">
-                          <button className="btn btn-sm btn-primary flex items-center gap-2">
-                            <Upload size={14} />
-                            Upload Excel
-                          </button>
-                          <button className="btn btn-sm btn-ghost flex items-center gap-2">
-                            <Upload size={14} />
-                            Upload JSONL
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Template Info */}
-                    <div className="mt-3 p-2 bg-slate-100 dark:bg-slate-700 rounded text-xs">
-                      <div className="font-medium mb-1">📊 Template includes columns for:</div>
-                      <div className="text-slate-600 dark:text-slate-400">
-                        • <strong>Question:</strong> The query/question to ask<br/>
-                        • <strong>Context:</strong> Relevant context/documents<br/>
-                        • <strong>Expected Answer:</strong> Ground truth answer<br/>
-                        • <strong>Metadata:</strong> Additional tags or categories
-                      </div>
-                      <div className="mt-2 text-slate-500 dark:text-slate-500">
-                        💡 Template downloads as CSV (Excel-compatible) with sample data to guide you
-                      </div>
+                    <div className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">Ground Truth Data Required</div>
+                    <div className="text-xs text-slate-600 dark:text-slate-400">
+                      📋 Use the <strong>Test Data Intake</strong> panel below to download templates and upload your QA data.
+                      Templates include Excel and JSONL formats with proper column headers.
                     </div>
                   </div>
                 )}
+                
+                {/* RAG Advanced Options */}
+                <div className="mt-4 p-3 border border-slate-200 dark:border-slate-700 rounded-lg">
+                  <h4 className="text-sm font-medium text-slate-900 dark:text-slate-100 mb-3">Advanced Options</h4>
+                  
+                  <div className="space-y-3">
+                    {/* Retrieved Contexts JSONPath */}
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                        Retrieved Contexts JSONPath (optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={retrievalJsonPath}
+                        onChange={(e) => setRetrievalJsonPath(e.target.value)}
+                        placeholder="e.g., $.contexts or $.retrieved"
+                        className="w-full px-2 py-1 text-sm border border-slate-300 dark:border-slate-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:text-slate-100"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">
+                        JSONPath to extract retrieved contexts for recall@k, MRR@k, NDCG@k metrics
+                      </p>
+                    </div>
+                    
+                    {/* Top-K for reporting */}
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                        Top-K (for reporting)
+                      </label>
+                      <input
+                        type="number"
+                        value={retrievalTopK}
+                        onChange={(e) => setRetrievalTopK(e.target.value)}
+                        placeholder="e.g., 5"
+                        min="1"
+                        max="20"
+                        className="w-full px-2 py-1 text-sm border border-slate-300 dark:border-slate-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:text-slate-100"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">
+                        Number of top results to consider for retrieval metrics
+                      </p>
+                    </div>
+                    
+                    {/* Run Profile */}
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        Run Profile
+                      </label>
+                      <div className="flex gap-4">
+                        <label className="flex items-center gap-2">
+                          <input 
+                            type="radio" 
+                            name="runProfile" 
+                            value="smoke" 
+                            className="radio" 
+                            checked={runProfile === "smoke"}
+                            onChange={() => {
+                              setRunProfile("smoke");
+                              // Sync with bottom chips
+                              setQaSampleSize("2");
+                              setAttackMutators("1");
+                              setPerfRepeats("2");
+                            }}
+                          />
+                          <span className="text-sm">Smoke (20 samples)</span>
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input 
+                            type="radio" 
+                            name="runProfile" 
+                            value="full" 
+                            className="radio" 
+                            checked={runProfile === "full"}
+                            onChange={() => {
+                              setRunProfile("full");
+                              // Sync with bottom chips
+                              setQaSampleSize("20");
+                              setAttackMutators("3");
+                              setPerfRepeats("5");
+                            }}
+                          />
+                          <span className="text-sm">Full (all samples)</span>
+                        </label>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Smoke: Quick test with limited samples. Full: Complete evaluation with all data.
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -998,7 +1063,13 @@ export default function App() {
                   </div>
                 </div>
               )}
-              <TestDataPanel token={token} />
+              <TestDataPanel 
+                token={token} 
+                onTestDataUploaded={(testdataId, artifacts) => {
+                  setTestdataId(testdataId);
+                  setUploadedArtifacts(artifacts);
+                }}
+              />
             </div>
           </div>
 
@@ -1022,9 +1093,9 @@ export default function App() {
                 }));
               }}
               dataStatus={{
-                passages: true, // Assume data is available for now
-                qaSet: hasGroundTruth,
-                attacks: true
+                passages: uploadedArtifacts.includes('passages'),
+                qaSet: uploadedArtifacts.includes('qaset'),
+                attacks: uploadedArtifacts.includes('attacks')
               }}
               onShowRequirements={() => {
                 // Scroll to test data panel
@@ -1041,8 +1112,18 @@ export default function App() {
               <div>
                 <label className="label">Test Profiles</label>
                 <div className="flex gap-2">
-                  <button className="btn btn-ghost btn-sm" onClick={()=>setProfile("smoke")}>Smoke</button>
-                  <button className="btn btn-ghost btn-sm" onClick={()=>setProfile("full")}>Full</button>
+                  <button 
+                    className={`btn btn-sm ${runProfile === "smoke" ? "btn-primary" : "btn-ghost"}`}
+                    onClick={()=>setProfile("smoke")}
+                  >
+                    Smoke
+                  </button>
+                  <button 
+                    className={`btn btn-sm ${runProfile === "full" ? "btn-primary" : "btn-ghost"}`}
+                    onClick={()=>setProfile("full")}
+                  >
+                    Full
+                  </button>
                   <button className="btn btn-ghost btn-sm" onClick={()=>setProfile("red_team_heavy")}>Red Team Heavy</button>
                 </div>
                 <small className="text-slate-500 dark:text-slate-400 mt-1 block">
@@ -1394,6 +1475,86 @@ export default function App() {
           </div>
         </div>
       )}
+      
+      {/* Sticky Footer CTA */}
+      {activeTab === 'classic' && (
+        <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 shadow-lg z-40">
+          <div className="max-w-7xl mx-auto px-4 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="dry-run-toggle"
+                    checked={isDryRun}
+                    onChange={(e) => setIsDryRun(e.target.checked)}
+                    className="checkbox"
+                  />
+                  <label htmlFor="dry-run-toggle" className="text-sm font-medium">
+                    Dry Run (Plan Only)
+                  </label>
+                </div>
+                {isDryRun && (
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    Preview configuration without executing tests
+                  </span>
+                )}
+              </div>
+              
+              <div className="flex items-center gap-3">
+                {/* Requirements status indicator */}
+                {(() => {
+                  const requiredFields = [];
+                  if (llmModelType === "rag") {
+                    if (hasGroundTruth && !uploadedArtifacts.includes('qaset')) {
+                      requiredFields.push('QA Set (for Ground Truth evaluation)');
+                    }
+                    // Check if any context metrics are selected that require passages
+                    const hasContextMetrics = selectedTests['rag_reliability_robustness']?.some(test => 
+                      test.includes('context') || test.includes('precision') || test.includes('recall')
+                    );
+                    if (hasContextMetrics && !uploadedArtifacts.includes('passages')) {
+                      requiredFields.push('Passages (for Context metrics)');
+                    }
+                  }
+                  
+                  const isDisabled = requiredFields.length > 0 || !targetMode || !provider || !model;
+                  
+                  return (
+                    <>
+                      {requiredFields.length > 0 && (
+                        <div className="text-sm text-amber-600 dark:text-amber-400">
+                          Missing: {requiredFields.join(', ')}
+                        </div>
+                      )}
+                      <button
+                        onClick={runTests}
+                        disabled={isDisabled || busy}
+                        className={`btn ${isDisabled ? 'btn-disabled' : 'btn-primary'} px-6`}
+                        title={isDisabled ? `Missing required data: ${requiredFields.join(', ')}` : ''}
+                      >
+                        {busy ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                            Running...
+                          </>
+                        ) : (
+                          <>
+                            {isDryRun ? '🔍 Preview Configuration' : '🚀 Run Tests'}
+                          </>
+                        )}
+                      </button>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Add bottom padding to prevent content from being hidden behind sticky footer */}
+      {activeTab === 'classic' && <div className="h-16" />}
     </div>
   );
 }

@@ -7,11 +7,13 @@ import {
   postTestdataByUrl, 
   postTestdataPaste, 
   getTestdataMeta,
+  getBaseUrl,
   ApiError 
 } from '../../lib/api';
 
 interface TestDataPanelProps {
   token?: string | null;
+  onTestDataUploaded?: (testdataId: string, artifacts: string[]) => void;
 }
 
 type TabType = 'upload' | 'url' | 'paste';
@@ -23,7 +25,7 @@ interface ToastMessage {
   message?: string;
 }
 
-export default function TestDataPanel({ token }: TestDataPanelProps) {
+export default function TestDataPanel({ token, onTestDataUploaded }: TestDataPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>('upload');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<TestDataUploadResponse | null>(null);
@@ -109,6 +111,11 @@ export default function TestDataPanel({ token }: TestDataPanelProps) {
       setMeta(null);
       persistTestdataId(response.testdata_id);
       addToast({ type: 'success', title: 'Upload successful', message: `Created testdata_id: ${response.testdata_id}` });
+      
+      // Notify parent component
+      if (onTestDataUploaded) {
+        onTestDataUploaded(response.testdata_id, response.artifacts);
+      }
     } catch (error) {
       console.error('Upload error:', error);
       if (error instanceof ApiError) {
@@ -138,7 +145,7 @@ export default function TestDataPanel({ token }: TestDataPanelProps) {
       return;
     }
 
-    const urlPayload: Record<ArtifactType, string> = {};
+    const urlPayload: Partial<Record<ArtifactType, string>> = {};
     urlEntries.forEach(([key, url]) => {
       urlPayload[key as ArtifactType] = url.trim();
     });
@@ -261,12 +268,99 @@ export default function TestDataPanel({ token }: TestDataPanelProps) {
     }
   };
 
+  const downloadTemplate = async (templateType: string) => {
+    try {
+      const baseUrl = getBaseUrl();
+      const url = `${baseUrl}/testdata/templates/${templateType}`;
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to download template: ${response.status}`);
+      }
+      
+      // Get filename from Content-Disposition header or use default
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `${templateType.replace('-', '_')}_template`;
+      
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename=([^;]+)/);
+        if (filenameMatch) {
+          filename = filenameMatch[1].replace(/"/g, '');
+        }
+      } else {
+        // Add appropriate extension
+        if (templateType.includes('excel')) {
+          filename += '.xlsx';
+        } else if (templateType.includes('jsonl')) {
+          filename += '.jsonl';
+        }
+      }
+      
+      // Create blob and download
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+      
+      addToast({ 
+        type: 'success', 
+        title: 'Template downloaded', 
+        message: `${filename} downloaded successfully` 
+      });
+      
+    } catch (error) {
+      console.error('Template download error:', error);
+      addToast({ 
+        type: 'error', 
+        title: 'Download failed', 
+        message: error instanceof Error ? error.message : 'Failed to download template' 
+      });
+    }
+  };
+
   return (
-    <div className="card p-5">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-4">
-        <FileText size={20} className="text-brand-600" />
-        <h2 className="text-lg font-semibold">Test Data Intake</h2>
+    <div className="card p-5" data-testid="test-data-panel">
+      {/* Template Downloads */}
+      <div className="flex justify-end mb-4">
+        <div className="flex gap-1">
+          <button
+            onClick={() => downloadTemplate('qa-excel')}
+            className="btn btn-ghost btn-sm text-xs"
+            title="Download Excel Questions template"
+          >
+            📊 Questions Excel
+          </button>
+          <button
+            onClick={() => downloadTemplate('passages-excel')}
+            className="btn btn-ghost btn-sm text-xs"
+            title="Download Excel Passages template"
+          >
+            📊 Passages Excel
+          </button>
+          <button
+            onClick={() => downloadTemplate('qa-jsonl')}
+            className="btn btn-ghost btn-sm text-xs"
+            title="Download JSONL Questions template"
+          >
+            📄 Questions JSONL
+          </button>
+          <button
+            onClick={() => downloadTemplate('passages-jsonl')}
+            className="btn btn-ghost btn-sm text-xs"
+            title="Download JSONL Passages template"
+          >
+            📄 Passages JSONL
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -297,8 +391,8 @@ export default function TestDataPanel({ token }: TestDataPanelProps) {
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {([
-              { key: 'passages' as ArtifactType, label: 'Passages', accept: '.jsonl', description: 'JSONL format: {"id": "1", "text": "...", "meta": {...}}' },
-              { key: 'qaset' as ArtifactType, label: 'QA Set', accept: '.jsonl', description: 'JSONL format: {"qid": "1", "question": "...", "expected_answer": "..."}' },
+              { key: 'passages' as ArtifactType, label: 'Passages', accept: '.jsonl,.xlsx,.xls', description: 'JSONL format or Excel template: {"id": "1", "text": "...", "meta": {...}}' },
+              { key: 'qaset' as ArtifactType, label: 'QA Set', accept: '.jsonl,.xlsx,.xls', description: 'JSONL format or Excel template: {"qid": "1", "question": "...", "expected_answer": "..."}' },
               { key: 'attacks' as ArtifactType, label: 'Attacks', accept: '.txt,.yaml,.yml', description: 'Text format (one per line) or YAML format' },
               { key: 'schema' as ArtifactType, label: 'Schema', accept: '.json', description: 'JSON Schema format (draft-07+)' }
             ]).map(({ key, label, accept, description }) => (
@@ -453,6 +547,35 @@ export default function TestDataPanel({ token }: TestDataPanelProps) {
                 ))}
               </div>
             </div>
+            
+            {/* Display warnings if present */}
+            {result.warnings && result.warnings.length > 0 && (
+              <div>
+                <span className="text-sm font-medium">Warnings:</span>
+                <div className="mt-1 space-y-1">
+                  {result.warnings.map((warning, index) => (
+                    <div key={index} className="text-sm text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 px-2 py-1 rounded">
+                      {warning}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Display validation stats if present */}
+            {result.stats && Object.keys(result.stats).length > 0 && (
+              <div>
+                <span className="text-sm font-medium">Validation Stats:</span>
+                <div className="mt-1 grid grid-cols-2 gap-2 text-xs">
+                  {Object.entries(result.stats).map(([key, value]) => (
+                    <div key={key} className="flex justify-between bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded">
+                      <span className="capitalize">{key.replace(/_/g, ' ')}:</span>
+                      <span className="font-mono">{String(value)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             
             <button
               onClick={() => validateTestdataId(result.testdata_id)}

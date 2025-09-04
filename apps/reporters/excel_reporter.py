@@ -80,9 +80,10 @@ def _create_summary_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     ws = cast(Worksheet, wb.create_sheet("Summary", 0))
     
     headers = [
-        "run_id", "started_at", "finished_at", "suites", "total_tests", 
-        "pass_rate", "faithfulness_avg", "context_recall_avg", 
-        "attack_success_rate", "warm_p95_ms", "provider", "model"
+        "run_id", "started_at", "finished_at", "target_mode", "ground_truth", 
+        "suites", "total_tests", "pass_rate", "faithfulness_avg", "context_recall_avg", 
+        "attack_success_rate", "warm_p95_ms", "provider", "model", "gate", "elapsed_ms",
+        "retrieval_top_k", "retrieval_note", "profile", "concurrency"
     ]
     
     # Add resilience headers if resilience data exists
@@ -158,6 +159,8 @@ def _create_summary_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
         run_meta.get("run_id", ""),
         run_meta.get("started_at", ""),
         run_meta.get("finished_at", ""),
+        run_meta.get("target_mode", ""),
+        run_meta.get("ground_truth", ""),
         ",".join(run_meta.get("suites", [])),
         summary.get("overall", {}).get("total_tests", 0),
         summary.get("overall", {}).get("pass_rate", 0.0),
@@ -166,7 +169,13 @@ def _create_summary_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
         summary.get("safety", {}).get("attack_success_rate", 0.0),
         summary.get("performance", {}).get("p95_latency_ms", 0),
         run_meta.get("provider", ""),
-        run_meta.get("model", "")
+        run_meta.get("model", ""),
+        run_meta.get("gate", ""),
+        run_meta.get("elapsed_ms", 0),
+        run_meta.get("retrieval_top_k", ""),
+        run_meta.get("retrieval_note", ""),
+        run_meta.get("profile", ""),
+        run_meta.get("concurrency", "")
     ]
     
     # Add resilience data if available
@@ -276,9 +285,11 @@ def _create_detailed_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     ws = cast(Worksheet, wb.create_sheet("Detailed"))
     
     headers = [
-        "suite", "test_id", "provider", "model", "query_masked", 
-        "answer_masked", "context_ids", "metrics_json", "pass", 
-        "latency_ms", "timestamp"
+        "suite", "case_id", "provider", "model", "question", "predicted", 
+        "expected", "retrieved_count", "recall_at_k", "mrr_at_k", "ndcg_at_k", 
+        "faithfulness", "context_recall", "answer_relevancy", "context_precision", 
+        "answer_correctness", "answer_similarity", "perturbations_applied", 
+        "pass_fail_reason", "latency_ms", "timestamp"
     ]
     
     # Write headers with styling
@@ -362,7 +373,8 @@ def _create_inputs_expected_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     
     headers = [
         "suite", "test_id", "target_mode", "top_k", "options_json", 
-        "thresholds_json", "expected_json", "notes"
+        "thresholds_json", "expected_json", "notes", "validation_status",
+        "valid_count", "invalid_count", "duplicate_count", "easy_ratio"
     ]
     
     # Write headers
@@ -388,7 +400,12 @@ def _create_inputs_expected_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
             json.dumps(row_data.get("options_json", {})) if row_data.get("options_json") else "",
             json.dumps(row_data.get("thresholds_json", {})) if row_data.get("thresholds_json") else "",
             json.dumps(row_data.get("expected_json", {})) if row_data.get("expected_json") else "",
-            row_data.get("notes", "")
+            row_data.get("notes", ""),
+            row_data.get("validation_status", ""),
+            row_data.get("valid_count", 0),
+            row_data.get("invalid_count", 0),
+            row_data.get("duplicate_count", 0),
+            row_data.get("easy_ratio", 0.0)
         ]
         
         for col, value in enumerate(values, 1):
@@ -455,9 +472,11 @@ def _create_coverage_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     """Create Coverage sheet for test coverage analysis."""
     ws = cast(Worksheet, wb.create_sheet("Coverage"))
     
-    # Required column order as specified
+    # Enhanced headers for RAG coverage analysis
     headers = [
-        "module", "stmts", "miss", "branch", "brpart", "cover_percent", "total_lines"
+        "module", "stmts", "miss", "branch", "brpart", "cover_percent", "total_lines",
+        "total_cases", "filtered_cases", "invalid_cases", "contexts_missing", 
+        "perturbed_sampled", "filter_reason"
     ]
     
     # Write headers with styling

@@ -1,0 +1,265 @@
+"""Excel to JSONL conversion utilities for RAG test data."""
+
+import json
+import logging
+from typing import List, Dict, Any, Tuple, Optional
+from pathlib import Path
+import tempfile
+from openpyxl import load_workbook
+from openpyxl.worksheet.worksheet import Worksheet
+
+logger = logging.getLogger(__name__)
+
+
+def to_jsonl_qaset(excel_file_path: str) -> Tuple[str, List[Dict[str, Any]]]:
+    """
+    Convert Excel QA template to JSONL format.
+    
+    Expected columns: Question, Context, Expected Answer, Metadata (optional)
+    
+    Args:
+        excel_file_path: Path to Excel file
+        
+    Returns:
+        Tuple of (jsonl_content_string, parsed_records_list)
+    """
+    try:
+        workbook = load_workbook(excel_file_path, read_only=True)
+        worksheet = workbook.active
+        
+        # Find header row (usually row 1)
+        headers = []
+        if worksheet is None:
+            raise ValueError("Excel file has no active worksheet")
+        for cell in worksheet[1]:
+            if cell.value:
+                headers.append(str(cell.value).strip().lower())
+            else:
+                headers.append("")
+        
+        # Map expected column names to indices
+        column_map = {}
+        for i, header in enumerate(headers):
+            if "question" in header:
+                column_map["question"] = i
+            elif "context" in header:
+                column_map["context"] = i
+            elif "expected" in header and "answer" in header:
+                column_map["expected_answer"] = i
+            elif "answer" in header and "expected" not in header:
+                column_map["expected_answer"] = i
+            elif "metadata" in header or "meta" in header:
+                column_map["metadata"] = i
+        
+        # Validate required columns
+        required_cols = ["question", "expected_answer"]
+        missing_cols = [col for col in required_cols if col not in column_map]
+        if missing_cols:
+            raise ValueError(f"Missing required columns: {missing_cols}")
+        
+        records = []
+        jsonl_lines = []
+        
+        # Process data rows (skip header)
+        for row_num, row in enumerate(worksheet.iter_rows(min_row=2, values_only=True), start=2):
+            if not row or not any(row):  # Skip empty rows
+                continue
+            
+            # Extract values
+            question = row[column_map["question"]] if column_map["question"] < len(row) else None
+            expected_answer = row[column_map["expected_answer"]] if column_map["expected_answer"] < len(row) else None
+            
+            # Skip rows with missing required data
+            if not question or not expected_answer:
+                continue
+            
+            # Build record
+            record: Dict[str, Any] = {
+                "qid": f"q{row_num-1}",  # Generate QID
+                "question": str(question).strip(),
+                "expected_answer": str(expected_answer).strip()
+            }
+            
+            # Add context if present
+            if "context" in column_map and column_map["context"] < len(row):
+                context = row[column_map["context"]]
+                if context:
+                    record["contexts"] = [f"p{row_num-1}"]  # Reference to passage ID
+                    # TODO: Extract actual context text and create passages
+            
+            # Add metadata if present
+            if "metadata" in column_map and column_map["metadata"] < len(row):
+                metadata = row[column_map["metadata"]]
+                if metadata:
+                    try:
+                        # Try to parse as JSON, otherwise use as string
+                        record["meta"] = json.loads(str(metadata))
+                    except:
+                        record["meta"] = {"category": str(metadata)}
+            
+            records.append(record)
+            jsonl_lines.append(json.dumps(record))
+        
+        jsonl_content = "\n".join(jsonl_lines)
+        logger.info(f"Converted Excel to {len(records)} QA records")
+        
+        return jsonl_content, records
+        
+    except Exception as e:
+        logger.error(f"Error converting Excel QA set: {e}")
+        raise ValueError(f"Failed to convert Excel QA set: {str(e)}")
+
+
+def to_jsonl_passages(excel_file_path: str) -> Tuple[str, List[Dict[str, Any]]]:
+    """
+    Convert Excel passages template to JSONL format.
+    
+    Expected columns: ID (optional), Text, Metadata (optional)
+    
+    Args:
+        excel_file_path: Path to Excel file
+        
+    Returns:
+        Tuple of (jsonl_content_string, parsed_records_list)
+    """
+    try:
+        workbook = load_workbook(excel_file_path, read_only=True)
+        worksheet = workbook.active
+        
+        # Find header row
+        headers = []
+        if worksheet is None:
+            raise ValueError("Excel file has no active worksheet")
+        for cell in worksheet[1]:
+            if cell.value:
+                headers.append(str(cell.value).strip().lower())
+            else:
+                headers.append("")
+        
+        # Map column names to indices
+        column_map = {}
+        for i, header in enumerate(headers):
+            if header in ["id", "passage_id", "doc_id"]:
+                column_map["id"] = i
+            elif "text" in header or "content" in header or "passage" in header:
+                column_map["text"] = i
+            elif "metadata" in header or "meta" in header:
+                column_map["metadata"] = i
+        
+        # Validate required columns
+        if "text" not in column_map:
+            raise ValueError("Missing required 'text' column")
+        
+        records = []
+        jsonl_lines = []
+        
+        # Process data rows
+        for row_num, row in enumerate(worksheet.iter_rows(min_row=2, values_only=True), start=2):
+            if not row or not any(row):  # Skip empty rows
+                continue
+            
+            # Extract text
+            text = row[column_map["text"]] if column_map["text"] < len(row) else None
+            if not text:
+                continue
+            
+            # Build record
+            record: Dict[str, Any] = {
+                "text": str(text).strip()
+            }
+            
+            # Add ID if present, otherwise generate
+            if "id" in column_map and column_map["id"] < len(row):
+                passage_id = row[column_map["id"]]
+                if passage_id:
+                    record["id"] = str(passage_id).strip()
+                else:
+                    record["id"] = f"p{row_num-1}"
+            else:
+                record["id"] = f"p{row_num-1}"
+            
+            # Add metadata if present
+            if "metadata" in column_map and column_map["metadata"] < len(row):
+                metadata = row[column_map["metadata"]]
+                if metadata:
+                    try:
+                        record["meta"] = json.loads(str(metadata))
+                    except:
+                        record["meta"] = {"source": str(metadata)}
+            
+            records.append(record)
+            jsonl_lines.append(json.dumps(record))
+        
+        jsonl_content = "\n".join(jsonl_lines)
+        logger.info(f"Converted Excel to {len(records)} passage records")
+        
+        return jsonl_content, records
+        
+    except Exception as e:
+        logger.error(f"Error converting Excel passages: {e}")
+        raise ValueError(f"Failed to convert Excel passages: {str(e)}")
+
+
+def detect_excel_type(excel_file_path: str) -> str:
+    """
+    Detect whether Excel file is QA set or passages based on column headers.
+    
+    Args:
+        excel_file_path: Path to Excel file
+        
+    Returns:
+        "qaset" or "passages"
+    """
+    try:
+        workbook = load_workbook(excel_file_path, read_only=True)
+        worksheet = workbook.active
+        
+        # Get first row headers
+        headers = []
+        if worksheet is None:
+            raise ValueError("Excel file has no active worksheet")
+        for cell in worksheet[1]:
+            if cell.value:
+                headers.append(str(cell.value).strip().lower())
+        
+        header_text = " ".join(headers)
+        
+        # Check for QA set indicators
+        qa_indicators = ["question", "expected", "answer"]
+        passage_indicators = ["text", "content", "passage"]
+        
+        qa_score = sum(1 for indicator in qa_indicators if indicator in header_text)
+        passage_score = sum(1 for indicator in passage_indicators if indicator in header_text)
+        
+        if qa_score > passage_score:
+            return "qaset"
+        else:
+            return "passages"
+            
+    except Exception as e:
+        logger.warning(f"Could not detect Excel type: {e}, defaulting to qaset")
+        return "qaset"
+
+
+def convert_excel_file(file_path: str, target_type: Optional[str] = None) -> Tuple[str, str, List[Dict[str, Any]]]:
+    """
+    Convert Excel file to JSONL based on detected or specified type.
+    
+    Args:
+        file_path: Path to Excel file
+        target_type: Force conversion type ("qaset" or "passages"), or None for auto-detect
+        
+    Returns:
+        Tuple of (detected_type, jsonl_content, records_list)
+    """
+    if target_type:
+        conversion_type = target_type
+    else:
+        conversion_type = detect_excel_type(file_path)
+    
+    if conversion_type == "qaset":
+        jsonl_content, records = to_jsonl_qaset(file_path)
+    else:
+        jsonl_content, records = to_jsonl_passages(file_path)
+    
+    return conversion_type, jsonl_content, records

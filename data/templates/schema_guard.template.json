@@ -1,0 +1,149 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RAG System Response Schema",
+  "description": "Schema for validating RAG system responses and ensuring structured output",
+  "type": "object",
+  "properties": {
+    "answer": {
+      "type": "string",
+      "description": "The main answer to the user's question",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "confidence": {
+      "type": "number",
+      "description": "Confidence score for the answer (0.0 to 1.0)",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "sources": {
+      "type": "array",
+      "description": "List of source passages used to generate the answer",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier for the source passage"
+          },
+          "relevance_score": {
+            "type": "number",
+            "description": "Relevance score of this source (0.0 to 1.0)",
+            "minimum": 0.0,
+            "maximum": 1.0
+          },
+          "excerpt": {
+            "type": "string",
+            "description": "Relevant excerpt from the source",
+            "maxLength": 500
+          }
+        },
+        "required": ["id", "relevance_score"],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "maxItems": 10
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Additional metadata about the response",
+      "properties": {
+        "query_type": {
+          "type": "string",
+          "enum": ["factual", "analytical", "comparative", "procedural", "other"],
+          "description": "Type of query being answered"
+        },
+        "response_type": {
+          "type": "string",
+          "enum": ["direct_answer", "explanation", "list", "summary", "not_found"],
+          "description": "Type of response provided"
+        },
+        "language": {
+          "type": "string",
+          "pattern": "^[a-z]{2}(-[A-Z]{2})?$",
+          "description": "Language code (e.g., 'en', 'en-US')",
+          "default": "en"
+        },
+        "processing_time_ms": {
+          "type": "integer",
+          "description": "Time taken to process the query in milliseconds",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": true
+    },
+    "warnings": {
+      "type": "array",
+      "description": "Any warnings or limitations about the response",
+      "items": {
+        "type": "string",
+        "maxLength": 200
+      }
+    },
+    "safety_flags": {
+      "type": "array",
+      "description": "Safety flags raised during processing",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["pii_detected", "harmful_content", "bias_detected", "misinformation_risk", "other"]
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["low", "medium", "high", "critical"]
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": ["type", "severity"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["answer", "confidence", "sources"],
+  "additionalProperties": false,
+  "examples": [
+    {
+      "answer": "The capital of France is Paris. It is located in the north-central part of the country and serves as the political, economic, and cultural center of France.",
+      "confidence": 0.95,
+      "sources": [
+        {
+          "id": "p1",
+          "relevance_score": 0.98,
+          "excerpt": "The capital of France is Paris. It is located in the north-central part of the country..."
+        }
+      ],
+      "metadata": {
+        "query_type": "factual",
+        "response_type": "direct_answer",
+        "language": "en",
+        "processing_time_ms": 150
+      },
+      "warnings": [],
+      "safety_flags": []
+    },
+    {
+      "answer": "I don't have enough information in the provided context to answer your question about the specific security protocols.",
+      "confidence": 0.1,
+      "sources": [],
+      "metadata": {
+        "query_type": "factual",
+        "response_type": "not_found",
+        "language": "en",
+        "processing_time_ms": 75
+      },
+      "warnings": ["Insufficient context to provide a reliable answer"],
+      "safety_flags": [
+        {
+          "type": "other",
+          "severity": "low",
+          "description": "Query about security protocols flagged for review"
+        }
+      ]
+    }
+  ]
+}

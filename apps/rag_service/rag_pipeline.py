@@ -161,8 +161,11 @@ class RAGPipeline:
         # Get top-k indices
         top_indices = np.argsort(similarities)[::-1][:self.top_k]
         
+        # Ensure indices are within bounds
+        valid_indices = [i for i in top_indices if 0 <= i < len(self.passage_texts)]
+        
         # Return top-k passages
-        return [self.passage_texts[i] for i in top_indices]
+        return [self.passage_texts[i] for i in valid_indices]
     
     def answer(self, query: str, context: List[str], provider: Optional[str] = None, model: Optional[str] = None) -> str:
         """

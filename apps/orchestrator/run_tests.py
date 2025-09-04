@@ -326,6 +326,17 @@ class OrchestratorRequest(BaseModel):
     suite_configs: Optional[Dict[str, Any]] = None  # suite_id -> config
     # RAG Reliability & Robustness configuration (additive)
     rag_reliability_robustness: Optional[Dict[str, Any]] = None
+    
+    # Phase-RAG extensions (additive, non-breaking)
+    server_url: Optional[str] = None  # For API mode
+    mcp_endpoint: Optional[str] = None  # For MCP mode
+    llm_option: Optional[str] = "rag"  # Default to RAG
+    ground_truth: Optional[str] = "not_available"  # "available" | "not_available"
+    determinism: Optional[Dict[str, Any]] = None  # temperature, top_p, seed overrides
+    volume: Optional[Dict[str, Any]] = None  # Volume controls (opaque for now)
+    
+    # Retrieval metrics extension (additive, non-breaking)
+    retrieval: Optional[Dict[str, Any]] = None  # contexts_jsonpath, top_k, note
 
 
 class OrchestratorResult(BaseModel):
@@ -2592,6 +2603,10 @@ class TestRunner:
             self.capture_log("INFO", "orchestrator", f"Completed {suite} suite: {suite_passed}/{suite_total} passed", 
                             event="suite_complete", suite=suite, passed=suite_passed, total=suite_total)
         
+        # Run RAG quality evaluation if llm_option is "rag"
+        if self.request.llm_option == "rag":
+            await self._run_rag_quality_evaluation()
+        
         # Run RAG Reliability & Robustness (Prompt Robustness) evaluation if enabled
         self.capture_log("INFO", "orchestrator", "🔍 MAIN DEBUG: About to call _run_prompt_robustness_evaluation", event="debug")
         await self._run_prompt_robustness_evaluation()
@@ -2632,6 +2647,99 @@ class TestRunner:
             counts=counts,
             artifacts=artifacts
         )
+    
+    async def _run_rag_quality_evaluation(self) -> None:
+        """Run RAG quality evaluation with ground truth mode support."""
+        try:
+            from .client_factory import make_client
+            from .rag_runner import RAGRunner, RAGThresholds
+            from .run_profiles import resolve_run_profile, get_profile_metadata
+            from .robustness_catalog import RobustnessCatalog, should_apply_robustness_perturbations
+            from apps.testdata.loaders_rag import resolve_manifest_from_bundle
+            from apps.testdata.validators_rag import validate_rag_data
+            
+            self.capture_log("INFO", "orchestrator", "Starting RAG quality evaluation", event="rag_start")
+            
+            # Create client
+            client = make_client(self.request)
+            
+            # Resolve run profile
+            profile = resolve_run_profile(self.request)
+            self.capture_log("INFO", "orchestrator", f"Using run profile: {profile.name}", event="profile_resolved")
+            
+            # Resolve manifest from testdata
+            manifest = None
+            if self.request.testdata_id and self.intake_bundle_dir:
+                manifest = resolve_manifest_from_bundle(self.request.testdata_id, self.intake_bundle_dir)
+            
+            if not manifest:
+                self.capture_log("WARNING", "orchestrator", "No RAG manifest available, skipping RAG evaluation", event="rag_skip")
+                return
+            
+            # Create thresholds from request
+            thresholds = RAGThresholds()
+            if self.request.thresholds:
+                for key, value in self.request.thresholds.items():
+                    if hasattr(thresholds, key):
+                        setattr(thresholds, key, value)
+            
+            # Create RAG runner
+            runner = RAGRunner(client, manifest, thresholds)
+            
+            # Run evaluation
+            gt_mode = self.request.ground_truth or "not_available"
+            rag_result = await runner.run_rag_quality(gt_mode)
+            
+            # Store results for reporting
+            self.rag_quality_result = rag_result
+            
+            # Get profile metadata
+            profile_metadata = get_profile_metadata(profile)
+            
+            # Add to summary data
+            if not hasattr(self, 'rag_summary_data'):
+                self.rag_summary_data = {}
+            
+            # Add profile and retrieval metadata
+            self.rag_summary_data.update({
+                "profile": profile_metadata.get("profile"),
+                "concurrency": profile_metadata.get("concurrency_limit"),
+                "retrieval_top_k": self.request.retrieval.get("top_k") if self.request.retrieval else None,
+                "retrieval_note": self.request.retrieval.get("note") if self.request.retrieval else None
+            })
+            
+            self.rag_summary_data.update({
+                "target_mode": self.request.target_mode,
+                "ground_truth": gt_mode,
+                "gate": rag_result.get("gate", False),
+                "elapsed_ms": rag_result.get("elapsed_ms", 0),
+                "metrics": rag_result.get("metrics", {}),
+                "warnings": rag_result.get("warnings", [])
+            })
+            
+            # Validate data if available
+            if manifest.passages and manifest.qaset:
+                from apps.testdata.loaders_rag import load_passages, load_qaset
+                passages = load_passages(manifest.passages)
+                qaset = load_qaset(manifest.qaset)
+                validation_result = validate_rag_data(passages, qaset)
+                
+                self.rag_validation_result = {
+                    "valid_count": validation_result.valid_count,
+                    "invalid_count": validation_result.invalid_count,
+                    "duplicate_count": validation_result.duplicate_count,
+                    "easy_count": validation_result.easy_count,
+                    "distribution_stats": validation_result.distribution_stats
+                }
+            
+            self.capture_log("INFO", "orchestrator", f"RAG evaluation completed: gate={'PASS' if rag_result.get('gate') else 'FAIL'}", 
+                           event="rag_complete", gate=rag_result.get("gate"), metrics_count=len(rag_result.get("metrics", {})))
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            self.capture_log("ERROR", "orchestrator", f"RAG evaluation failed: {e}", event="rag_error", error=str(e))
+            logger.error(f"RAG evaluation error: {e}")
     
     async def _run_prompt_robustness_evaluation(self) -> None:
         """Run prompt robustness evaluation if rag_prompt_robustness suite is selected."""
@@ -2879,6 +2987,23 @@ class TestRunner:
             summary["overall"]["shard_id"] = self.request.shard_id
             summary["overall"]["shards"] = self.request.shards
         
+        # Add RAG quality results if available
+        if hasattr(self, 'rag_quality_result') and self.rag_quality_result:
+            summary["rag_quality"] = {
+                "total": self.rag_quality_result.get("total_cases", 0),
+                "passed": 1 if self.rag_quality_result.get("gate", False) else 0,
+                "pass_rate": 1.0 if self.rag_quality_result.get("gate", False) else 0.0,
+                "gate": self.rag_quality_result.get("gate", False),
+                "gt_mode": self.rag_quality_result.get("gt_mode", "not_available"),
+                "elapsed_ms": self.rag_quality_result.get("elapsed_ms", 0),
+                "warnings": self.rag_quality_result.get("warnings", [])
+            }
+            
+            # Add individual metrics
+            metrics = self.rag_quality_result.get("metrics", {})
+            for metric_name, value in metrics.items():
+                summary["rag_quality"][f"avg_{metric_name}"] = value
+        
         # Per-suite stats
         suites = set(r.suite for r in self.detailed_rows)
         for suite in suites:
@@ -3113,10 +3238,13 @@ class TestRunner:
             "started_at": self.started_at,
             "finished_at": datetime.utcnow().isoformat(),
             "target_mode": self.request.target_mode,
+            "ground_truth": self.request.ground_truth or "not_available",
             "provider": (self.request.options or {}).get("provider", "mock"),
             "model": (self.request.options or {}).get("model", "mock-model"),
             "suites": self.request.suites,
-            "options": self.request.options or {}
+            "options": self.request.options or {},
+            "gate": getattr(self, 'rag_summary_data', {}).get("gate", True),
+            "elapsed_ms": getattr(self, 'rag_summary_data', {}).get("elapsed_ms", 0)
         }
         
         # Convert detailed rows to dict format for reporters

@@ -93,6 +93,24 @@ export interface OrchestratorRequest {
   run_id?: string;  // For cancel functionality
   shards?: number;
   shard_id?: number;
+  
+  // Phase-RAG extensions
+  server_url?: string;  // For API mode
+  mcp_endpoint?: string;  // For MCP mode
+  llm_option?: string;  // Default to RAG
+  ground_truth?: string;  // "available" | "not_available"
+  determinism?: Record<string, any>;  // temperature, top_p, seed overrides
+  volume?: Record<string, any>;  // Volume controls
+  
+  // Retrieval metrics extension
+  retrieval?: {
+    contexts_jsonpath?: string;
+    top_k?: number;
+    note?: string;
+  };
+  
+  // Run profile
+  profile?: "smoke" | "full";
 }
 
 export interface OrchestratorResult {
@@ -128,6 +146,10 @@ export interface TestDataUploadResponse {
   testdata_id: string;
   artifacts: string[];
   counts: Record<string, number>;
+  // Enhanced response fields for RAG integration
+  manifest?: Record<string, any>;
+  stats?: Record<string, any>;
+  warnings?: string[];
 }
 
 export interface TestDataUrlRequest {

@@ -67,6 +67,10 @@ class UploadResponse(BaseModel):
     testdata_id: str = Field(..., description="Generated bundle identifier")
     artifacts: List[str] = Field(..., description="Successfully processed artifacts")
     counts: Dict[str, int] = Field(..., description="Record counts per artifact")
+    # Enhanced response fields for RAG integration
+    manifest: Optional[Dict[str, Any]] = Field(None, description="File manifest with paths")
+    stats: Optional[Dict[str, Any]] = Field(None, description="Validation statistics")
+    warnings: Optional[List[str]] = Field(None, description="Validation warnings")
 
 
 class URLRequest(BaseModel):
