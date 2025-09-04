@@ -158,7 +158,7 @@ class TestCompareModeIntegration:
                 compare_runner = CompareRAGRunner(
                     cast(BaseClient, mock_client),
                     mock_manifest,
-                    {},  # thresholds
+                    None,  # thresholds
                     request.compare_with
                 )
                 
