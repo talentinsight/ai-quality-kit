@@ -18,6 +18,7 @@ def build_json(
     bias_smoke_details: Optional[List[Dict[str, Any]]] = None,
     logs: Optional[List[Dict[str, Any]]] = None,
     rag_reliability_robustness: Optional[Dict[str, Any]] = None,
+    compare_data: Optional[Dict[str, Any]] = None,
     anonymize: bool = True
 ) -> Dict[str, Any]:
     """Build comprehensive JSON report from orchestrator data.
@@ -107,6 +108,13 @@ def build_json(
     if rag_reliability_robustness:
         report["rag_reliability_robustness"] = rag_reliability_robustness
     
+    # Add Compare Mode section if present
+    if compare_data:
+        # Apply PII masking to compare data if requested
+        if anonymize:
+            compare_data = _mask_compare_data(compare_data)
+        report["compare"] = compare_data
+    
     return report
 
 
@@ -142,3 +150,28 @@ def _mask_adversarial_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         masked_rows.append(masked_row)
     
     return masked_rows
+
+
+def _mask_compare_data(compare_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Apply PII masking to compare mode data."""
+    masked_data = compare_data.copy()
+    
+    # Mask cases if present
+    if "cases" in masked_data:
+        masked_cases = []
+        for case in masked_data["cases"]:
+            masked_case = case.copy()
+            
+            # Mask question and answer text fields
+            if "question" in masked_case:
+                masked_case["question"] = mask_text(masked_case["question"]) or ""
+            if "primary_answer" in masked_case:
+                masked_case["primary_answer"] = mask_text(masked_case["primary_answer"]) or ""
+            if "baseline_answer" in masked_case:
+                masked_case["baseline_answer"] = mask_text(masked_case["baseline_answer"]) or ""
+            
+            masked_cases.append(masked_case)
+        
+        masked_data["cases"] = masked_cases
+    
+    return masked_data

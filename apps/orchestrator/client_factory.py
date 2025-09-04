@@ -168,3 +168,38 @@ def make_client(request) -> Union[ApiClient, McpClient]:
     
     else:
         raise ValueError(f"Unsupported target_mode: {request.target_mode}")
+
+
+def make_baseline_client(preset: str, model: str, decoding_config: dict) -> ApiClient:
+    """
+    Create a baseline client for Compare Mode with specific vendor/model configuration.
+    
+    Args:
+        preset: Vendor preset (e.g., "openai", "anthropic", "gemini")
+        model: Model name (e.g., "gpt-4o-mini", "claude-3-5-sonnet")
+        decoding_config: Decoding parameters (temperature, top_p, max_tokens)
+        
+    Returns:
+        ApiClient instance configured for baseline comparison
+        
+    Raises:
+        ValueError: If preset is not supported
+    """
+    # Validate supported presets
+    supported_presets = {'openai', 'anthropic', 'gemini', 'mock'}
+    if preset not in supported_presets:
+        raise ValueError(f"Unsupported baseline preset: {preset}. Supported: {supported_presets}")
+    
+    # Create determinism config from decoding parameters
+    determinism = DeterminismConfig(
+        temperature=decoding_config.get('temperature', 0.0),
+        top_p=decoding_config.get('top_p', 1.0),
+        seed=decoding_config.get('seed', 42)
+    )
+    
+    # Create API client (baseline always uses vendor presets, not custom endpoints)
+    return ApiClient(
+        provider=preset,
+        model=model,
+        determinism=determinism
+    )

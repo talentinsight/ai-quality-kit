@@ -71,6 +71,10 @@ def write_excel(path: str, data: Dict[str, Any]) -> None:
         if prompt_robustness_data.get("diffs_rows"):
             write_structure_diffs_sheet(wb, prompt_robustness_data["diffs_rows"])
     
+    # Optional sheet for Compare Mode results
+    if data.get("compare") and data["compare"].get("enabled"):
+        _create_compare_sheet(wb, data)
+    
     # Save workbook
     wb.save(path)
 
@@ -712,4 +716,136 @@ def _create_logs_sheet(wb, data):
                 cell.alignment = Alignment(wrap_text=True)
     
     ws.freeze_panes = "A2"
+
+
+def _create_compare_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
+    """Create Compare sheet with baseline comparison results."""
+    ws = cast(Worksheet, wb.create_sheet("Compare"))
+    
+    compare_data = data.get("compare", {})
+    
+    # Headers for Compare sheet
+    headers = [
+        "qid", "question", "primary_model", "baseline_model", "contexts_used_count",
+        "answer_sim_primary", "answer_sim_baseline", "Δ_answer_sim",
+        "correctness_primary", "correctness_baseline", "Δ_correctness", 
+        "faithfulness_primary", "faithfulness_baseline", "Δ_faithfulness",
+        "relevancy_primary", "relevancy_baseline", "Δ_relevancy",
+        "primary_latency_ms", "baseline_latency_ms", "Δ_latency_ms",
+        "baseline_status", "skip_reason", "notes"
+    ]
+    
+    # Write headers with styling
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(wrap_text=True)
+        
+        # Set column widths based on content
+        if header == "question":
+            ws.column_dimensions[get_column_letter(col)].width = 40
+        elif header in ["primary_model", "baseline_model"]:
+            ws.column_dimensions[get_column_letter(col)].width = 20
+        elif header in ["skip_reason", "notes"]:
+            ws.column_dimensions[get_column_letter(col)].width = 25
+        elif "Δ_" in header:
+            ws.column_dimensions[get_column_letter(col)].width = 12
+        else:
+            ws.column_dimensions[get_column_letter(col)].width = 15
+    
+    # Write comparison cases
+    cases = compare_data.get("cases", [])
+    for row_idx, case in enumerate(cases, 2):
+        # Extract model information
+        primary_model = f"{data.get('run', {}).get('provider', 'unknown')}:{data.get('run', {}).get('model', 'unknown')}"
+        baseline_model_info = case.get("baseline_model_resolved", {})
+        baseline_model = f"{baseline_model_info.get('preset', 'unknown')}:{baseline_model_info.get('model', 'unknown')}"
+        
+        # Extract metrics
+        primary_metrics = case.get("primary_metrics", {})
+        baseline_metrics = case.get("baseline_metrics", {})
+        delta_metrics = case.get("delta_metrics", {})
+        
+        # Helper function to get metric value or N/A
+        def get_metric(metrics_dict, key, default="N/A"):
+            return metrics_dict.get(key, default) if metrics_dict else default
+        
+        values = [
+            case.get("qid", ""),
+            case.get("question", "")[:100] + "..." if len(case.get("question", "")) > 100 else case.get("question", ""),
+            primary_model,
+            baseline_model,
+            case.get("primary_contexts_used_count", 0),
+            get_metric(primary_metrics, "answer_similarity"),
+            get_metric(baseline_metrics, "answer_similarity"),
+            get_metric(delta_metrics, "answer_similarity"),
+            get_metric(primary_metrics, "answer_correctness"),
+            get_metric(baseline_metrics, "answer_correctness"),
+            get_metric(delta_metrics, "answer_correctness"),
+            get_metric(primary_metrics, "faithfulness"),
+            get_metric(baseline_metrics, "faithfulness"),
+            get_metric(delta_metrics, "faithfulness"),
+            get_metric(primary_metrics, "answer_relevancy"),
+            get_metric(baseline_metrics, "answer_relevancy"),
+            get_metric(delta_metrics, "answer_relevancy"),
+            case.get("primary_latency_ms", "N/A"),
+            case.get("baseline_latency_ms", "N/A"),
+            (case.get("baseline_latency_ms", 0) - case.get("primary_latency_ms", 0)) if case.get("baseline_latency_ms") and case.get("primary_latency_ms") else "N/A",
+            case.get("baseline_status", ""),
+            case.get("skip_reason", ""),
+            case.get("error", "") or ""
+        ]
+        
+        for col, value in enumerate(values, 1):
+            cell = ws.cell(row=row_idx, column=col, value=value)
+            
+            # Apply formatting for delta columns (highlight positive/negative)
+            if isinstance(value, (int, float)) and "Δ_" in headers[col-1]:
+                if value > 0:
+                    cell.font = Font(color="00AA00")  # Green for positive deltas
+                elif value < 0:
+                    cell.font = Font(color="AA0000")  # Red for negative deltas
+    
+    # Add summary section at the top (insert rows)
+    ws.insert_rows(1, 6)
+    
+    # Summary header
+    ws.cell(row=1, column=1, value="Compare (contexts-only)").font = Font(bold=True, size=14)
+    
+    # Summary statistics
+    summary = compare_data.get("summary", {})
+    aggregates = compare_data.get("aggregates", {})
+    
+    summary_info = [
+        f"Compared cases: {summary.get('compared_cases', 0)}",
+        f"Skipped (no contexts): {summary.get('skipped_no_contexts', 0)}",
+        f"Skipped (missing creds): {summary.get('skipped_missing_creds', 0)}",
+        f"Skipped (no candidate): {summary.get('skipped_no_candidate', 0)}",
+        f"Skipped (errors): {summary.get('skipped_errors', 0)}"
+    ]
+    
+    for i, info in enumerate(summary_info, 2):
+        ws.cell(row=i, column=1, value=info)
+    
+    # Add aggregate metrics if available
+    if aggregates and summary.get('compared_cases', 0) > 0:
+        ws.cell(row=2, column=3, value="Average Metrics:")
+        ws.cell(row=2, column=3).font = Font(bold=True)
+        
+        metric_row = 3
+        for key, value in aggregates.items():
+            if isinstance(value, (int, float)):
+                ws.cell(row=metric_row, column=3, value=f"{key}: {value:.3f}")
+                metric_row += 1
+    elif summary.get('compared_cases', 0) == 0:
+        ws.cell(row=2, column=3, value="No contexts observed; comparison skipped.")
+    
+    # Adjust header row (now row 7 after inserts)
+    header_row = 7
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=header_row, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(wrap_text=True)
+    
+    ws.freeze_panes = f"A{header_row + 1}"
 

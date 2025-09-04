@@ -44,6 +44,13 @@ export default function App() {
   const [retrievalTopK, setRetrievalTopK] = useState<string>("");
   const [runProfile, setRunProfile] = useState<"smoke" | "full">("smoke");
   
+  // Compare Mode Options
+  const [compareEnabled, setCompareEnabled] = useState<boolean>(false);
+  const [compareAutoSelect, setCompareAutoSelect] = useState<boolean>(true);
+  const [compareManualPreset, setCompareManualPreset] = useState<string>("");
+  const [compareManualModel, setCompareManualModel] = useState<string>("");
+  const [compareHintTier, setCompareHintTier] = useState<string>("");
+  
   // Test data tracking
   const [testdataId, setTestdataId] = useState<string>("");
   const [uploadedArtifacts, setUploadedArtifacts] = useState<string[]>([]);
@@ -362,6 +369,34 @@ export default function App() {
         
         // Run profile
         profile: runProfile,
+        
+        // Compare Mode configuration
+        compare_with: compareEnabled ? {
+          enabled: true,
+          baseline: compareAutoSelect ? undefined : {
+            preset: (compareManualPreset as Provider) || undefined,
+            model: compareManualModel || undefined,
+            decoding: {
+              temperature: 0,
+              top_p: 1,
+              max_tokens: 1024
+            }
+          },
+          auto_select: {
+            enabled: compareAutoSelect,
+            strategy: "same_or_near_tier" as const,
+            hint_tier: (compareHintTier as "economy" | "balanced" | "premium") || undefined
+          },
+          carry_over: {
+            use_contexts_from_primary: true,
+            require_non_empty: true,
+            max_context_items: 7,
+            heading: "Context:",
+            joiner: "\n- "
+          },
+          target_display_name: `${provider}:${model} vs baseline`
+        } : undefined,
+        
         options: { 
           provider: provider || undefined,  // Send provider in options
           model: model,        // Send model in options
@@ -842,6 +877,124 @@ export default function App() {
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
                         Smoke: Quick test with limited samples. Full: Complete evaluation with all data.
+                      </p>
+                    </div>
+                    
+                    {/* Compare Mode */}
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        Compare Mode (optional)
+                      </label>
+                      
+                      {/* Enable Compare Toggle */}
+                      <div className="flex items-center gap-2 mb-3">
+                        <input
+                          type="checkbox"
+                          id="compare-enabled"
+                          className="checkbox"
+                          checked={compareEnabled}
+                          onChange={(e) => setCompareEnabled(e.target.checked)}
+                        />
+                        <label htmlFor="compare-enabled" className="text-sm text-slate-700 dark:text-slate-300">
+                          Enable Compare with Vendor Model
+                        </label>
+                      </div>
+
+                      {compareEnabled && (
+                        <div className="space-y-3 pl-4 border-l-2 border-blue-200 dark:border-blue-800">
+                          {/* Auto-select vs Manual */}
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="radio"
+                                id="compare-auto"
+                                name="compare-mode"
+                                className="radio"
+                                checked={compareAutoSelect}
+                                onChange={() => setCompareAutoSelect(true)}
+                              />
+                              <label htmlFor="compare-auto" className="text-xs text-slate-700 dark:text-slate-300">
+                                Auto-select baseline (recommended)
+                              </label>
+                            </div>
+                            {compareAutoSelect && (
+                              <div className="ml-4 text-xs text-slate-600 dark:text-slate-400">
+                                <p className="mb-2">Strategy: same model if known, else near-tier suggestion.</p>
+                                <div className="flex items-center gap-2">
+                                  <label className="text-xs">Tier hint:</label>
+                                  <select
+                                    className="px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 dark:bg-slate-800 dark:text-slate-100"
+                                    value={compareHintTier}
+                                    onChange={(e) => setCompareHintTier(e.target.value)}
+                                  >
+                                    <option value="">Auto-detect</option>
+                                    <option value="economy">Economy</option>
+                                    <option value="balanced">Balanced</option>
+                                    <option value="premium">Premium</option>
+                                  </select>
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="radio"
+                                id="compare-manual"
+                                name="compare-mode"
+                                className="radio"
+                                checked={!compareAutoSelect}
+                                onChange={() => setCompareAutoSelect(false)}
+                              />
+                              <label htmlFor="compare-manual" className="text-xs text-slate-700 dark:text-slate-300">
+                                Manual select
+                              </label>
+                            </div>
+                            {!compareAutoSelect && (
+                              <div className="ml-4 grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
+                                    Vendor
+                                  </label>
+                                  <select
+                                    className="w-full px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 dark:bg-slate-800 dark:text-slate-100"
+                                    value={compareManualPreset}
+                                    onChange={(e) => setCompareManualPreset(e.target.value)}
+                                  >
+                                    <option value="">Select...</option>
+                                    <option value="openai">OpenAI</option>
+                                    <option value="anthropic">Anthropic</option>
+                                    <option value="gemini">Gemini</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
+                                    Model
+                                  </label>
+                                  <input
+                                    type="text"
+                                    className="w-full px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 dark:bg-slate-800 dark:text-slate-100"
+                                    placeholder="e.g., gpt-4o-mini"
+                                    value={compareManualModel}
+                                    onChange={(e) => setCompareManualModel(e.target.value)}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Warning if no contexts JSONPath */}
+                          {!retrievalJsonPath && (
+                            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded p-2">
+                              <p className="text-xs text-yellow-800 dark:text-yellow-200">
+                                <strong>Warning:</strong> No contexts JSONPath configured; comparison may skip all items.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      <p className="text-xs text-slate-500 mt-1">
+                        Compare your primary model against a vendor baseline using the same retrieved contexts.
                       </p>
                     </div>
                   </div>

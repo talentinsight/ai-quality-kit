@@ -337,6 +337,9 @@ class OrchestratorRequest(BaseModel):
     
     # Retrieval metrics extension (additive, non-breaking)
     retrieval: Optional[Dict[str, Any]] = None  # contexts_jsonpath, top_k, note
+    
+    # Compare Mode extension (additive, non-breaking)
+    compare_with: Optional[Dict[str, Any]] = None  # baseline auto-select and comparison config
 
 
 class OrchestratorResult(BaseModel):
@@ -413,6 +416,7 @@ class TestRunner:
         self.bias_smoke_details: List[Dict[str, Any]] = []
         self.deprecated_suites: List[str] = []
         self.rag_reliability_robustness_data: Optional[Dict[str, Any]] = None
+        self.compare_data: Optional[Dict[str, Any]] = None
         
         # Log capture for Excel report
         self.captured_logs: List[Dict[str, Any]] = []
@@ -2683,8 +2687,14 @@ class TestRunner:
                     if hasattr(thresholds, key):
                         setattr(thresholds, key, value)
             
-            # Create RAG runner
-            runner = RAGRunner(client, manifest, thresholds)
+            # Create RAG runner (with Compare Mode support if enabled)
+            compare_config = self.request.compare_with
+            if compare_config and compare_config.get("enabled", False):
+                from .compare_rag_runner import CompareRAGRunner
+                runner = CompareRAGRunner(client, manifest, thresholds, compare_config)
+                self.capture_log("INFO", "orchestrator", "Compare Mode enabled for RAG evaluation", event="compare_enabled")
+            else:
+                runner = RAGRunner(client, manifest, thresholds)
             
             # Run evaluation
             gt_mode = self.request.ground_truth or "not_available"
@@ -2692,6 +2702,10 @@ class TestRunner:
             
             # Store results for reporting
             self.rag_quality_result = rag_result
+            
+            # Store compare data if present
+            if "compare" in rag_result:
+                self.compare_data = rag_result["compare"]
             
             # Get profile metadata
             profile_metadata = get_profile_metadata(profile)
@@ -3287,6 +3301,7 @@ class TestRunner:
             bias_smoke_details=self.bias_smoke_details if self.bias_smoke_details else None,
             logs=self.captured_logs if self.captured_logs else None,
             rag_reliability_robustness=self.rag_reliability_robustness_data if self.rag_reliability_robustness_data else None,
+            compare_data=self.compare_data if self.compare_data else None,
             anonymize=anonymize
         )
         

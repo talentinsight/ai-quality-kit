@@ -16,6 +16,18 @@ interface RagQualitySuiteProps {
   onCrecMinChange: (value: string) => void;
   useGroundTruth: boolean;
   onUseGroundTruthChange: (enabled: boolean) => void;
+  // Compare Mode props
+  compareEnabled?: boolean;
+  onCompareEnabledChange?: (enabled: boolean) => void;
+  compareAutoSelect?: boolean;
+  onCompareAutoSelectChange?: (enabled: boolean) => void;
+  compareManualPreset?: string;
+  onCompareManualPresetChange?: (preset: string) => void;
+  compareManualModel?: string;
+  onCompareManualModelChange?: (model: string) => void;
+  compareHintTier?: string;
+  onCompareHintTierChange?: (tier: string) => void;
+  retrievalJsonPath?: string;
 }
 
 const RagQualitySuite: React.FC<RagQualitySuiteProps> = ({
@@ -30,7 +42,18 @@ const RagQualitySuite: React.FC<RagQualitySuiteProps> = ({
   crecMin,
   onCrecMinChange,
   useGroundTruth,
-  onUseGroundTruthChange
+  onUseGroundTruthChange,
+  compareEnabled = false,
+  onCompareEnabledChange,
+  compareAutoSelect = true,
+  onCompareAutoSelectChange,
+  compareManualPreset = "",
+  onCompareManualPresetChange,
+  compareManualModel = "",
+  onCompareManualModelChange,
+  compareHintTier = "",
+  onCompareHintTierChange,
+  retrievalJsonPath = ""
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [groundTruthDataCount, setGroundTruthDataCount] = useState(0);
@@ -151,6 +174,137 @@ const RagQualitySuite: React.FC<RagQualitySuiteProps> = ({
               </div>
             </div>
           )}
+
+          {/* Compare Mode Configuration */}
+          <div>
+            <h4 className="font-medium text-slate-900 dark:text-slate-100 mb-3 flex items-center space-x-2">
+              <BarChart3 size={16} />
+              <span>Compare Mode (optional)</span>
+            </h4>
+            <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 space-y-4">
+              {/* Enable Compare Toggle */}
+              <div className="flex items-center space-x-3">
+                <input
+                  type="checkbox"
+                  id="compare-enabled"
+                  className="checkbox"
+                  checked={compareEnabled}
+                  onChange={(e) => onCompareEnabledChange?.(e.target.checked)}
+                />
+                <label htmlFor="compare-enabled" className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Enable Compare with Vendor Model
+                </label>
+              </div>
+
+              {compareEnabled && (
+                <div className="space-y-4 pl-6 border-l-2 border-blue-200 dark:border-blue-800">
+                  {/* Auto-select vs Manual */}
+                  <div className="space-y-3">
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="radio"
+                        id="compare-auto"
+                        name="compare-mode"
+                        className="radio"
+                        checked={compareAutoSelect}
+                        onChange={() => onCompareAutoSelectChange?.(true)}
+                      />
+                      <label htmlFor="compare-auto" className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Auto-select baseline (recommended)
+                      </label>
+                    </div>
+                    {compareAutoSelect && (
+                      <div className="ml-6 text-sm text-slate-600 dark:text-slate-400">
+                        <p className="mb-2">Strategy: same model if known, else near-tier suggestion.</p>
+                        {/* Optional tier hint */}
+                        <div className="flex items-center space-x-2">
+                          <label className="text-xs font-medium">Tier hint (optional):</label>
+                          <select
+                            className="input text-xs py-1 px-2"
+                            value={compareHintTier}
+                            onChange={(e) => onCompareHintTierChange?.(e.target.value)}
+                          >
+                            <option value="">Auto-detect</option>
+                            <option value="economy">Economy (mini, haiku, flash)</option>
+                            <option value="balanced">Balanced (sonnet, pro, gpt-4o)</option>
+                            <option value="premium">Premium (opus, ultra, o4)</option>
+                          </select>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="radio"
+                        id="compare-manual"
+                        name="compare-mode"
+                        className="radio"
+                        checked={!compareAutoSelect}
+                        onChange={() => onCompareAutoSelectChange?.(false)}
+                      />
+                      <label htmlFor="compare-manual" className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Manual select
+                      </label>
+                    </div>
+                    {!compareAutoSelect && (
+                      <div className="ml-6 grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                            Vendor Preset
+                          </label>
+                          <select
+                            className="input text-sm"
+                            value={compareManualPreset}
+                            onChange={(e) => onCompareManualPresetChange?.(e.target.value)}
+                          >
+                            <option value="">Select vendor...</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="anthropic">Anthropic</option>
+                            <option value="gemini">Gemini</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                            Model
+                          </label>
+                          <input
+                            type="text"
+                            className="input text-sm"
+                            placeholder="e.g., gpt-4o-mini"
+                            value={compareManualModel}
+                            onChange={(e) => onCompareManualModelChange?.(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Contexts-only checkbox */}
+                  <div className="flex items-center space-x-3">
+                    <input
+                      type="checkbox"
+                      id="compare-contexts-only"
+                      className="checkbox"
+                      checked={true}
+                      disabled
+                    />
+                    <label htmlFor="compare-contexts-only" className="text-sm text-slate-600 dark:text-slate-400">
+                      Only compare when contexts are present (required)
+                    </label>
+                  </div>
+
+                  {/* Warning if no contexts JSONPath */}
+                  {!retrievalJsonPath && (
+                    <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
+                      <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                        <strong>Warning:</strong> No contexts JSONPath configured; comparison may skip all items.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Basic Configuration */}
           <div>

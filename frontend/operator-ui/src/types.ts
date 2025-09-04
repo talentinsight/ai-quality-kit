@@ -64,6 +64,33 @@ export interface RagReliabilityRobustnessConfig {
   };
 }
 
+export interface CompareWithConfig {
+  enabled: boolean;
+  baseline?: {
+    preset?: Provider;
+    model?: string;
+    decoding?: {
+      temperature?: number;
+      top_p?: number;
+      max_tokens?: number;
+    };
+  };
+  auto_select?: {
+    enabled: boolean;
+    strategy: "same_or_near_tier";
+    headroom_run?: boolean;
+    hint_tier?: "economy" | "balanced" | "premium";
+  };
+  carry_over?: {
+    use_contexts_from_primary: boolean;
+    require_non_empty: boolean;
+    max_context_items?: number;
+    heading?: string;
+    joiner?: string;
+  };
+  target_display_name?: string;
+}
+
 export interface OrchestratorRequest {
   target_mode: "api"|"mcp";
   api_base_url?: string;
@@ -111,6 +138,9 @@ export interface OrchestratorRequest {
   
   // Run profile
   profile?: "smoke" | "full";
+  
+  // Compare Mode (additive, non-breaking)
+  compare_with?: CompareWithConfig;
 }
 
 export interface OrchestratorResult {
