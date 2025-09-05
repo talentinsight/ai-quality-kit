@@ -363,7 +363,7 @@ The Operator UI includes a **Test Data Panel** for easy upload:
 1. **Upload Tab**: Select files from your computer
 2. **Paste Tab**: Directly paste JSONL/YAML content
 3. **Validation**: Real-time content validation with clear error messages
-4. **Integration**: One-click integration with Chat Wizard via `testdata_id`
+4. **Integration**: One-click integration with test orchestrator via `testdata_id`
 
 #### Retention Policy
 
@@ -472,7 +472,7 @@ The HTML report provides a single-file, interactive dashboard with:
 
 **Access HTML Reports:**
 - **API Endpoint**: `/orchestrator/report/{run_id}.html`
-- **UI Buttons**: "Open HTML Report" button in both Chat Wizard and main interface
+- **UI Buttons**: "Open HTML Report" button in main interface
 - **Direct Link**: Available in artifacts response as `html_path` (optional field)
 
 **Note**: HTML reports are generated automatically alongside JSON/Excel reports. If HTML generation fails, it won't affect the test run - JSON and Excel remain the authoritative source of truth.

@@ -209,9 +209,6 @@ ai-quality-kit/
 
 ### Identified UX Issues
 
-1. **Oversized Chat Area** (`App.tsx:L800-900`)
-   - **Issue**: Chat wizard takes excessive vertical space
-   - **Delta Fix**: Reduce default height from 400px to 200px
 
 2. **Confusing Test Configuration Panel** (`TestSuiteSelector.tsx`)
    - **Issue**: Too many nested accordions, unclear hierarchy

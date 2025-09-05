@@ -70,21 +70,3 @@ export interface RunConfig {
   test_data?: TestDataIntake | null;
 }
 
-export type StepId =
-  | 'mode' | 'base' | 'auth'
-  | 'provider' | 'model'
-  | 'suites' | 'thresholds' | 'volumes'
-  | 'resilience' | 'compliance' | 'bias'
-  | 'testdataId' | 'testData' | 'summary';
-
-export interface Message {
-  id: string;
-  type: 'assistant' | 'user';
-  content: string;
-  timestamp: Date;
-}
-
-export interface ValidationError {
-  field: string;
-  message: string;
-}

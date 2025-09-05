@@ -1,11 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Download, Play, ShieldCheck, Settings2, MoonStar, Sun, Server, CheckCircle2, XCircle, Rocket, ChevronDown, ChevronRight, RefreshCw, X, MessageCircle, Info, Upload } from "lucide-react";
+import { Download, Play, ShieldCheck, Settings2, MoonStar, Sun, Server, CheckCircle2, XCircle, Rocket, ChevronDown, ChevronRight, RefreshCw, X, Info, Upload } from "lucide-react";
 import clsx from "clsx";
 import type { Provider, TestSuite, OrchestratorRequest, OrchestratorResult } from "../types";
 import TestDataPanel from "../features/testdata/TestDataPanel";
 import { getTestdataMeta, ApiError } from "../lib/api";
-import ChatWizard from "../components/ChatWizard";
-import ChatWizardV2 from "../components/ChatWizardV2";
 import RequirementsMatrix from "../components/RequirementsMatrix";
 import GroundTruthEvaluationPanel from "../components/GroundTruthEvaluationPanel";
 import RagQualitySuite from "../components/suites/RagQualitySuite";
@@ -295,8 +293,6 @@ export default function App() {
   const [testdataValid, setTestdataValid] = useState<boolean | null>(null);
   const [validatingTestdata, setValidatingTestdata] = useState(false);
 
-  // Tab state
-  const [activeTab, setActiveTab] = useState<'classic' | 'chat'>('classic');
 
   // Requirements matrix state
   const [showRequirementsModal, setShowRequirementsModal] = useState(false);
@@ -864,29 +860,11 @@ export default function App() {
         <div className="mx-auto max-w-6xl px-4">
           <nav className="flex space-x-8">
             <button
-              onClick={() => setActiveTab('classic')}
-              className={`py-3 px-2 text-sm transition-colors ${
-                activeTab === 'classic'
-                  ? 'text-slate-900 dark:text-slate-100 font-medium'
-                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-              }`}
+              className="py-3 px-2 text-sm transition-colors text-slate-900 dark:text-slate-100 font-medium"
             >
               <div className="flex items-center space-x-2">
                 <Settings2 size={16} />
                 <span>Classic Form</span>
-              </div>
-            </button>
-            <button
-              onClick={() => setActiveTab('chat')}
-              className={`py-3 px-2 text-sm transition-colors ${
-                activeTab === 'chat'
-                  ? 'text-slate-900 dark:text-slate-100 font-medium'
-                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-              }`}
-            >
-              <div className="flex items-center space-x-2">
-                <MessageCircle size={16} />
-                <span>Chat Wizard</span>
               </div>
             </button>
 
@@ -895,8 +873,7 @@ export default function App() {
       </div>
 
       {/* Content */}
-      {activeTab === 'classic' ? (
-        <div className="mx-auto max-w-6xl px-4 py-6 space-y-6">
+      <div className="mx-auto max-w-6xl px-4 py-6 space-y-6">
           {/* Main Layout: Control Panel + Test Data side by side */}
           <div className="main-grid grid grid-cols-1 xl:grid-cols-2 gap-6">
             {/* Control panel - Left side */}
@@ -2143,11 +2120,6 @@ export default function App() {
           </div>
         )}
       </div>
-      ) : (
-        <div className="h-[calc(100vh-200px)]">
-          <ChatWizardV2 />
-        </div>
-      )}
 
       {/* Requirements Matrix Modal */}
       {showRequirementsModal && (
@@ -2180,7 +2152,7 @@ export default function App() {
       )}
       
       {/* Sticky Footer CTA */}
-      {activeTab === 'classic' && (
+      <div>
         <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 shadow-lg z-40">
           <div className="max-w-7xl mx-auto px-4 py-3">
             <div className="flex items-center justify-between">
@@ -2254,10 +2226,10 @@ export default function App() {
             </div>
           </div>
         </div>
-      )}
+      </div>
       
       {/* Add bottom padding to prevent content from being hidden behind sticky footer */}
-      {activeTab === 'classic' && <div className="h-16" />}
+      <div className="h-16" />
     </div>
   );
 }

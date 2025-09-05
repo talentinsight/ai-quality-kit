@@ -46,7 +46,7 @@ AI Quality Kit is a comprehensive testing framework for AI applications that aut
 - **Framework:** Vite + React + TypeScript in `frontend/operator-ui/`
 - **State Management:** Zustand for application state
 - **UI Components:** Lucide icons, Tailwind CSS, custom components
-- **Key Features:** Test configuration wizard, test data management, real-time results
+- **Key Features:** Test configuration interface, test data management, real-time results
 - **API Integration:** Full backend integration with authentication support
 
 ### Component Flow
