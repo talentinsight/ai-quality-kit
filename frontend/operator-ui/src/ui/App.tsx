@@ -43,7 +43,7 @@ export default function App() {
   }, [dark]);
 
   // Mode-specific form state
-  const [targetMode, setTargetMode] = useState<"api"|"mcp"|"provider"|"">("");
+  const [targetMode, setTargetMode] = useState<"api"|"mcp"|"">("");
   
   // API mode state
   const [apiFormState, setApiFormState] = useState({
@@ -73,15 +73,7 @@ export default function App() {
     discovering: false
   });
   
-  // Provider mode state
-  const [providerFormState, setProviderFormState] = useState({
-    vendor: "",
-    model: "",
-    key: ""
-  });
   
-  // Legacy fields for backward compatibility
-  const [mcpServerUrl, setMcpServerUrl] = useState("");
   
   // Backward compatibility - derive from new state structure
   const apiBaseUrl = apiFormState.serverUrl;
@@ -158,7 +150,7 @@ export default function App() {
   const [model, setModel] = useState("");
   
   // Mode switching helpers
-  const handleModeSwitch = (newMode: "api"|"mcp"|"provider") => {
+  const handleModeSwitch = (newMode: "api"|"mcp") => {
     if (newMode === targetMode) return;
     
     // Log warning if hidden fields have values (dev guard)
@@ -194,15 +186,11 @@ export default function App() {
       if (mcpFormState.bearerToken) hiddenValues.push('mcpFormState.bearerToken');
     }
     
-    if (currentMode !== 'provider') {
-      if (providerFormState.vendor) hiddenValues.push('providerFormState.vendor');
-      if (providerFormState.model) hiddenValues.push('providerFormState.model');
-    }
     
     return hiddenValues;
   };
   
-  const resetModeToDefaults = (mode: "api"|"mcp"|"provider") => {
+  const resetModeToDefaults = (mode: "api"|"mcp") => {
     switch (mode) {
       case 'api':
         setApiFormState({
@@ -230,13 +218,6 @@ export default function App() {
           requestIdJsonPath: "",
           availableTools: [],
           discovering: false
-        });
-        break;
-      case 'provider':
-        setProviderFormState({
-          vendor: "",
-          model: "",
-          key: ""
         });
         break;
     }
@@ -380,7 +361,7 @@ export default function App() {
         target_mode: targetMode as "api"|"mcp",
         api_base_url: targetMode === "api" ? apiBaseUrl : undefined,
         api_bearer_token: targetMode === "api" ? token : undefined,
-        mcp_server_url: targetMode === "mcp" ? mcpServerUrl : undefined,
+        mcp_server_url: targetMode === "mcp" ? mcpFormState.endpoint : undefined,
         suites,
         thresholds,
         testdata_id: testdataId.trim() || undefined,
@@ -546,8 +527,6 @@ export default function App() {
         }),
         
         ...(targetMode === "mcp" && {
-          // Legacy field for backward compatibility
-          mcp_server_url: mcpServerUrl || undefined,
           mcp_endpoint: mcpFormState.endpoint,
           // Structured target configuration
           target: mcpFormState.endpoint ? {
@@ -581,10 +560,6 @@ export default function App() {
           } : undefined
         }),
         
-        ...(targetMode === "provider" && {
-          provider: providerFormState.vendor as Provider,
-          model: providerFormState.model
-        }),
         
         // Compare Mode configuration (shared across all modes)
         compare_with: compareEnabled ? {
@@ -757,9 +732,7 @@ export default function App() {
       ? apiFormState.serverUrl 
       : targetMode === "mcp" 
         ? (mcpFormState.endpoint && mcpFormState.toolName && (mcpFormState.outputType === "text" || (mcpFormState.outputType === "json" && mcpFormState.outputJsonPath)))
-        : targetMode === "provider"
-          ? (providerFormState.vendor && providerFormState.model)
-          : mcpServerUrl // legacy fallback
+        : false // no legacy fallback needed
   ) && suites.length > 0 && !busy && (testdataId.trim() === '' || testdataValid !== false);
 
   // Estimated test count calculation based on selected individual tests
@@ -885,20 +858,17 @@ export default function App() {
               <select 
                 className="input max-w-48" 
                 value={targetMode} 
-                onChange={e => handleModeSwitch(e.target.value as "api"|"mcp"|"provider")}
+                onChange={e => handleModeSwitch(e.target.value as "api"|"mcp")}
               >
                 <option value="">Select target mode...</option>
                 <option value="api">API (HTTP)</option>
                 <option value="mcp">MCP</option>
-                <option value="provider">Provider Preset</option>
               </select>
               <p className="text-xs text-slate-500 mt-1">
                 {targetMode === "api" 
                   ? "Direct HTTP API connection to your system."
                   : targetMode === "mcp"
                   ? "Model Context Protocol - structured tool-based communication."
-                  : targetMode === "provider"
-                  ? "Use a pre-configured vendor model (OpenAI, Anthropic, etc.)."
                   : "Choose how you want to connect to your system for testing."
                 }
               </p>
@@ -1556,18 +1526,7 @@ export default function App() {
                       </div>
                     )}
                   </div>
-                ) : (
-                  <div>
-                    <label className="label">Legacy MCP Server URL (deprecated)</label>
-                    <input 
-                      className="input max-w-lg" 
-                      placeholder="Enter your MCP server endpoint (legacy mode)" 
-                      value={mcpServerUrl} 
-                      onChange={e=>setMcpServerUrl(e.target.value)} 
-                    />
-                    <p className="text-xs text-slate-500 mt-1">Switch to MCP mode above for full configuration options</p>
-                  </div>
-                )}
+                ) : null}
                 
                 {/* Bearer Token - only show for API mode */}
                 {targetMode === "api" && (
@@ -2111,7 +2070,7 @@ export default function App() {
                 <Download size={16}/> Open HTML Report
               </button>
               <div className="ml-auto flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-                <Server size={16}/> Backend: {targetMode === "api" ? apiBaseUrl : mcpServerUrl}
+                <Server size={16}/> Backend: {targetMode === "api" ? apiBaseUrl : mcpFormState.endpoint}
               </div>
             </div>
             {run?.summary && (
