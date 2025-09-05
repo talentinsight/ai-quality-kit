@@ -25,13 +25,112 @@ export default function App() {
   useEffect(() => {
     const root = document.documentElement;
     if (dark) root.classList.add("dark"); else root.classList.remove("dark");
+    
+    // Add responsive layout styles
+    const style = document.createElement('style');
+    style.textContent = `
+      html, body { overflow-x: clip; }
+      .app-shell { max-width: 1440px; margin: 0 auto; padding: 0 16px; }
+      .main-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+      @media (min-width: 1200px) { .main-grid { grid-template-columns: minmax(0,1fr) minmax(0,1fr); } }
+      .panel { min-width: 0; overflow: hidden; }
+      .btn { max-width: 100%; text-wrap: balance; }
+      .tablist { max-width: 100%; overflow-x: auto; }
+    `;
+    document.head.appendChild(style);
+    
+    return () => {
+      document.head.removeChild(style);
+    };
   }, [dark]);
 
-  // Back-end configuration
-  const [apiBaseUrl, setApiBaseUrl] = useState("");
+  // Mode-specific form state
+  const [targetMode, setTargetMode] = useState<"api"|"mcp"|"provider"|"">("");
+  
+  // API mode state
+  const [apiFormState, setApiFormState] = useState({
+    serverUrl: "",
+    bearerToken: "",
+    retrievalJsonPath: "",
+    retrievalTopK: ""
+  });
+  
+  // MCP mode state
+  const [mcpFormState, setMcpFormState] = useState({
+    endpoint: "",
+    bearerToken: "",
+    customHeaders: "",
+    toolName: "",
+    questionKey: "",
+    systemKey: "",
+    contextsKey: "",
+    topKKey: "",
+    shape: "messages" as "messages" | "prompt",
+    staticArgs: "",
+    outputType: "json" as "text" | "json",
+    outputJsonPath: "",
+    contextsJsonPath: "",
+    requestIdJsonPath: "",
+    availableTools: [] as any[],
+    discovering: false
+  });
+  
+  // Provider mode state
+  const [providerFormState, setProviderFormState] = useState({
+    vendor: "",
+    model: "",
+    key: ""
+  });
+  
+  // Legacy fields for backward compatibility
   const [mcpServerUrl, setMcpServerUrl] = useState("");
-  const [token, setToken] = useState("");
-  const [targetMode, setTargetMode] = useState<"api"|"mcp"|"">("");
+  
+  // Backward compatibility - derive from new state structure
+  const apiBaseUrl = apiFormState.serverUrl;
+  const token = apiFormState.bearerToken;
+  const retrievalJsonPath = apiFormState.retrievalJsonPath;
+  const retrievalTopK = apiFormState.retrievalTopK;
+  
+  // MCP backward compatibility
+  const mcpEndpoint = mcpFormState.endpoint;
+  const mcpBearerToken = mcpFormState.bearerToken;
+  const mcpCustomHeaders = mcpFormState.customHeaders;
+  const mcpToolName = mcpFormState.toolName;
+  const mcpQuestionKey = mcpFormState.questionKey;
+  const mcpSystemKey = mcpFormState.systemKey;
+  const mcpContextsKey = mcpFormState.contextsKey;
+  const mcpTopKKey = mcpFormState.topKKey;
+  const mcpShape = mcpFormState.shape;
+  const mcpStaticArgs = mcpFormState.staticArgs;
+  const mcpOutputType = mcpFormState.outputType;
+  const mcpOutputJsonPath = mcpFormState.outputJsonPath;
+  const mcpContextsJsonPath = mcpFormState.contextsJsonPath;
+  const mcpRequestIdJsonPath = mcpFormState.requestIdJsonPath;
+  const mcpAvailableTools = mcpFormState.availableTools;
+  const mcpDiscovering = mcpFormState.discovering;
+  
+  // Setter functions for backward compatibility
+  const setApiBaseUrl = (value: string) => setApiFormState(prev => ({ ...prev, serverUrl: value }));
+  const setToken = (value: string) => setApiFormState(prev => ({ ...prev, bearerToken: value }));
+  const setRetrievalJsonPath = (value: string) => setApiFormState(prev => ({ ...prev, retrievalJsonPath: value }));
+  const setRetrievalTopK = (value: string) => setApiFormState(prev => ({ ...prev, retrievalTopK: value }));
+  
+  const setMcpEndpoint = (value: string) => setMcpFormState(prev => ({ ...prev, endpoint: value }));
+  const setMcpBearerToken = (value: string) => setMcpFormState(prev => ({ ...prev, bearerToken: value }));
+  const setMcpCustomHeaders = (value: string) => setMcpFormState(prev => ({ ...prev, customHeaders: value }));
+  const setMcpToolName = (value: string) => setMcpFormState(prev => ({ ...prev, toolName: value }));
+  const setMcpQuestionKey = (value: string) => setMcpFormState(prev => ({ ...prev, questionKey: value }));
+  const setMcpSystemKey = (value: string) => setMcpFormState(prev => ({ ...prev, systemKey: value }));
+  const setMcpContextsKey = (value: string) => setMcpFormState(prev => ({ ...prev, contextsKey: value }));
+  const setMcpTopKKey = (value: string) => setMcpFormState(prev => ({ ...prev, topKKey: value }));
+  const setMcpShape = (value: "messages" | "prompt") => setMcpFormState(prev => ({ ...prev, shape: value }));
+  const setMcpStaticArgs = (value: string) => setMcpFormState(prev => ({ ...prev, staticArgs: value }));
+  const setMcpOutputType = (value: "text" | "json") => setMcpFormState(prev => ({ ...prev, outputType: value }));
+  const setMcpOutputJsonPath = (value: string) => setMcpFormState(prev => ({ ...prev, outputJsonPath: value }));
+  const setMcpContextsJsonPath = (value: string) => setMcpFormState(prev => ({ ...prev, contextsJsonPath: value }));
+  const setMcpRequestIdJsonPath = (value: string) => setMcpFormState(prev => ({ ...prev, requestIdJsonPath: value }));
+  const setMcpAvailableTools = (value: any[]) => setMcpFormState(prev => ({ ...prev, availableTools: value }));
+  const setMcpDiscovering = (value: boolean) => setMcpFormState(prev => ({ ...prev, discovering: value }));
   
   // LLM Model Type
   const [llmModelType, setLlmModelType] = useState<"rag"|"agent"|"tool"|"">("");
@@ -39,12 +138,10 @@ export default function App() {
   // Ground Truth availability
   const [hasGroundTruth, setHasGroundTruth] = useState<boolean>(false);
   
-  // RAG Advanced Options
-  const [retrievalJsonPath, setRetrievalJsonPath] = useState<string>("");
-  const [retrievalTopK, setRetrievalTopK] = useState<string>("");
+  // Run profile
   const [runProfile, setRunProfile] = useState<"smoke" | "full">("smoke");
   
-  // Compare Mode Options
+  // Compare Mode Options (shared across all modes)
   const [compareEnabled, setCompareEnabled] = useState<boolean>(false);
   const [compareAutoSelect, setCompareAutoSelect] = useState<boolean>(true);
   const [compareManualPreset, setCompareManualPreset] = useState<string>("");
@@ -58,9 +155,94 @@ export default function App() {
   // Sticky CTA state
   const [isDryRun, setIsDryRun] = useState<boolean>(false);
 
-  // Provider & model
+  // Provider & model (legacy)
   const [provider, setProvider] = useState<Provider|"">("");
   const [model, setModel] = useState("");
+  
+  // Mode switching helpers
+  const handleModeSwitch = (newMode: "api"|"mcp"|"provider") => {
+    if (newMode === targetMode) return;
+    
+    // Log warning if hidden fields have values (dev guard)
+    if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+      const hiddenValues = getHiddenFieldValues(targetMode);
+      if (hiddenValues.length > 0) {
+        console.warn('Hidden fields with values detected:', hiddenValues);
+      }
+    }
+    
+    setTargetMode(newMode);
+    
+    // Reset form focus and scroll to top
+    setTimeout(() => {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      const firstInput = document.querySelector(`[data-mode="${newMode}"] input:not([disabled])`);
+      if (firstInput instanceof HTMLInputElement) {
+        firstInput.focus();
+      }
+    }, 100);
+  };
+  
+  const getHiddenFieldValues = (currentMode: string) => {
+    const hiddenValues = [];
+    
+    if (currentMode !== 'api') {
+      if (apiFormState.serverUrl) hiddenValues.push('apiFormState.serverUrl');
+      if (apiFormState.bearerToken) hiddenValues.push('apiFormState.bearerToken');
+    }
+    
+    if (currentMode !== 'mcp') {
+      if (mcpFormState.endpoint) hiddenValues.push('mcpFormState.endpoint');
+      if (mcpFormState.bearerToken) hiddenValues.push('mcpFormState.bearerToken');
+    }
+    
+    if (currentMode !== 'provider') {
+      if (providerFormState.vendor) hiddenValues.push('providerFormState.vendor');
+      if (providerFormState.model) hiddenValues.push('providerFormState.model');
+    }
+    
+    return hiddenValues;
+  };
+  
+  const resetModeToDefaults = (mode: "api"|"mcp"|"provider") => {
+    switch (mode) {
+      case 'api':
+        setApiFormState({
+          serverUrl: "",
+          bearerToken: "",
+          retrievalJsonPath: "",
+          retrievalTopK: ""
+        });
+        break;
+      case 'mcp':
+        setMcpFormState({
+          endpoint: "",
+          bearerToken: "",
+          customHeaders: "",
+          toolName: "",
+          questionKey: "",
+          systemKey: "",
+          contextsKey: "",
+          topKKey: "",
+          shape: "messages",
+          staticArgs: "",
+          outputType: "json",
+          outputJsonPath: "",
+          contextsJsonPath: "",
+          requestIdJsonPath: "",
+          availableTools: [],
+          discovering: false
+        });
+        break;
+      case 'provider':
+        setProviderFormState({
+          vendor: "",
+          model: "",
+          key: ""
+        });
+        break;
+    }
+  };
 
   // Suites & thresholds
   const [suites, setSuites] = useState<TestSuite[]>([...DEFAULT_SUITES]);
@@ -337,21 +519,15 @@ export default function App() {
     console.log("🆔 UI: Generated temp run_id for cancel:", tempRunId);
     
     try {
+      // Build payload strictly from active mode state (payload hygiene)
       const payload: OrchestratorRequest = {
         target_mode: targetMode as "api"|"mcp",
-        api_base_url: targetMode === "api" ? apiBaseUrl : undefined,
-        api_bearer_token: targetMode === "api" ? token : undefined,
-        mcp_server_url: targetMode === "mcp" ? mcpServerUrl : undefined,
         suites,
         thresholds,
         testdata_id: testdataId.trim() || undefined,
-        use_expanded: true,  // Enable expanded dataset by default
-        use_ragas: useGroundTruth,  // Enable Ragas evaluation when ground truth is selected
-        run_id: tempRunId,  // Send our generated run_id for cancel
-        
-        // Phase-RAG extensions
-        server_url: targetMode === "api" ? apiBaseUrl : undefined,
-        mcp_endpoint: targetMode === "mcp" ? mcpServerUrl : undefined,
+        use_expanded: true,
+        use_ragas: useGroundTruth,
+        run_id: tempRunId,
         llm_option: llmModelType || "rag",
         ground_truth: hasGroundTruth ? "available" : "not_available",
         determinism: {
@@ -359,18 +535,62 @@ export default function App() {
           top_p: 1.0,
           seed: 42
         },
-        
-        // Retrieval metrics
-        retrieval: retrievalJsonPath ? {
-          contexts_jsonpath: retrievalJsonPath,
-          top_k: retrievalTopK ? parseInt(retrievalTopK) : undefined,
-          note: "UI configured retrieval metrics"
-        } : undefined,
-        
-        // Run profile
         profile: runProfile,
         
-        // Compare Mode configuration
+        // Mode-specific configuration (only include active mode fields)
+        ...(targetMode === "api" && {
+          api_base_url: apiFormState.serverUrl,
+          api_bearer_token: apiFormState.bearerToken || undefined,
+          server_url: apiFormState.serverUrl,
+          retrieval: apiFormState.retrievalJsonPath ? {
+            contexts_jsonpath: apiFormState.retrievalJsonPath,
+            top_k: apiFormState.retrievalTopK ? parseInt(apiFormState.retrievalTopK) : undefined,
+          note: "UI configured retrieval metrics"
+          } : undefined
+        }),
+        
+        ...(targetMode === "mcp" && {
+          // Legacy field for backward compatibility
+          mcp_server_url: mcpServerUrl || undefined,
+          mcp_endpoint: mcpFormState.endpoint,
+          // Structured target configuration
+          target: mcpFormState.endpoint ? {
+            mode: "mcp" as const,
+            mcp: {
+              endpoint: mcpFormState.endpoint,
+              auth: {
+                ...(mcpFormState.bearerToken ? { bearer: mcpFormState.bearerToken } : {}),
+                ...(mcpFormState.customHeaders ? { headers: JSON.parse(mcpFormState.customHeaders) } : {})
+              },
+              tool: {
+                name: mcpFormState.toolName,
+                shape: mcpFormState.shape,
+                arg_mapping: {
+                  ...(mcpFormState.questionKey ? { question_key: mcpFormState.questionKey } : {}),
+                  ...(mcpFormState.systemKey ? { system_key: mcpFormState.systemKey } : {}),
+                  ...(mcpFormState.contextsKey ? { contexts_key: mcpFormState.contextsKey } : {}),
+                  ...(mcpFormState.topKKey ? { topk_key: mcpFormState.topKKey } : {})
+                },
+                ...(mcpFormState.staticArgs ? { static_args: JSON.parse(mcpFormState.staticArgs) } : {})
+              },
+              extraction: {
+                output_type: mcpFormState.outputType,
+                ...(mcpFormState.outputType === "json" && mcpFormState.outputJsonPath ? { output_jsonpath: mcpFormState.outputJsonPath } : {}),
+                ...(mcpFormState.contextsJsonPath ? { contexts_jsonpath: mcpFormState.contextsJsonPath } : {}),
+                ...(mcpFormState.requestIdJsonPath ? { request_id_jsonpath: mcpFormState.requestIdJsonPath } : {})
+              },
+              timeouts: { connect_ms: 5000, call_ms: 30000 },
+              retry: { retries: 2, backoff_ms: 250 }
+            }
+          } : undefined
+        }),
+        
+        ...(targetMode === "provider" && {
+          provider: providerFormState.vendor as Provider,
+          model: providerFormState.model
+        }),
+        
+        // Compare Mode configuration (shared across all modes)
         compare_with: compareEnabled ? {
           enabled: true,
           baseline: compareAutoSelect ? undefined : {
@@ -394,7 +614,7 @@ export default function App() {
             heading: "Context:",
             joiner: "\n- "
           },
-          target_display_name: `${provider}:${model} vs baseline`
+          target_display_name: `${targetMode} vs baseline`
         } : undefined,
         
         options: { 
@@ -536,7 +756,15 @@ export default function App() {
     }
   }, [testdataId]);
 
-  const canRun = !!(targetMode === "api" ? apiBaseUrl : mcpServerUrl) && suites.length > 0 && !busy && (testdataId.trim() === '' || testdataValid !== false);
+  const canRun = !!(
+    targetMode === "api" 
+      ? apiFormState.serverUrl 
+      : targetMode === "mcp" 
+        ? (mcpFormState.endpoint && mcpFormState.toolName && (mcpFormState.outputType === "text" || (mcpFormState.outputType === "json" && mcpFormState.outputJsonPath)))
+        : targetMode === "provider"
+          ? (providerFormState.vendor && providerFormState.model)
+          : mcpServerUrl // legacy fallback
+  ) && suites.length > 0 && !busy && (testdataId.trim() === '' || testdataValid !== false);
 
   // Estimated test count calculation based on selected individual tests
   const estimatedTests = useMemo(() => {
@@ -616,10 +844,10 @@ export default function App() {
   }
 
   return (
-    <div className={clsx("min-h-full")}>
+    <div className={clsx("min-h-full overflow-x-clip", dark ? "dark bg-slate-900" : "bg-gray-50")}>
       {/* Top bar */}
       <div className="sticky top-0 z-10 backdrop-blur border-b border-slate-200/80 dark:border-slate-700/70 bg-white/70 dark:bg-slate-900/60">
-        <div className="mx-auto max-w-6xl px-4 py-3 flex items-center gap-3">
+        <div className="app-shell max-w-7xl mx-auto px-4 py-3 flex items-center gap-3 min-w-0">
           <span className="badge"><Rocket size={16}/> LLM Configured Testing QA</span>
           <span className="text-sm text-slate-500 dark:text-slate-400">Privacy: No user data persisted by default</span>
           <div className="ml-auto flex items-center gap-2">
@@ -670,23 +898,30 @@ export default function App() {
       {activeTab === 'classic' ? (
         <div className="mx-auto max-w-6xl px-4 py-6 space-y-6">
           {/* Main Layout: Control Panel + Test Data side by side */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="main-grid grid grid-cols-1 xl:grid-cols-2 gap-6">
             {/* Control panel - Left side */}
-            <div className="card p-5">
+            <div className="panel card p-5 min-w-0 overflow-hidden">
               <div className="space-y-4">
             {/* Target Mode Selection */}
             <div>
               <label className="label">Target Mode</label>
-              <select className="input max-w-48" value={targetMode} onChange={e=>setTargetMode(e.target.value as any)}>
+              <select 
+                className="input max-w-48" 
+                value={targetMode} 
+                onChange={e => handleModeSwitch(e.target.value as "api"|"mcp"|"provider")}
+              >
                 <option value="">Select target mode...</option>
                 <option value="api">API (HTTP)</option>
                 <option value="mcp">MCP</option>
+                <option value="provider">Provider Preset</option>
               </select>
               <p className="text-xs text-slate-500 mt-1">
                 {targetMode === "api" 
-                  ? "Adapter selection is required; it defines the HTTP schema used to call your LLM."
+                  ? "Direct HTTP API connection to your system."
                   : targetMode === "mcp"
-                  ? "MCP uses a standard protocol; no adapter/model selection is needed."
+                  ? "Model Context Protocol - structured tool-based communication."
+                  : targetMode === "provider"
+                  ? "Use a pre-configured vendor model (OpenAI, Anthropic, etc.)."
                   : "Choose how you want to connect to your system for testing."
                 }
               </p>
@@ -898,7 +1133,7 @@ export default function App() {
                         <label htmlFor="compare-enabled" className="text-sm text-slate-700 dark:text-slate-300">
                           Enable Compare with Vendor Model
                         </label>
-                      </div>
+                  </div>
 
                       {compareEnabled && (
                         <div className="space-y-3 pl-4 border-l-2 border-blue-200 dark:border-blue-800">
@@ -1004,51 +1239,366 @@ export default function App() {
 
             {/* Dynamic Connection Settings - Appears after Target Mode selection */}
             {targetMode && (
-              <div className="animate-slideDown space-y-4">
+              <div className="animate-slideDown space-y-4" data-mode={targetMode}>
                 {targetMode === "api" ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-medium text-slate-900 dark:text-slate-100">API Configuration</h3>
+                      <button 
+                        type="button" 
+                        onClick={() => resetModeToDefaults('api')}
+                        className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                      >
+                        Reset to defaults
+                      </button>
+                    </div>
+                    
                   <div>
-                    <label className="label">Server URL</label>
+                      <label className="label">Server URL *</label>
                     <input 
                       className="input max-w-lg" 
-                      placeholder="Enter your API endpoint (e.g., https://your-chatbot.com/api/chat)" 
-                      value={apiBaseUrl} 
-                      onChange={e=>{
-                        const newUrl = e.target.value;
-                        setApiBaseUrl(newUrl);
-                        
-                        // Auto-infer provider from URL if provider is not set
-                        if (targetMode === "api" && !provider) {
-                          import('../lib/ui').then(({ inferAdapterFromUrl }) => {
-                            const inferred = inferAdapterFromUrl(newUrl);
-                            if (inferred) {
-                              setProvider(inferred);
-                              // Auto-update model based on inferred provider
-                              if (inferred === "openai") setModel("gpt-4");
-                              else if (inferred === "anthropic") setModel("claude-3-5-sonnet");
-                              else if (inferred === "gemini") setModel("gemini-1.5-pro");
+                        placeholder="https://your-api.com/chat" 
+                        value={apiFormState.serverUrl} 
+                        onChange={e => setApiFormState(prev => ({ ...prev, serverUrl: e.target.value }))}
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="label">Bearer Token</label>
+                      <input 
+                        className="input max-w-xs" 
+                        type="password" 
+                        placeholder="Optional: your-auth-token" 
+                        value={apiFormState.bearerToken} 
+                        onChange={e => setApiFormState(prev => ({ ...prev, bearerToken: e.target.value }))}
+                      />
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="label">Retrieval JSONPath</label>
+                        <input 
+                          className="input" 
+                          placeholder="$.contexts[*].text" 
+                          value={apiFormState.retrievalJsonPath} 
+                          onChange={e => setApiFormState(prev => ({ ...prev, retrievalJsonPath: e.target.value }))}
+                        />
+                        <p className="text-xs text-slate-500 mt-1">Path to extract retrieved contexts</p>
+                      </div>
+                      <div>
+                        <label className="label">Top-K</label>
+                        <input 
+                          className="input" 
+                          type="number" 
+                          placeholder="5" 
+                          value={apiFormState.retrievalTopK} 
+                          onChange={e => setApiFormState(prev => ({ ...prev, retrievalTopK: e.target.value }))}
+                        />
+                        <p className="text-xs text-slate-500 mt-1">Number of contexts to retrieve</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : targetMode === "mcp" ? (
+                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-medium text-blue-900 dark:text-blue-100">MCP (Model Context Protocol) Configuration</h3>
+                      <button 
+                        type="button" 
+                        onClick={() => resetModeToDefaults('mcp')}
+                        className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200"
+                      >
+                        Reset to defaults
+                      </button>
+                    </div>
+                    
+                    {/* MCP Endpoint */}
+                    <div className="space-y-2">
+                      <label className="label">Endpoint *</label>
+                      <input 
+                        className="input max-w-lg" 
+                        placeholder="wss://your-mcp-server.com/mcp" 
+                        value={mcpFormState.endpoint} 
+                        onChange={e => setMcpFormState(prev => ({ ...prev, endpoint: e.target.value }))}
+                      />
+                      <p className="text-xs text-slate-500">WebSocket endpoint for your MCP server</p>
+                    </div>
+
+                    {/* Authentication */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                      <div>
+                        <label className="label">Bearer Token</label>
+                        <input 
+                          className="input" 
+                          type="password" 
+                          placeholder="Optional bearer token" 
+                          value={mcpBearerToken} 
+                          onChange={e=>setMcpBearerToken(e.target.value)} 
+                        />
+                      </div>
+                      <div>
+                        <label className="label">Custom Headers JSON</label>
+                        <input 
+                          className="input" 
+                          placeholder='{"X-Org": "your-org"}' 
+                          value={mcpCustomHeaders} 
+                          onChange={e=>setMcpCustomHeaders(e.target.value)} 
+                        />
+                        <p className="text-xs text-slate-500 mt-1">JSON object with custom headers</p>
+                      </div>
+                    </div>
+
+                    {/* Tool Configuration */}
+                    <div className="mt-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <label className="label">Tool Configuration</label>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-ghost"
+                          disabled={!mcpEndpoint || mcpDiscovering}
+                          onClick={async () => {
+                            if (!mcpEndpoint) return;
+                            setMcpDiscovering(true);
+                            try {
+                              // Call the real MCP tools discovery API
+                              const response = await fetch('/mcp/tools', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ 
+                                  endpoint: mcpEndpoint, 
+                                  auth: mcpBearerToken ? { bearer: mcpBearerToken } : undefined 
+                                })
+                              });
+                              
+                              if (!response.ok) {
+                                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                              }
+                              
+                              const result = await response.json();
+                              if (result.error) {
+                                throw new Error(result.error);
+                              }
+                              
+                              setMcpAvailableTools(result.tools || []);
+                            } catch (error) {
+                              console.error('Tool discovery failed:', error);
+                            } finally {
+                              setMcpDiscovering(false);
                             }
-                          });
-                        }
-                      }} 
-                    />
+                          }}
+                        >
+                          {mcpDiscovering ? "Discovering..." : "Discover Tools"}
+                        </button>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="label">Tool Name *</label>
+                          {mcpAvailableTools.length > 0 ? (
+                            <select 
+                              className="input" 
+                              value={mcpToolName} 
+                              onChange={e=>setMcpToolName(e.target.value)}
+                            >
+                              <option value="">Select tool...</option>
+                                                              {mcpAvailableTools.map((tool: any) => (
+                                  <option key={tool.name} value={tool.name}>
+                                    {tool.name} - {tool.description}
+                                  </option>
+                                ))}
+                            </select>
+                          ) : (
+                            <input 
+                              className="input" 
+                              placeholder="generate" 
+                              value={mcpToolName} 
+                              onChange={e=>setMcpToolName(e.target.value)} 
+                            />
+                          )}
+                        </div>
+                  <div>
+                          <label className="label">Argument Shape *</label>
+                          <select 
+                            className="input" 
+                            value={mcpShape} 
+                            onChange={e=>setMcpShape(e.target.value as "messages" | "prompt")}
+                          >
+                            <option value="messages">Messages (structured)</option>
+                            <option value="prompt">Prompt (single string)</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Argument Mapping */}
+                    <div className="mt-4">
+                      <label className="label">Argument Mapping</label>
+                      <p className="text-xs text-slate-500 mb-2">Map message components to tool arguments (leave empty if not needed)</p>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div>
+                          <label className="text-xs text-slate-600 dark:text-slate-400">Question Key</label>
+                          <input 
+                            className="input input-sm" 
+                            placeholder="question | query | prompt | input"
+                            value={mcpQuestionKey} 
+                            onChange={e=>setMcpQuestionKey(e.target.value)} 
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-600 dark:text-slate-400">System Key</label>
+                          <input 
+                            className="input input-sm" 
+                            placeholder="system | system_prompt"
+                            value={mcpSystemKey} 
+                            onChange={e=>setMcpSystemKey(e.target.value)} 
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-600 dark:text-slate-400">Contexts Key</label>
+                          <input 
+                            className="input input-sm" 
+                            placeholder="contexts | documents | passages | evidence"
+                            value={mcpContextsKey} 
+                            onChange={e=>setMcpContextsKey(e.target.value)} 
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-600 dark:text-slate-400">Top-K Key</label>
+                          <input 
+                            className="input input-sm" 
+                            placeholder="top_k | k | limit"
+                            value={mcpTopKKey} 
+                            onChange={e=>setMcpTopKKey(e.target.value)} 
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Static Arguments */}
+                    <div className="mt-4">
+                      <label className="label">Static Arguments</label>
+                    <input 
+                      className="input max-w-lg" 
+                        placeholder='{"format": "text", "domain": "support"}' 
+                        value={mcpStaticArgs} 
+                        onChange={e=>setMcpStaticArgs(e.target.value)} 
+                      />
+                      <p className="text-xs text-slate-500 mt-1">JSON object with constant arguments (optional)</p>
+                    </div>
+
+                    {/* Response Extraction */}
+                    <div className="mt-4">
+                      <label className="label">Response Extraction</label>
+                      
+                      {/* Output Type Toggle */}
+                      <div className="flex items-center gap-4 mb-3">
+                        <label className="text-sm text-slate-600 dark:text-slate-400">Output Type:</label>
+                        <div className="flex items-center gap-2">
+                          <input 
+                            type="radio" 
+                            id="output-text" 
+                            name="output-type" 
+                            value="text" 
+                            checked={mcpOutputType === "text"}
+                            onChange={e=>setMcpOutputType(e.target.value as "text" | "json")}
+                            className="radio"
+                          />
+                          <label htmlFor="output-text" className="text-sm">Text</label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input 
+                            type="radio" 
+                            id="output-json" 
+                            name="output-type" 
+                            value="json" 
+                            checked={mcpOutputType === "json"}
+                            onChange={e=>setMcpOutputType(e.target.value as "text" | "json")}
+                            className="radio"
+                          />
+                          <label htmlFor="output-json" className="text-sm">JSON</label>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {mcpOutputType === "json" && (
+                          <div>
+                            <label className="text-xs text-slate-600 dark:text-slate-400">Output JSONPath *</label>
+                            <input 
+                              className="input" 
+                              placeholder="$.answer"
+                              value={mcpOutputJsonPath} 
+                              onChange={e=>setMcpOutputJsonPath(e.target.value)} 
+                            />
+                            <p className="text-xs text-slate-500 mt-1">Path to extract answer text</p>
+                          </div>
+                        )}
+                        <div>
+                          <label className="text-xs text-slate-600 dark:text-slate-400">Contexts JSONPath</label>
+                          <input 
+                            className="input" 
+                            placeholder="$.contexts[*].text"
+                            value={mcpContextsJsonPath} 
+                            onChange={e=>setMcpContextsJsonPath(e.target.value)} 
+                          />
+                          <p className="text-xs text-slate-500 mt-1">Path to extract retrieved contexts</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-600 dark:text-slate-400">Request ID JSONPath</label>
+                          <input 
+                            className="input" 
+                            placeholder="$.request_id"
+                            value={mcpRequestIdJsonPath} 
+                            onChange={e=>setMcpRequestIdJsonPath(e.target.value)} 
+                          />
+                          <p className="text-xs text-slate-500 mt-1">Path for trace follow-up</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Validation Warnings */}
+                    {mcpEndpoint && !mcpToolName && (
+                      <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded p-2 mt-4">
+                        <p className="text-xs text-yellow-800 dark:text-yellow-200">
+                          <strong>Warning:</strong> Tool name is required for MCP mode.
+                        </p>
+                      </div>
+                    )}
+                    
+                    {mcpOutputType === "json" && !mcpOutputJsonPath && (
+                      <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded p-2 mt-4">
+                        <p className="text-xs text-yellow-800 dark:text-yellow-200">
+                          <strong>Warning:</strong> Output JSONPath is required when Output Type is JSON.
+                        </p>
+                      </div>
+                    )}
+                    
+                    {compareEnabled && !mcpContextsJsonPath && (
+                      <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded p-2 mt-4">
+                        <p className="text-xs text-yellow-800 dark:text-yellow-200">
+                          <strong>Warning:</strong> No contexts JSONPath configured; comparison may skip all items.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div>
-                    <label className="label">MCP Server URL</label>
+                    <label className="label">Legacy MCP Server URL (deprecated)</label>
                     <input 
                       className="input max-w-lg" 
-                      placeholder="Enter your MCP server endpoint (e.g., https://your-mcp-server.com:3000)" 
+                      placeholder="Enter your MCP server endpoint (legacy mode)" 
                       value={mcpServerUrl} 
                       onChange={e=>setMcpServerUrl(e.target.value)} 
                     />
+                    <p className="text-xs text-slate-500 mt-1">Switch to MCP mode above for full configuration options</p>
                   </div>
                 )}
                 
-                {/* Bearer Token */}
+                {/* Bearer Token - only show for API mode */}
+                {targetMode === "api" && (
                 <div>
                   <label className="label">Bearer Token (optional)</label>
                   <input className="input max-w-xs" type="password" placeholder="Optional: your-auth-token" value={token} onChange={e=>setToken(e.target.value)} />
                 </div>
+                )}
 
                 {/* Test Data ID */}
                 <div>
@@ -1189,7 +1739,7 @@ export default function App() {
             </div>
 
             {/* Test Data Panel - Right side */}
-            <div className="card p-5">
+            <div className="panel card p-5 min-w-0 overflow-hidden">
               <div className="flex items-center gap-3 mb-4">
                 <span className="text-lg font-semibold">Test Data</span>
                 <span className="text-sm text-slate-500 dark:text-slate-400">

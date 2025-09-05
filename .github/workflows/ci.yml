@@ -35,7 +35,7 @@ jobs:
       env:
         AUTH_MODE: none
         RL_ENABLED: false
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY != '' && secrets.OPENAI_API_KEY || 'sk-test-mock-key-for-ci' }}
+        OPENAI_API_KEY: ${{ vars.OPENAI_API_KEY || 'sk-test-mock-key-for-ci' }}
         PROVIDER: mock
     
     - name: Upload coverage to Codecov

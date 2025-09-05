@@ -90,6 +90,14 @@ def _create_summary_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
         "retrieval_top_k", "retrieval_note", "profile", "concurrency"
     ]
     
+    # Add MCP-specific headers if using MCP mode
+    run_meta = data.get("run", {})
+    if run_meta.get("client_kind") == "mcp":
+        headers.extend([
+            "client_kind", "endpoint_host", "tool_name", "arg_shape", 
+            "output_jsonpath", "contexts_jsonpath"
+        ])
+    
     # Add resilience headers if resilience data exists
     if data.get("resilience") and data["resilience"].get("summary"):
         headers.extend([
@@ -181,6 +189,18 @@ def _create_summary_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
         run_meta.get("profile", ""),
         run_meta.get("concurrency", "")
     ]
+    
+    # Add MCP-specific data if using MCP mode
+    if run_meta.get("client_kind") == "mcp":
+        extraction_config = run_meta.get("extraction_config", {})
+        row_data.extend([
+            run_meta.get("client_kind", ""),
+            run_meta.get("endpoint_host", ""),
+            run_meta.get("tool_name", ""),
+            run_meta.get("arg_shape", ""),
+            extraction_config.get("output_jsonpath", ""),
+            extraction_config.get("contexts_jsonpath", "")
+        ])
     
     # Add resilience data if available
     if data.get("resilience") and data["resilience"].get("summary"):

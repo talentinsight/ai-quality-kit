@@ -127,26 +127,53 @@ class RAGRunner:
     async def _evaluate_single_qa(self, qa: Dict[str, Any], passages: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Evaluate a single QA pair."""
         try:
-            # Retrieve relevant passages (simple implementation)
-            retrieved_contexts = self._retrieve_contexts(qa["question"], passages)
+            # Check if client is MCP-based
+            from .mcp_client import MCPClientAdapter
+            is_mcp_client = isinstance(self.client, MCPClientAdapter)
             
-            # Generate answer using client
-            messages = [
-                {"role": "system", "content": "You are a helpful assistant. Answer the question based on the provided context."},
-                {"role": "user", "content": f"Context: {' '.join(retrieved_contexts)}\n\nQuestion: {qa['question']}"}
-            ]
-            
-            response = await self.client.generate(messages)
-            
-            return {
-                "qid": qa["qid"],
-                "question": qa["question"],
-                "generated_answer": response["text"],
-                "expected_answer": qa.get("expected_answer", ""),
-                "retrieved_contexts": retrieved_contexts,
-                "prompt_tokens": response.get("prompt_tokens", 0),
-                "completion_tokens": response.get("completion_tokens", 0)
-            }
+            if is_mcp_client:
+                # For MCP clients, let the client handle context retrieval and generation
+                messages = [
+                    {"role": "system", "content": "You are a helpful assistant. Answer the question based on the provided context."},
+                    {"role": "user", "content": qa["question"]}
+                ]
+                
+                response = await self.client.generate(messages)
+                
+                # Extract contexts from MCP response if available
+                retrieved_contexts = response.get("contexts", [])
+                
+                return {
+                    "qid": qa["qid"],
+                    "question": qa["question"],
+                    "generated_answer": response["text"],
+                    "expected_answer": qa.get("expected_answer", ""),
+                    "retrieved_contexts": retrieved_contexts,
+                    "prompt_tokens": response.get("prompt_tokens", 0),
+                    "completion_tokens": response.get("completion_tokens", 0),
+                    "mcp_raw_result": response.get("raw_result")  # Store raw MCP result for debugging
+                }
+            else:
+                # Traditional RAG flow with local context retrieval
+                retrieved_contexts = self._retrieve_contexts(qa["question"], passages)
+                
+                # Generate answer using client
+                messages = [
+                    {"role": "system", "content": "You are a helpful assistant. Answer the question based on the provided context."},
+                    {"role": "user", "content": f"Context: {' '.join(retrieved_contexts)}\n\nQuestion: {qa['question']}"}
+                ]
+                
+                response = await self.client.generate(messages)
+                
+                return {
+                    "qid": qa["qid"],
+                    "question": qa["question"],
+                    "generated_answer": response["text"],
+                    "expected_answer": qa.get("expected_answer", ""),
+                    "retrieved_contexts": retrieved_contexts,
+                    "prompt_tokens": response.get("prompt_tokens", 0),
+                    "completion_tokens": response.get("completion_tokens", 0)
+                }
             
         except Exception as e:
             logger.error(f"Error evaluating QA {qa.get('qid', 'unknown')}: {e}")

@@ -344,6 +344,55 @@ def setup_routers():
         app.include_router(a2a_router)
 
 
+# MCP Tools Discovery Models
+class MCPToolsRequest(BaseModel):
+    """Request model for MCP tools discovery."""
+    endpoint: str
+    auth: Optional[Dict[str, Any]] = None
+
+class MCPToolsResponse(BaseModel):
+    """Response model for MCP tools discovery."""
+    tools: List[Dict[str, Any]]
+    error: Optional[str] = None
+
+@app.post("/mcp/tools", response_model=MCPToolsResponse)
+async def discover_mcp_tools(
+    request: MCPToolsRequest,
+    principal: Optional[Principal] = Depends(require_user_or_admin())
+) -> MCPToolsResponse:
+    """Discover available tools from an MCP server."""
+    try:
+        # Import MCP client
+        from apps.orchestrator.mcp_client import MCPClient
+        
+        # Create MCP client
+        mcp_client = MCPClient(
+            endpoint=request.endpoint,
+            auth=request.auth,
+            timeouts={"connect_ms": 5000, "call_ms": 10000}
+        )
+        
+        # Connect and list tools
+        await mcp_client.connect()
+        tools = await mcp_client.list_tools()
+        await mcp_client.close()
+        
+        # Convert to dict format
+        tools_data = []
+        for tool in tools:
+            tools_data.append({
+                "name": tool.name,
+                "description": tool.description,
+                "inputSchema": tool.input_schema,
+                "outputSchema": tool.output_schema
+            })
+        
+        return MCPToolsResponse(tools=tools_data)
+        
+    except Exception as e:
+        logger.error(f"MCP tools discovery failed: {e}")
+        return MCPToolsResponse(tools=[], error=str(e))
+
 # Setup routers on startup
 @app.on_event("startup")
 async def setup_additional_routers():

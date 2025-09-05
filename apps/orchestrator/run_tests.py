@@ -340,6 +340,9 @@ class OrchestratorRequest(BaseModel):
     
     # Compare Mode extension (additive, non-breaking)
     compare_with: Optional[Dict[str, Any]] = None  # baseline auto-select and comparison config
+    
+    # MCP Target Mode extension (additive, non-breaking)
+    target: Optional[Dict[str, Any]] = None  # structured target configuration with MCP support
 
 
 class OrchestratorResult(BaseModel):
@@ -395,6 +398,9 @@ class TestRunner:
     
     def __init__(self, request: OrchestratorRequest):
         self.request = request
+        
+        # Validate MCP configuration if target mode is MCP
+        self._validate_mcp_config()
         
         # Initialize evaluator factory for professional evaluators
         from apps.orchestrator.evaluators.evaluator_factory import EvaluatorFactory
@@ -457,6 +463,48 @@ class TestRunner:
         self.dataset_source = "uploaded" if (request.testdata_id and (self.testdata_bundle or self.intake_bundle_dir)) else ("expanded" if request.use_expanded else "golden")
         self.dataset_version = self._determine_dataset_version(request)
         self.estimated_tests = self._estimate_test_count(request)
+    
+    def _validate_mcp_config(self):
+        """Validate MCP configuration if target mode is MCP."""
+        if (self.request.target_mode == "mcp" and 
+            self.request.target and 
+            self.request.target.get("mode") == "mcp"):
+            
+            mcp_config = self.request.target.get("mcp", {})
+            
+            # Validate required fields
+            if not mcp_config.get("endpoint"):
+                raise ValueError("MCP endpoint is required when target mode is MCP")
+            
+            tool_config = mcp_config.get("tool", {})
+            if not tool_config.get("name"):
+                raise ValueError("MCP tool name is required when target mode is MCP")
+            
+            if not tool_config.get("shape"):
+                raise ValueError("MCP tool shape is required when target mode is MCP")
+            
+            extraction_config = mcp_config.get("extraction", {})
+            output_type = extraction_config.get("output_type", "json")
+            
+            if output_type == "json" and not extraction_config.get("output_jsonpath"):
+                raise ValueError("Output JSONPath is required when MCP output type is JSON")
+            
+            # Validate JSON fields
+            try:
+                if mcp_config.get("auth", {}).get("headers"):
+                    import json
+                    if isinstance(mcp_config["auth"]["headers"], str):
+                        json.loads(mcp_config["auth"]["headers"])
+            except json.JSONDecodeError:
+                raise ValueError("MCP auth headers must be valid JSON")
+            
+            try:
+                if tool_config.get("static_args"):
+                    import json
+                    if isinstance(tool_config["static_args"], str):
+                        json.loads(tool_config["static_args"])
+            except json.JSONDecodeError:
+                raise ValueError("MCP static args must be valid JSON")
         
     def load_suites(self) -> Dict[str, List[Dict[str, Any]]]:
         """Load test items for each requested suite."""
@@ -2691,10 +2739,10 @@ class TestRunner:
             compare_config = self.request.compare_with
             if compare_config and compare_config.get("enabled", False):
                 from .compare_rag_runner import CompareRAGRunner
-                runner = CompareRAGRunner(client, manifest, thresholds, compare_config)
+                runner = CompareRAGRunner(client, manifest, thresholds, compare_config)  # type: ignore
                 self.capture_log("INFO", "orchestrator", "Compare Mode enabled for RAG evaluation", event="compare_enabled")
             else:
-                runner = RAGRunner(client, manifest, thresholds)
+                runner = RAGRunner(client, manifest, thresholds)  # type: ignore
             
             # Run evaluation
             gt_mode = self.request.ground_truth or "not_available"
@@ -3261,6 +3309,22 @@ class TestRunner:
             "elapsed_ms": getattr(self, 'rag_summary_data', {}).get("elapsed_ms", 0)
         }
         
+        # Add MCP-specific metadata if using MCP mode
+        if self.request.target_mode == "mcp" and self.request.target and self.request.target.get("mcp"):
+            mcp_config = self.request.target["mcp"]
+            run_meta.update({
+                "client_kind": "mcp",
+                "endpoint_host": self._extract_host_from_url(mcp_config.get("endpoint", "")),
+                "tool_name": mcp_config.get("tool", {}).get("name"),
+                "arg_shape": mcp_config.get("tool", {}).get("shape"),
+                "extraction_config": {
+                    "output_jsonpath": mcp_config.get("extraction", {}).get("output_jsonpath"),
+                    "contexts_jsonpath": mcp_config.get("extraction", {}).get("contexts_jsonpath")
+                }
+            })
+        else:
+            run_meta["client_kind"] = "api"
+        
         # Convert detailed rows to dict format for reporters
         detailed_rows = []
         for row in self.detailed_rows:
@@ -3717,6 +3781,15 @@ class TestRunner:
         # Add any additional fields
         log_entry.update(kwargs)
         self.captured_logs.append(log_entry)
+    
+    def _extract_host_from_url(self, url: str) -> str:
+        """Extract hostname from URL for reporting."""
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(url)
+            return parsed.netloc or parsed.hostname or url
+        except Exception:
+            return url
     
     def _publish_to_powerbi(self, summary: Dict[str, Any], counts: Dict[str, int], artifacts: Dict[str, str]) -> None:
         """Publish test results to Power BI if enabled."""

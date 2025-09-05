@@ -2,7 +2,10 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, List, Any, Optional, Union, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .mcp_client import MCPClientAdapter
 from dataclasses import dataclass
 
 from llm.provider import get_chat_for
@@ -119,7 +122,7 @@ class McpClient(BaseClient):
         }
 
 
-def make_client(request) -> Union[ApiClient, McpClient]:
+def make_client(request) -> Union[ApiClient, McpClient, 'MCPClientAdapter']:
     """
     Create appropriate client based on request configuration.
     
@@ -154,39 +157,64 @@ def make_client(request) -> Union[ApiClient, McpClient]:
         )
     
     elif request.target_mode == "mcp":
-        # Use mcp_endpoint or mcp_server_url for MCP mode
-        mcp_endpoint = request.mcp_endpoint or request.mcp_server_url
-        if not mcp_endpoint:
-            raise ValueError("MCP endpoint is required for MCP mode")
-        
-        return McpClient(
-            provider=request.provider,
-            model=request.model,
-            mcp_endpoint=mcp_endpoint,
-            determinism=determinism
-        )
+        # Check for structured target configuration first, then fallback to legacy fields
+        if request.target and request.target.get("mode") == "mcp" and request.target.get("mcp"):
+            mcp_config = request.target["mcp"]
+            endpoint = mcp_config["endpoint"]
+            
+            # Import MCP client classes
+            from .mcp_client import MCPClient, MCPClientAdapter
+            
+            # Create MCP client
+            mcp_client = MCPClient(
+                endpoint=endpoint,
+                auth=mcp_config.get("auth"),
+                timeouts=mcp_config.get("timeouts"),
+                retry=mcp_config.get("retry")
+            )
+            
+            # Create adapter with tool and extraction config
+            return MCPClientAdapter(
+                mcp_client=mcp_client,
+                model=request.model,
+                tool_config=mcp_config["tool"],
+                extraction_config=mcp_config["extraction"]
+            )
+        else:
+            # Fallback to legacy MCP configuration
+            mcp_endpoint = request.mcp_endpoint or request.mcp_server_url
+            if not mcp_endpoint:
+                raise ValueError("MCP endpoint is required for MCP mode")
+            
+            return McpClient(
+                provider=request.provider,
+                model=request.model,
+                mcp_endpoint=mcp_endpoint,
+                determinism=determinism
+            )
     
     else:
         raise ValueError(f"Unsupported target_mode: {request.target_mode}")
 
 
-def make_baseline_client(preset: str, model: str, decoding_config: dict) -> ApiClient:
+def make_baseline_client(preset: str, model: str, decoding_config: dict, target_mode: str = "api") -> Union[BaseClient, 'MCPClientAdapter']:
     """
     Create a baseline client for Compare Mode with specific vendor/model configuration.
     
     Args:
-        preset: Vendor preset (e.g., "openai", "anthropic", "gemini")
+        preset: Vendor preset (e.g., "openai", "anthropic", "gemini", "mcp")
         model: Model name (e.g., "gpt-4o-mini", "claude-3-5-sonnet")
         decoding_config: Decoding parameters (temperature, top_p, max_tokens)
+        target_mode: Client type - "api" for vendor APIs, "mcp" for MCP servers
         
     Returns:
-        ApiClient instance configured for baseline comparison
+        BaseClient instance (ApiClient or MCPClientAdapter) configured for baseline comparison
         
     Raises:
         ValueError: If preset is not supported
     """
     # Validate supported presets
-    supported_presets = {'openai', 'anthropic', 'gemini', 'mock'}
+    supported_presets = {'openai', 'anthropic', 'gemini', 'mock', 'mcp'}
     if preset not in supported_presets:
         raise ValueError(f"Unsupported baseline preset: {preset}. Supported: {supported_presets}")
     
@@ -197,9 +225,45 @@ def make_baseline_client(preset: str, model: str, decoding_config: dict) -> ApiC
         seed=decoding_config.get('seed', 42)
     )
     
-    # Create API client (baseline always uses vendor presets, not custom endpoints)
-    return ApiClient(
-        provider=preset,
-        model=model,
-        determinism=determinism
-    )
+    # Create appropriate client based on target mode
+    if target_mode == "mcp" or preset == "mcp":
+        # For MCP baseline, use MCP client with deterministic settings
+        from .mcp_client import MCPClient, MCPClientAdapter
+        
+        # Create a baseline MCP client with default configuration
+        mcp_client = MCPClient(
+            endpoint="mcp://baseline",  # Placeholder MCP URL for baseline
+            timeouts={"connect_ms": 5000, "call_ms": 30000},
+            retry={"retries": 2, "backoff_ms": 250}
+        )
+        
+        # Create adapter with default tool configuration for baseline
+        tool_config = {
+            "name": "generate",
+            "arg_mapping": {
+                "question_key": "question",
+                "system_key": "system",
+                "contexts_key": "contexts"
+            },
+            "shape": "messages",
+            "static_args": {}
+        }
+        
+        extraction_config = {
+            "output_jsonpath": "$.answer",
+            "contexts_jsonpath": "$.contexts[*].text"
+        }
+        
+        return MCPClientAdapter(
+            mcp_client=mcp_client,
+            model=model,
+            tool_config=tool_config,
+            extraction_config=extraction_config
+        )
+    else:
+        # Create API client (baseline uses vendor presets, not custom endpoints)
+        return ApiClient(
+            provider=preset,
+            model=model,
+            determinism=determinism
+        )

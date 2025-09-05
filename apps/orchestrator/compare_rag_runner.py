@@ -192,14 +192,21 @@ class CompareRAGRunner(RAGRunner):
         
         return compare_case
     
-    def _create_baseline_client(self, resolved_baseline: Dict[str, Any]) -> BaseClient:
+    def _create_baseline_client(self, resolved_baseline: Dict[str, Any]):
         """Create baseline client from resolved configuration."""
         preset = resolved_baseline["preset"]
         model = resolved_baseline["model"]
         decoding = resolved_baseline["decoding"]
         
-        # Use the baseline client factory
-        return make_baseline_client(preset, model, decoding)
+        # Determine target mode based on primary client type
+        try:
+            from .mcp_client import MCPClientAdapter
+            target_mode = "mcp" if isinstance(self.client, MCPClientAdapter) else "api"
+        except ImportError:
+            target_mode = "api"
+        
+        # Use the baseline client factory with appropriate target mode
+        return make_baseline_client(preset, model, decoding, target_mode)
     
     async def _run_baseline_inference(
         self, 

@@ -91,6 +91,49 @@ export interface CompareWithConfig {
   target_display_name?: string;
 }
 
+export interface MCPToolConfig {
+  name: string;
+  arg_mapping: {
+    question_key?: string;
+    system_key?: string;
+    contexts_key?: string;
+    topk_key?: string;
+  };
+  shape: "messages" | "prompt";
+  static_args?: Record<string, any>;
+}
+
+export interface MCPExtractionConfig {
+  output_type: "text" | "json";
+  output_jsonpath?: string; // required when output_type === "json"
+  contexts_jsonpath?: string;
+  request_id_jsonpath?: string;
+}
+
+export interface MCPAuthConfig {
+  bearer?: string;
+  headers?: Record<string, string>;
+}
+
+export interface MCPTimeoutConfig {
+  connect_ms?: number;
+  call_ms?: number;
+}
+
+export interface MCPRetryConfig {
+  retries?: number;
+  backoff_ms?: number;
+}
+
+export interface MCPTargetConfig {
+  endpoint: string;
+  auth?: MCPAuthConfig;
+  tool: MCPToolConfig;
+  extraction: MCPExtractionConfig;
+  timeouts?: MCPTimeoutConfig;
+  retry?: MCPRetryConfig;
+}
+
 export interface OrchestratorRequest {
   target_mode: "api"|"mcp";
   api_base_url?: string;
@@ -98,6 +141,12 @@ export interface OrchestratorRequest {
   mcp_server_url?: string;
   provider?: Provider;  // Top-level provider
   model?: string;       // Top-level model
+  
+  // New structured target configuration
+  target?: {
+    mode: "api" | "mcp";
+    mcp?: MCPTargetConfig;
+  };
   suites: TestSuite[];
   thresholds?: Record<string, number|string|boolean>;
   options?: { 

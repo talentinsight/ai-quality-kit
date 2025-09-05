@@ -22,8 +22,15 @@ class Config:
         self.rag_top_k: int = int(os.getenv("RAG_TOP_K", "4"))
         self.allowed_providers: Set[str] = set(
             provider.strip() for provider in 
-            os.getenv("ALLOWED_PROVIDERS", "openai,anthropic,gemini,custom_rest,mock").split(",")
+            os.getenv("ALLOWED_PROVIDERS", "openai,anthropic,gemini,custom_rest,mock,mcp").split(",")
         )
+        
+        # MCP Configuration
+        self.enable_mcp: bool = os.getenv("ENABLE_MCP", "true").lower() == "true"
+        self.mcp_default_timeout_connect: int = int(os.getenv("MCP_TIMEOUT_CONNECT_MS", "5000"))
+        self.mcp_default_timeout_call: int = int(os.getenv("MCP_TIMEOUT_CALL_MS", "30000"))
+        self.mcp_default_retries: int = int(os.getenv("MCP_DEFAULT_RETRIES", "2"))
+        self.mcp_default_backoff: int = int(os.getenv("MCP_DEFAULT_BACKOFF_MS", "250"))
         
     def validate(self) -> None:
         """Validate required configuration values."""
@@ -33,6 +40,8 @@ class Config:
             raise ValueError("ANTHROPIC_API_KEY is required when using Anthropic provider")
         elif self.provider == "gemini" and not self.google_api_key:
             raise ValueError("GOOGLE_API_KEY is required when using Gemini provider")
+        elif self.provider == "mcp" and not self.enable_mcp:
+            raise ValueError("MCP provider requires ENABLE_MCP=true")
 
 
 # Global config instance
@@ -75,6 +84,8 @@ def resolve_provider_and_model(override_provider: Optional[str], override_model:
         model = config.anthropic_model
     elif provider == "gemini":
         model = config.gemini_model
+    elif provider == "mcp":
+        model = override_model or "mcp-model"
     else:
         # For custom_rest and mock, use override or generic default
         model = override_model or "default-model"
