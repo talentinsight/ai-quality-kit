@@ -34,7 +34,7 @@ def validate_schema_and_refs(passages: List[Dict[str, Any]], qaset: List[Dict[st
     result = RAGValidationResult()
     
     # Build passage ID index
-    passage_ids = {p['id'] for p in passages}
+    passage_ids = {p.id if hasattr(p, 'id') else p['id'] for p in passages}
     
     # Validate QA set references
     for qa in qaset:
@@ -57,9 +57,11 @@ def validate_schema_and_refs(passages: List[Dict[str, Any]], qaset: List[Dict[st
         
         # Check if answer appears verbatim in any passage
         for passage in passages:
-            if answer_lower in passage['text'].lower():
+            passage_text = passage.text if hasattr(passage, 'text') else passage['text']
+            passage_id = passage.id if hasattr(passage, 'id') else passage['id']
+            if answer_lower in passage_text.lower():
                 result.easy_count += 1
-                result.warnings.append(f"QA {qa['qid']}: answer found verbatim in passage {passage['id']} (easy case)")
+                result.warnings.append(f"QA {qa['qid']}: answer found verbatim in passage {passage_id} (easy case)")
                 break
         
         if is_valid:

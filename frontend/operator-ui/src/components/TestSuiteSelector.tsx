@@ -31,6 +31,7 @@ interface TestSuiteSelectorProps {
   hasGroundTruth: boolean;
   onSelectionChange: (selectedTests: Record<string, string[]>) => void;
   onSuiteConfigChange: (suiteId: string, config: any) => void;
+  onSuitesChange?: (suites: string[]) => void; // Notify parent of suite enable/disable
   dataStatus?: Partial<DataRequirements>; // Current data availability status
   onShowRequirements?: () => void; // Callback to scroll to data requirements section
 }
@@ -40,6 +41,7 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
   hasGroundTruth,
   onSelectionChange,
   onSuiteConfigChange,
+  onSuitesChange,
   dataStatus,
   onShowRequirements
 }) => {
@@ -311,7 +313,7 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
       description: 'Demographic fairness and bias testing',
       icon: Scale,
       color: 'purple',
-      enabled: false,
+      enabled: true,
       expanded: false,
       tests: [
         {
@@ -391,29 +393,37 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
   // to prevent state conflicts and infinite re-renders
 
   const toggleSuite = (suiteId: string) => {
-    setTestSuites(prev => prev.map(suite => {
-      if (suite.id === suiteId) {
-        const newEnabled = !suite.enabled;
-        // If disabling suite, disable all tests
-        if (!newEnabled) {
+    setTestSuites(prev => {
+      const updated = prev.map(suite => {
+        if (suite.id === suiteId) {
+          const newEnabled = !suite.enabled;
+          // If disabling suite, disable all tests
+          if (!newEnabled) {
+            return {
+              ...suite,
+              enabled: newEnabled,
+              tests: suite.tests.map(test => ({ ...test, enabled: false }))
+            };
+          }
+          // If enabling suite, enable required tests
           return {
             ...suite,
             enabled: newEnabled,
-            tests: suite.tests.map(test => ({ ...test, enabled: false }))
+            tests: suite.tests.map(test => ({
+              ...test,
+              enabled: test.required || test.enabled
+            }))
           };
         }
-        // If enabling suite, enable required tests
-        return {
-          ...suite,
-          enabled: newEnabled,
-          tests: suite.tests.map(test => ({
-            ...test,
-            enabled: test.required || test.enabled
-          }))
-        };
-      }
-      return suite;
-    }));
+        return suite;
+      });
+      
+      // Notify parent of suite changes
+      const enabledSuiteIds = updated.filter(s => s.enabled).map(s => s.id);
+      onSuitesChange?.(enabledSuiteIds as any[]);
+      
+      return updated;
+    });
   };
 
   const toggleSuiteExpansion = (suiteId: string) => {
@@ -617,7 +627,7 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
           
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
             <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-2">
-              🎯 RAG System Testing - 4 Test Suites Available
+              🎯 RAG System Testing - 5 Test Suites Available
             </h4>
             <div className="text-xs text-blue-800 dark:text-blue-200 space-y-1">
               <div>✅ <strong>RAG Reliability & Robustness:</strong> {hasGroundTruth ? '8 metrics available' : '3 basic metrics'} - Faithfulness, Context Recall, Answer Relevancy{hasGroundTruth ? ', plus 5 ground truth metrics' : ''}</div>
@@ -644,7 +654,7 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
             .filter(suite => {
               // Show only relevant suites based on LLM model type
               if (llmModelType === 'rag') {
-                return ['rag_reliability_robustness', 'red_team', 'safety', 'performance'].includes(suite.id);
+                return ['rag_reliability_robustness', 'red_team', 'safety', 'performance', 'bias_smoke'].includes(suite.id);
               }
               // For other types, show all suites except RAG-specific ones
               return !['rag_reliability_robustness'].includes(suite.id);

@@ -210,16 +210,74 @@ class RateLimitConfig:
     """Rate limiting configuration from environment variables."""
     
     def __init__(self):
-        self.enabled = os.getenv("RL_ENABLED", "true").lower() == "true"
-        self.per_token_per_min = int(os.getenv("RL_PER_TOKEN_PER_MIN", "60"))
-        self.per_token_burst = int(os.getenv("RL_PER_TOKEN_BURST", "10"))
-        self.per_ip_per_min = int(os.getenv("RL_PER_IP_PER_MIN", "120"))
-        self.per_ip_burst = int(os.getenv("RL_PER_IP_BURST", "20"))
+        self.enabled = os.getenv("RATE_LIMIT_ENABLED", "false").lower() == "true"
+        self.rules = self._parse_rules(os.getenv("RATE_LIMIT_RULES", ""))
         self.redis_url = os.getenv("REDIS_URL")
         
-        # Convert per-minute to per-second rates
-        self.token_refill_rate = self.per_token_per_min / 60.0
-        self.ip_refill_rate = self.per_ip_per_min / 60.0
+        # Default rules if parsing fails
+        if not self.rules:
+            self.rules = {
+                "POST:/orchestrator/run_tests": (10, 60),  # 10 per minute
+                "POST:/ask": (60, 60),  # 60 per minute
+                "*": (300, 60)  # 300 per minute default
+            }
+    
+    def _parse_rules(self, rules_str: str) -> Dict[str, Tuple[int, int]]:
+        """Parse rate limit rules from string format."""
+        rules = {}
+        if not rules_str:
+            return rules
+            
+        try:
+            for rule in rules_str.split(";"):
+                if "=" not in rule:
+                    continue
+                    
+                route_part, limit_part = rule.split("=", 1)
+                route = route_part.strip()
+                
+                # Parse limit (e.g., "10/min", "60/sec")
+                if "/" not in limit_part:
+                    continue
+                    
+                count_str, period_str = limit_part.split("/", 1)
+                count = int(count_str.strip())
+                period = period_str.strip().lower()
+                
+                # Convert to per-second rate
+                if period in ["min", "minute"]:
+                    window_seconds = 60
+                elif period in ["sec", "second"]:
+                    window_seconds = 1
+                elif period in ["hour", "hr"]:
+                    window_seconds = 3600
+                else:
+                    window_seconds = 60  # Default to minute
+                
+                rules[route] = (count, window_seconds)
+                
+        except (ValueError, IndexError) as e:
+            logger.warning(f"Failed to parse rate limit rules '{rules_str}': {e}")
+            return {}
+            
+        return rules
+    
+    def get_limit_for_route(self, method: str, path: str) -> Tuple[int, float]:
+        """Get rate limit for specific route."""
+        route_key = f"{method}:{path}"
+        
+        # Check exact match first
+        if route_key in self.rules:
+            count, window = self.rules[route_key]
+            return count, count / window  # capacity, refill_rate
+            
+        # Check wildcard
+        if "*" in self.rules:
+            count, window = self.rules["*"]
+            return count, count / window
+            
+        # Default fallback
+        return 300, 5.0  # 300 per minute
 
 # Global rate limiter instance
 _rate_limiter: Optional[Union[RedisRateLimiter, InMemoryRateLimiter]] = None
@@ -304,7 +362,7 @@ async def rate_limit_middleware(request: Request, call_next):
     """
     Rate limiting middleware for FastAPI.
     
-    Applies rate limits to sensitive endpoints based on token and IP.
+    Applies rate limits based on configured rules per route.
     """
     global _config, _rate_limit_counters
     
@@ -319,57 +377,39 @@ async def rate_limit_middleware(request: Request, call_next):
     if _should_exempt_path(request.url.path):
         return await call_next(request)
     
-    # Only apply to sensitive routes
-    sensitive_routes = ["/ask", "/orchestrator/run_tests"]
-    is_testdata_route = request.url.path.startswith("/testdata/")
-    
-    if not any(request.url.path.startswith(route) for route in sensitive_routes) and not is_testdata_route:
-        return await call_next(request)
-    
     try:
         rate_limiter = await get_rate_limiter()
+        
+        # Get rate limit for this route
+        method = request.method
+        path = request.url.path
+        capacity, refill_rate = _config.get_limit_for_route(method, path)
         
         # Extract identifiers
         token = _extract_token_from_auth(request.headers.get("Authorization"))
         client_ip = _get_client_ip(request)
         
-        # Check token-based rate limit
+        # Use token if available, otherwise IP
         if token:
-            token_key = f"rl:tok:{token}:{request.url.path}"
-            token_allowed, token_retry_after = await rate_limiter.check_rate_limit(
-                token_key, _config.per_token_burst, _config.token_refill_rate
-            )
-            
-            if not token_allowed:
-                _rate_limit_counters["blocked_total"] += 1
-                return JSONResponse(
-                    status_code=429,
-                    content={
-                        "error": "rate_limited",
-                        "retry_after_ms": int(token_retry_after * 1000)
-                    },
-                    headers={
-                        "Retry-After": str(int(token_retry_after) + 1),
-                        "X-RateLimit-Remaining": "0"
-                    }
-                )
+            rate_key = f"rl:tok:{token}:{method}:{path}"
+        else:
+            rate_key = f"rl:ip:{client_ip}:{method}:{path}"
         
-        # Check IP-based rate limit
-        ip_key = f"rl:ip:{client_ip}:{request.url.path}"
-        ip_allowed, ip_retry_after = await rate_limiter.check_rate_limit(
-            ip_key, _config.per_ip_burst, _config.ip_refill_rate
+        # Check rate limit
+        allowed, retry_after = await rate_limiter.check_rate_limit(
+            rate_key, capacity, refill_rate
         )
         
-        if not ip_allowed:
+        if not allowed:
             _rate_limit_counters["blocked_total"] += 1
             return JSONResponse(
                 status_code=429,
                 content={
-                    "error": "rate_limited", 
-                    "retry_after_ms": int(ip_retry_after * 1000)
+                    "error": "rate_limited",
+                    "retry_after_ms": int(retry_after * 1000)
                 },
                 headers={
-                    "Retry-After": str(int(ip_retry_after) + 1),
+                    "Retry-After": str(int(retry_after) + 1),
                     "X-RateLimit-Remaining": "0"
                 }
             )
@@ -382,7 +422,7 @@ async def rate_limit_middleware(request: Request, call_next):
         
         # Add rate limit headers to response
         if hasattr(response, "headers"):
-            response.headers["X-RateLimit-Remaining"] = str(_config.per_token_burst - 1)
+            response.headers["X-RateLimit-Remaining"] = str(capacity - 1)
         
         return response
         

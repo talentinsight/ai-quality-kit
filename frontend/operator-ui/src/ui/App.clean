@@ -14,7 +14,7 @@ import CompactGroundTruthPanel from "../components/CompactGroundTruthPanel";
 import TestSuiteSelector from "../components/TestSuiteSelector";
 import { computeRequirementMatrix, ProvidedIntake } from "../lib/requirementStatus";
 
-const DEFAULT_SUITES: TestSuite[] = ["rag_reliability_robustness"]; // Only RAG by default
+const DEFAULT_SUITES: TestSuite[] = ["rag_reliability_robustness","red_team","safety","performance","regression","resilience","compliance_smoke","bias_smoke"];
 const REQUIRED_SHEETS = ["Summary","Detailed","API_Details","Inputs_And_Expected"];
 
 export default function App() {
@@ -50,7 +50,7 @@ export default function App() {
   
   // API mode state
   const [apiFormState, setApiFormState] = useState({
-    serverUrl: "http://localhost:8000",
+    serverUrl: "",
     bearerToken: "",
     retrievalJsonPath: "",
     retrievalTopK: ""
@@ -1204,10 +1204,10 @@ export default function App() {
                     </div>
                     
                   <div>
-                      <label className="label">Backend URL *</label>
+                      <label className="label">Server URL *</label>
                     <input 
                       className="input max-w-lg" 
-                        placeholder="http://localhost:8000" 
+                        placeholder="https://your-api.com/chat" 
                         value={apiFormState.serverUrl} 
                         onChange={e => setApiFormState(prev => ({ ...prev, serverUrl: e.target.value }))}
                       />
@@ -1727,10 +1727,6 @@ export default function App() {
                   tests[suiteId].length > 0
                 ) as TestSuite[];
                 setSuites(activeSuites);
-              }}
-              onSuitesChange={(enabledSuites) => {
-                console.log("🎯 UI: Suite selection changed:", enabledSuites);
-                setSuites(enabledSuites as TestSuite[]);
               }}
               onSuiteConfigChange={(suiteId, config) => {
                 setSuiteConfigs(prev => ({

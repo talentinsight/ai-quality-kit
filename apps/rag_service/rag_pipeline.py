@@ -194,8 +194,10 @@ Please answer the question based only on the provided context."""
         # Get chat function with provider/model override
         if provider or model:
             from llm.provider import get_chat_for
+            print(f"🔍 RAG PIPELINE: Using provider={provider}, model={model}")
             chat_fn = get_chat_for(provider, model)
         else:
+            print(f"🔍 RAG PIPELINE: Using default chat function")
             chat_fn = self.chat
         
         # Call LLM

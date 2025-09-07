@@ -28,7 +28,8 @@ def get_chat() -> Callable[[List[str]], str]:
 
 
 def get_chat_for(provider: Optional[str] = None, model: Optional[str] = None, 
-                 deterministic: bool = True, test_flag_override: Optional[dict] = None) -> Callable[[List[str]], str]:
+                 deterministic: bool = True, test_flag_override: Optional[dict] = None,
+                 base_url: Optional[str] = None) -> Callable[[List[str]], str]:
     """
     Factory function that returns a chat callable for specific provider/model.
     
@@ -37,6 +38,7 @@ def get_chat_for(provider: Optional[str] = None, model: Optional[str] = None,
         model: Model name (overrides environment default)
         deterministic: Whether to force deterministic parameters (temperature=0, top_p=1, seed)
         test_flag_override: Optional dict to override deterministic behavior for specific tests
+        base_url: Base URL for custom_rest provider (overrides environment variable)
         
     Returns:
         Callable that takes a list of messages and returns a response string.
@@ -54,7 +56,7 @@ def get_chat_for(provider: Optional[str] = None, model: Optional[str] = None,
     elif provider == "gemini":
         return _get_gemini_chat(model, deterministic, test_flag_override)
     elif provider == "custom_rest":
-        return _get_custom_rest_chat(model, deterministic, test_flag_override)
+        return _get_custom_rest_chat(model, deterministic, test_flag_override, base_url)
     elif provider == "mock":
         return _get_mock_chat(model, deterministic, test_flag_override)
     else:
@@ -223,11 +225,11 @@ def _get_gemini_chat(model_override: Optional[str] = None, deterministic: bool =
 
 
 def _get_custom_rest_chat(model_override: Optional[str] = None, deterministic: bool = True, 
-                          test_flag_override: Optional[dict] = None) -> Callable[[List[str]], str]:
+                          test_flag_override: Optional[dict] = None, base_url_override: Optional[str] = None) -> Callable[[List[str]], str]:
     """Get custom REST API chat function."""
-    base_url = os.getenv("CUSTOM_LLM_BASE_URL")
+    base_url = base_url_override or os.getenv("CUSTOM_LLM_BASE_URL")
     if not base_url:
-        raise ValueError("CUSTOM_LLM_BASE_URL environment variable is required for custom_rest provider")
+        raise ValueError("base_url_override or CUSTOM_LLM_BASE_URL environment variable is required for custom_rest provider")
     
     model_name = model_override or os.getenv("CUSTOM_MODEL_NAME", "custom-model")
     resilient_client = get_resilient_client()
@@ -240,7 +242,7 @@ def _get_custom_rest_chat(model_override: Optional[str] = None, deterministic: b
     def chat(messages: List[str]) -> str:
         """Call custom REST API with messages."""
         def _make_custom_rest_call():
-            # Format messages for generic REST API
+            # Use OpenAI-compatible format for custom REST providers
             formatted_messages = []
             for i, msg in enumerate(messages):
                 role = "system" if i == 0 else "user"
@@ -324,19 +326,6 @@ def _get_azure_openai_chat() -> Callable[[List[str]], str]:
     raise NotImplementedError("Azure OpenAI support - see comments for implementation pattern")
 
 
-def _get_ollama_chat() -> Callable[[List[str]], str]:
-    """
-    Example extension for Ollama local models.
-    
-    Set environment variables:
-    - OLLAMA_BASE_URL (default: http://localhost:11434)
-    - OLLAMA_MODEL (e.g., llama2, codellama)
-    """
-    # import httpx
-    # base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    # model = os.getenv("OLLAMA_MODEL", "llama2")
-    # ... implement REST API calls to Ollama
-    raise NotImplementedError("Ollama support - see comments for implementation pattern")
 
 
 # Custom REST implementation is above in the main function

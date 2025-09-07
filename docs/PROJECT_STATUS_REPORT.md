@@ -27,7 +27,7 @@ The project represents a novel approach to AI testing where artificial intellige
 - **Performance Monitoring**: Response time and system health tracking
 
 ### Extensibility Features
-- **Provider Abstraction Layer**: Easy integration of new LLM providers (Azure OpenAI, Gemini, Ollama)
+- **Provider Abstraction Layer**: Easy integration of new LLM providers (Azure OpenAI, Gemini, Local Models)
 - **Custom Metrics Framework**: Pluggable evaluation metrics for domain-specific requirements
 - **Golden Dataset Management**: Version-controlled test data with seeding utilities
 - **Threshold Configuration**: Adjustable quality gates for different deployment environments

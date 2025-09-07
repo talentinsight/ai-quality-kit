@@ -506,7 +506,7 @@ Extend `llm/provider.py` to add support for:
 
 - **Azure OpenAI**: Modify `_get_azure_openai_chat()`
 - **Google Gemini**: Add new function with Gemini API calls
-- **Ollama/Local**: Implement REST calls to local model server
+- **Local Models**: Implement REST calls to local model server
 - **Custom APIs**: Follow the pattern in `_get_custom_rest_chat()`
 
 Example extension:

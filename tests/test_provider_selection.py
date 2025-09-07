@@ -82,7 +82,7 @@ def test_get_chat_for_custom_rest():
     """Test custom REST provider selection."""
     from llm.provider import get_chat_for
     
-    with patch.dict(os.environ, {"CUSTOM_LLM_BASE_URL": "http://localhost:11434"}):
+    with patch.dict(os.environ, {"CUSTOM_LLM_BASE_URL": "http://localhost:8080"}):
         with patch('httpx.Client') as mock_client_class:
             mock_client = MagicMock()
             mock_client_class.return_value.__enter__.return_value = mock_client
@@ -100,7 +100,7 @@ def test_get_chat_for_custom_rest():
             assert result == "Custom REST response"
             mock_client.post.assert_called_once()
             call_args = mock_client.post.call_args
-            assert "http://localhost:11434/v1/chat/completions" in call_args[0]
+            assert "http://localhost:8080/v1/chat/completions" in call_args[0]
 
 
 def test_get_chat_for_mock():

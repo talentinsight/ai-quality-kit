@@ -90,6 +90,7 @@ async def upload_testdata(
         
         for upload_file, default_name, kind in file_uploads:
             if upload_file and upload_file.filename:
+                file_path = None
                 try:
                     # Sanitize filename
                     filename = sanitize_filename(upload_file.filename)
@@ -106,8 +107,9 @@ async def upload_testdata(
                     
                 except Exception as e:
                     # Clean up on validation error
-                    if file_path.exists():
+                    if file_path and file_path.exists():
                         file_path.unlink()
+                    logger.error(f"Validation failed for {kind} file: {e}")
                     raise ValueError(f"Invalid {kind} file: {e}")
         
         # Process text content
@@ -165,7 +167,7 @@ async def upload_testdata(
         if 'bundle_dir' in locals():
             delete_bundle(bundle_dir)
         logger.error(f"Failed to upload test data: {e}")
-        raise HTTPException(status_code=500, detail="Failed to process upload")
+        raise HTTPException(status_code=500, detail=f"Failed to process upload: {str(e)}")
 
 
 @router.post("/paste", response_model=UploadResponse)

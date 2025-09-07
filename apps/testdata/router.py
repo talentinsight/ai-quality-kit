@@ -40,10 +40,10 @@ ALLOWED_EXTENSIONS = {
     "schema": [".json"]
 }
 ALLOWED_CONTENT_TYPES = {
-    "passages": ["application/json", "text/plain", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"],
-    "qaset": ["application/json", "text/plain", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"],
-    "attacks": ["text/plain", "application/x-yaml", "text/yaml"],
-    "schema": ["application/json"]
+    "passages": ["application/json", "text/plain", "application/octet-stream", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"],
+    "qaset": ["application/json", "text/plain", "application/octet-stream", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"],
+    "attacks": ["text/plain", "application/x-yaml", "text/yaml", "application/octet-stream"],
+    "schema": ["application/json", "application/octet-stream"]
 }
 
 # Create router
@@ -92,13 +92,18 @@ def _validate_file_size_and_type(file: UploadFile, artifact_type: str):
                        f"Allowed: {ALLOWED_EXTENSIONS.get(artifact_type, [])}"
             )
     
-    # Check content type
+    # Check content type (be more lenient for common browser misidentifications)
     if file.content_type and file.content_type not in ALLOWED_CONTENT_TYPES.get(artifact_type, []):
-        raise HTTPException(
-            status_code=415,
-            detail=f"Unsupported content type for {artifact_type}: {file.content_type}. "
-                   f"Allowed: {ALLOWED_CONTENT_TYPES.get(artifact_type, [])}"
-        )
+        # Allow common browser misidentifications for text files
+        if artifact_type in ["passages", "qaset"] and file.content_type in ["text/csv", "application/x-json"]:
+            # These are acceptable for JSONL files
+            pass
+        else:
+            raise HTTPException(
+                status_code=415,
+                detail=f"Unsupported content type for {artifact_type}: {file.content_type}. "
+                       f"Allowed: {ALLOWED_CONTENT_TYPES.get(artifact_type, [])}"
+            )
 
 
 async def _read_and_validate_file(file: UploadFile, artifact_type: str) -> tuple[str, Any, List[ValidationError]]:

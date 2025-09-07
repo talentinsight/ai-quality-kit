@@ -82,7 +82,7 @@ class RAGRunner:
             # Generate responses for QA pairs
             cases = []
             if qaset:
-                for qa in qaset[:10]:  # Limit for demo
+                for qa in qaset:  # Use all QA pairs
                     case_result = await self._evaluate_single_qa(qa, passages)
                     cases.append(case_result)
             

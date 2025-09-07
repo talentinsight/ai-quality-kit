@@ -133,8 +133,28 @@ def evaluate_ragas(samples: List[Dict[str, Any]]) -> Dict[str, Any]:
         
         logger.info(f"Evaluating {len(valid_samples)} samples with Ragas metrics: {[m.name for m in metrics_to_eval]}")
         
-        # Run Ragas evaluation
-        result = evaluate(dataset, metrics=metrics_to_eval)
+        # Run Ragas evaluation with timeout and smaller sample size
+        import signal
+        import os
+        
+        def timeout_handler(signum, frame):
+            raise TimeoutError("Ragas evaluation timed out")
+        
+        # Set timeout (3 minutes default)
+        timeout_seconds = int(os.getenv("RAGAS_TIMEOUT_S", "180"))
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(timeout_seconds)
+        
+        try:
+            # Limit sample size for faster evaluation
+            max_samples = int(os.getenv("RAGAS_SAMPLE_SIZE", "3"))
+            if len(valid_samples) > max_samples:
+                valid_samples = valid_samples[:max_samples]
+                logger.info(f"Limiting Ragas evaluation to {max_samples} samples for performance")
+            
+            result = evaluate(dataset, metrics=metrics_to_eval)
+        finally:
+            signal.alarm(0)  # Cancel the alarm
         
         # Ensure result is a dictionary
         if not isinstance(result, dict):

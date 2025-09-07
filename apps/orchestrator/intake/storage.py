@@ -152,13 +152,18 @@ def _validate_qaset(content: str) -> None:
             # Check required fields
             if 'question' not in obj:
                 raise ValueError(f"Line {i}: Missing 'question' field")
-            if 'answer' not in obj:
-                raise ValueError(f"Line {i}: Missing 'answer' field")
+            
+            # Accept both 'answer' and 'expected_answer' fields
+            if 'answer' not in obj and 'expected_answer' not in obj:
+                raise ValueError(f"Line {i}: Missing 'answer' or 'expected_answer' field")
                 
             if not isinstance(obj['question'], str):
                 raise ValueError(f"Line {i}: 'question' must be string")
-            if not isinstance(obj['answer'], str):
-                raise ValueError(f"Line {i}: 'answer' must be string")
+            
+            # Validate answer field (either 'answer' or 'expected_answer')
+            answer_field = obj.get('answer') or obj.get('expected_answer')
+            if answer_field is not None and not isinstance(answer_field, str):
+                raise ValueError(f"Line {i}: answer field must be string")
                 
             # Optional contexts field
             if 'contexts' in obj and not isinstance(obj['contexts'], list):

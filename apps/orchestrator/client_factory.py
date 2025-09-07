@@ -47,7 +47,7 @@ class BaseClient(ABC):
 class ApiClient(BaseClient):
     """Client for API mode using existing provider abstraction."""
     
-    def __init__(self, provider: str, model: str, determinism: Optional[DeterminismConfig] = None):
+    def __init__(self, provider: str, model: str, determinism: Optional[DeterminismConfig] = None, base_url: Optional[str] = None):
         super().__init__(provider, model, determinism)
         
         # Get chat function from existing provider system
@@ -59,7 +59,8 @@ class ApiClient(BaseClient):
                 "temperature": self.determinism.temperature,
                 "top_p": self.determinism.top_p,
                 "seed": self.determinism.seed
-            }
+            },
+            base_url=base_url
         )
     
     async def generate(self, messages: List[Dict[str, str]], **kwargs) -> Dict[str, Any]:
@@ -153,7 +154,8 @@ def make_client(request) -> Union[ApiClient, McpClient, 'MCPClientAdapter']:
         return ApiClient(
             provider=request.provider,
             model=request.model,
-            determinism=determinism
+            determinism=determinism,
+            base_url=api_url
         )
     
     elif request.target_mode == "mcp":

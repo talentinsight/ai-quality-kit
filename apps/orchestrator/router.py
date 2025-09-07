@@ -70,6 +70,7 @@ def get_reports_dir() -> Path:
 async def run_tests(
     http_request: Request,
     request: OrchestratorRequest,
+    response: Response,
     dry_run: bool = False,
     principal: Optional[Principal] = Depends(require_user_or_admin())
 ):
@@ -99,6 +100,9 @@ async def run_tests(
     try:
         # Create test runner
         runner = TestRunner(request)
+        
+        # Set X-Run-ID header
+        response.headers["X-Run-ID"] = runner.run_id
         
         # Handle dry run (planning)
         if dry_run:
