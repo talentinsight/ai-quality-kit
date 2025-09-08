@@ -118,6 +118,60 @@ class RAGPipeline:
         
         print(f"Built vector index with {len(self.passages)} passages using scikit-learn")
     
+    def build_index_from_data(self, passages_data: List[Dict[str, Any]]) -> None:
+        """
+        Build vector index from passages data using scikit-learn TF-IDF.
+        
+        Args:
+            passages_data: List of passage dictionaries with 'id' and 'text' keys
+        """
+        if not passages_data:
+            raise ValueError("No passages data provided")
+        
+        # Store passages
+        self.passages = passages_data
+        
+        # Extract texts
+        self.passage_texts = [passage['text'] for passage in self.passages]
+        
+        # Try OpenAI embeddings first, fallback to TF-IDF
+        try:
+            from openai import OpenAI
+            client = OpenAI()
+            
+            # Get embeddings for all passages
+            embeddings_response = client.embeddings.create(
+                input=self.passage_texts,
+                model="text-embedding-ada-002"
+            )
+            
+            self.passage_embeddings = np.array([
+                embedding.embedding for embedding in embeddings_response.data
+            ])
+            print("Using OpenAI embeddings")
+        except Exception as e:
+            print(f"OpenAI embeddings failed: {e}")
+            self.passage_embeddings = None
+        
+        if self.passage_embeddings is None:
+            # Fallback to TF-IDF vectorization
+            try:
+                self.tfidf_matrix = self.tfidf_vectorizer.fit_transform(self.passage_texts)
+                print("Using TF-IDF vectorization")
+            except Exception as e:
+                raise ValueError(f"Failed to create TF-IDF vectors: {e}")
+        
+        if self.passage_embeddings is None and self.tfidf_matrix is None:
+            raise ValueError("No indexing method available - cannot build index")
+        
+        # Normalize OpenAI embeddings for cosine similarity
+        if self.passage_embeddings is not None:
+            norms = np.linalg.norm(self.passage_embeddings, axis=1, keepdims=True)
+            norms[norms == 0] = 1  # Avoid division by zero
+            self.passage_embeddings = self.passage_embeddings / norms
+        
+        print(f"Built vector index from data with {len(self.passages)} passages")
+    
     def retrieve(self, query: str) -> List[str]:
         """
         Retrieve top-k relevant passages for a query.

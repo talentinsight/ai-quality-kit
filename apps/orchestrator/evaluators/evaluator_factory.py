@@ -42,13 +42,13 @@ class EvaluatorFactory:
             "performance": "PerformanceEvaluator"
         }
         
-        # Import paths for evaluators
+        # Import paths for evaluators (absolute imports for subprocess compatibility)
         self.evaluator_imports = {
-            "SafetyEvaluator": "apps.orchestrator.evaluators.safety_evaluator",
-            "RedTeamEvaluator": "apps.orchestrator.evaluators.red_team_evaluator",
-            "BiasEvaluator": "apps.orchestrator.evaluators.bias_evaluator", 
-            "RAGEvaluator": "apps.orchestrator.evaluators.rag_evaluator",
-            "PerformanceEvaluator": "apps.orchestrator.evaluators.performance_evaluator"
+            "SafetyEvaluator": "evaluators.safety_evaluator",
+            "RedTeamEvaluator": "evaluators.red_team_evaluator",
+            "BiasEvaluator": "evaluators.bias_evaluator", 
+            "RAGEvaluator": "evaluators.rag_evaluator",
+            "PerformanceEvaluator": "evaluators.performance_evaluator"
         }
     
     def get_evaluator(self, suite: str) -> Optional[BaseEvaluator]:

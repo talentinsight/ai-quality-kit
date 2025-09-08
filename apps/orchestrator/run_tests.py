@@ -1826,9 +1826,14 @@ class TestRunner:
                 "perf_phase": "warm"
             }
         
-        # Determine base URL based on provider
-        # provider = (self.request.options or {}).get("provider", "mock")  # BUG: This overrides the provider!
-        if provider == "openai":
+        # Determine base URL based on provider and test type
+        # For RAG tests, always use our local RAG service regardless of provider
+        if "rag" in self.request.suites or any("rag" in suite for suite in self.request.suites):
+            # RAG testing - use our local RAG service for ALL providers
+            base_url = self.request.api_base_url or "http://localhost:8000"
+            print(f"🔍 RAG TEST: Using local RAG service at {base_url}")
+        elif provider == "openai":
+            # Non-RAG testing - use direct provider APIs
             base_url = "https://api.openai.com/v1"
         elif provider == "anthropic":
             base_url = "https://api.anthropic.com"
@@ -1858,8 +1863,18 @@ class TestRunner:
             "model": model
         }
         
-        # Determine correct endpoint based on provider
-        if provider == "openai":
+        # Add testdata_id for non-mock providers
+        if self.request.testdata_id and provider != "mock":
+            payload["testdata_id"] = self.request.testdata_id
+        
+        # For RAG testing, ALL providers should use the /ask endpoint to get contexts
+        # Only use direct provider APIs for non-RAG testing
+        if "rag" in self.request.suites or any("rag" in suite for suite in self.request.suites):
+            # RAG testing - use our /ask endpoint for ALL providers to get contexts
+            endpoint = f"{base_url}/ask"
+            # Keep the original payload format for RAG endpoint
+        elif provider == "openai":
+            # Non-RAG testing - use direct OpenAI API
             endpoint = f"{base_url}/chat/completions"
             # Transform payload for OpenAI format
             openai_payload = {
@@ -1870,7 +1885,7 @@ class TestRunner:
             }
             payload = openai_payload
         else:
-            # For all non-OpenAI providers, use /ask endpoint
+            # For all other providers, use /ask endpoint
             endpoint = f"{base_url}/ask"
         
         # Log API request start with payload details
@@ -1906,14 +1921,14 @@ class TestRunner:
                 
                 result = response.json()
                 
-                # Handle OpenAI response format
-                if provider == "openai":
-                    # OpenAI returns: {"choices": [{"message": {"content": "..."}}]}
+                # Handle OpenAI response format (only for direct OpenAI API calls, not RAG)
+                if provider == "openai" and endpoint.endswith("/chat/completions"):
+                    # Direct OpenAI API returns: {"choices": [{"message": {"content": "..."}}]}
                     if "choices" in result and len(result["choices"]) > 0:
                         content = result["choices"][0]["message"]["content"]
                         result = {
                             "answer": content,
-                            "context": [],
+                            "context": [],  # No context for direct API calls
                             "latency_ms": response_time_ms,
                             "provider": provider,
                             "model": model,
@@ -1922,6 +1937,7 @@ class TestRunner:
                         }
                     else:
                         raise ValueError("Invalid OpenAI response format")
+                # For RAG endpoint responses, result already has correct format with contexts
                 
                 # Extract headers for non-OpenAI providers
                 if provider != "openai":
@@ -2285,41 +2301,79 @@ class TestRunner:
         answer = result.get("answer", "").lower()
         
         if suite in ["rag_quality", "rag_reliability_robustness"]:
-            # Improved keyword-based evaluation
-            print(f"🔍 LEGACY RAG EVALUATION: Starting for suite={suite}")
-            print(f"🔍 LEGACY RAG EVALUATION: answer='{answer[:100]}...'")
-            expected = item.get("expected_answer", "").lower()
-            print(f"🔍 LEGACY RAG EVALUATION: expected='{expected[:100]}...'")
-            if expected:
-                # More flexible matching - check if key concepts are present
-                expected_words = [w.strip() for w in expected.split() if len(w.strip()) > 2]
-                answer_lower = answer.lower()
-                
-                # Count how many expected words/concepts are found
-                matches = sum(1 for word in expected_words if word in answer_lower)
-                match_ratio = matches / len(expected_words) if expected_words else 0
-                
-                print(f"🔍 LEGACY RAG EVALUATION: matches={matches}/{len(expected_words)}, ratio={match_ratio:.2f}")
-                
-                # More lenient threshold - pass if 30% of key words match
-                if match_ratio >= 0.3 or any(key_phrase in answer_lower for key_phrase in expected_words[:2]):
-                    evaluation["faithfulness"] = 0.8
-                    evaluation["context_recall"] = 0.7
-                    evaluation["passed"] = True
-                    print(f"🎯 RAG PASS: {matches}/{len(expected_words)} words matched ({match_ratio:.2f})")
-                    self.capture_log("INFO", "evals.rag", f"🎯 RAG PASS: {matches}/{len(expected_words)} words matched ({match_ratio:.2f})")
-                else:
-                    evaluation["faithfulness"] = 0.3
-                    evaluation["context_recall"] = 0.4
-                    evaluation["passed"] = False
-                    print(f"❌ RAG FAIL: {matches}/{len(expected_words)} words matched ({match_ratio:.2f})")
-                    self.capture_log("INFO", "evals.rag", f"❌ RAG FAIL: {matches}/{len(expected_words)} words matched ({match_ratio:.2f})")
+            # 🎯 UNIVERSAL RAG EVALUATION - Integrated into Legacy
+            print(f"🎯 UNIVERSAL RAG EVALUATION: Starting for suite={suite}")
+            print(f"🎯 UNIVERSAL RAG EVALUATION: answer='{answer[:100]}...'")
+            
+            # Check for honest "I don't know" responses
+            honest_patterns = [
+                "i don't know", "i do not know", "i dont know",
+                "no information", "cannot answer", "unable to answer",
+                "not sure", "unclear", "unknown", "no data"
+            ]
+            
+            is_honest_response = any(pattern in answer for pattern in honest_patterns)
+            
+            # Get context relevance (basic keyword overlap)
+            contexts = result.get("context", [])
+            question = item.get("query", "").lower()
+            
+            # Calculate context relevance
+            context_relevance = 0.0
+            if contexts and question:
+                question_words = set(question.split())
+                for context in contexts:
+                    if context:
+                        context_words = set(context.lower().split())
+                        if question_words and context_words:
+                            overlap = len(question_words & context_words)
+                            relevance = overlap / len(question_words | context_words)
+                            context_relevance = max(context_relevance, relevance)
+            
+            print(f"🎯 UNIVERSAL: is_honest={is_honest_response}, context_relevance={context_relevance:.3f}")
+            
+            # Universal evaluation logic
+            if is_honest_response and context_relevance < 0.3:
+                # Honest response with irrelevant context = PASS
+                evaluation["faithfulness"] = 0.9
+                evaluation["context_recall"] = 0.8
+                evaluation["passed"] = True
+                print(f"🎉 UNIVERSAL PASS: Honest response with irrelevant context (relevance: {context_relevance:.3f})")
+                self.capture_log("INFO", "evals.rag", f"🎉 UNIVERSAL PASS: Honest 'I don't know' with irrelevant context")
             else:
-                # No expected answer - pass if we got any response
-                evaluation["faithfulness"] = 0.8 if answer.strip() else 0.3
-                evaluation["context_recall"] = 0.7 if answer.strip() else 0.4
-                evaluation["passed"] = bool(answer.strip())
-                print(f"🔍 LEGACY RAG EVALUATION: No expected answer, got response: {bool(answer.strip())}")
+                # Standard evaluation for other cases
+                expected = item.get("expected_answer", "").lower()
+                print(f"🎯 UNIVERSAL: expected='{expected[:100]}...'")
+                if expected:
+                    # More flexible matching - check if key concepts are present
+                    expected_words = [w.strip() for w in expected.split() if len(w.strip()) > 2]
+                    answer_lower = answer.lower()
+                    
+                    # Count how many expected words/concepts are found
+                    matches = sum(1 for word in expected_words if word in answer_lower)
+                    match_ratio = matches / len(expected_words) if expected_words else 0
+                    
+                    print(f"🎯 UNIVERSAL: matches={matches}/{len(expected_words)}, ratio={match_ratio:.2f}")
+                    
+                    # More lenient threshold - pass if 30% of key words match
+                    if match_ratio >= 0.3 or any(key_phrase in answer_lower for key_phrase in expected_words[:2]):
+                        evaluation["faithfulness"] = 0.8
+                        evaluation["context_recall"] = 0.7
+                        evaluation["passed"] = True
+                        print(f"🎯 UNIVERSAL PASS: {matches}/{len(expected_words)} words matched ({match_ratio:.2f})")
+                        self.capture_log("INFO", "evals.rag", f"🎯 UNIVERSAL PASS: {matches}/{len(expected_words)} words matched ({match_ratio:.2f})")
+                    else:
+                        evaluation["faithfulness"] = 0.3
+                        evaluation["context_recall"] = 0.4
+                        evaluation["passed"] = False
+                        print(f"❌ UNIVERSAL FAIL: {matches}/{len(expected_words)} words matched ({match_ratio:.2f})")
+                        self.capture_log("INFO", "evals.rag", f"❌ UNIVERSAL FAIL: {matches}/{len(expected_words)} words matched ({match_ratio:.2f})")
+                else:
+                    # No expected answer - pass if we got any response
+                    evaluation["faithfulness"] = 0.8 if answer.strip() else 0.3
+                    evaluation["context_recall"] = 0.7 if answer.strip() else 0.4
+                    evaluation["passed"] = bool(answer.strip())
+                    print(f"🎯 UNIVERSAL: No expected answer, got response: {bool(answer.strip())}")
         
         elif suite in ["red_team", "safety"]:
             # Legacy safety evaluation

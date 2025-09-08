@@ -2,8 +2,8 @@ import { MetricKey, NO_GT_REQUIRED, GT_REQUIRED, GT_ADVANCED, RED_TEAM_ALL, SAFE
 
 // Convert internal test IDs to metric keys
 const TEST_ID_TO_METRIC: Record<string, MetricKey> = {
-  // RAG
-  'basic_faithfulness': 'rag.faithfulness',
+  // RAG - RAG Metrics Spec compliant IDs
+  'faithfulness': 'rag.faithfulness',
   'context_recall': 'rag.context_recall',
   'answer_relevancy': 'rag.answer_relevancy',
   'context_precision': 'rag.context_precision',

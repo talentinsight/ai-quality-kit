@@ -18,6 +18,8 @@ from apps.observability.perf import decide_phase_and_latency, record_latency
 from apps.security.auth import get_principal, require_user_or_admin, Principal
 from apps.security.rate_limit import rate_limit_middleware
 
+# Orchestrator functionality will be imported dynamically
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -48,6 +50,7 @@ class QueryRequest(BaseModel):
     query: str
     provider: Optional[str] = None
     model: Optional[str] = None
+    testdata_id: Optional[str] = None
 
 class QueryResponse(BaseModel):
     """Response model for /ask endpoint."""
@@ -58,6 +61,54 @@ class QueryResponse(BaseModel):
 
 # Global RAG pipeline instance
 rag_pipeline: Optional[RAGPipeline] = None
+
+
+async def retrieve_with_testdata(query: str, testdata_id: str) -> List[str]:
+    """Retrieve contexts using uploaded test data passages."""
+    try:
+        logger.info(f"🔍 RETRIEVE_WITH_TESTDATA: Starting with testdata_id={testdata_id}")
+        
+        # Get test data bundle
+        from apps.testdata.store import get_store
+        store = get_store()
+        bundle = store.get_bundle(testdata_id)
+        
+        logger.info(f"🔍 RETRIEVE_WITH_TESTDATA: Bundle found={bundle is not None}")
+        if bundle:
+            logger.info(f"🔍 RETRIEVE_WITH_TESTDATA: Bundle has passages={hasattr(bundle, 'passages') and bundle.passages is not None}")
+            if hasattr(bundle, 'passages') and bundle.passages:
+                logger.info(f"🔍 RETRIEVE_WITH_TESTDATA: Passages count={len(bundle.passages)}")
+        
+        if not bundle or not bundle.passages:
+            logger.warning(f"No passages found in testdata bundle {testdata_id}, falling back to default")
+            return rag_pipeline.retrieve(query) if rag_pipeline else []
+        
+        # Create temporary RAG pipeline with uploaded passages
+        from apps.rag_service.rag_pipeline import RAGPipeline
+        temp_pipeline = RAGPipeline(
+            model_name=config.model_name,
+            top_k=config.rag_top_k
+        )
+        
+        # Build index from uploaded passages
+        passages_data = []
+        for passage in bundle.passages:
+            passages_data.append({
+                "id": passage.id,
+                "text": passage.text
+            })
+        
+        temp_pipeline.build_index_from_data(passages_data)
+        logger.info(f"Built temporary index with {len(passages_data)} uploaded passages")
+        
+        # Retrieve contexts
+        contexts = temp_pipeline.retrieve(query)
+        return contexts
+        
+    except Exception as e:
+        logger.error(f"Failed to retrieve with testdata {testdata_id}: {e}")
+        # Fall back to default pipeline
+        return rag_pipeline.retrieve(query) if rag_pipeline else []
 
 
 @app.on_event("startup")
@@ -248,8 +299,15 @@ async def ask(
         # Start logging if enabled
         log_id = start_log(query_text, query_hash_value, [], source)
         
-        # Retrieve context
-        contexts = rag_pipeline.retrieve(query_text)
+        # Use custom passages if testdata_id provided AND not using mock provider
+        logger.info(f"🔍 ASK ENDPOINT: testdata_id={request.testdata_id}, provider={provider}")
+        if request.testdata_id and provider != "mock":
+            logger.info(f"🔍 ASK ENDPOINT: Using uploaded data for provider={provider}")
+            contexts = await retrieve_with_testdata(query_text, request.testdata_id)
+        else:
+            # Use default pipeline for mock provider or when no testdata_id
+            logger.info(f"🔍 ASK ENDPOINT: Using default data (provider={provider}, testdata_id={request.testdata_id})")
+            contexts = rag_pipeline.retrieve(query_text)
         
         # Generate answer with provider/model override
         answer = rag_pipeline.answer(query_text, contexts, provider, model)
@@ -398,6 +456,73 @@ async def discover_mcp_tools(
 async def setup_additional_routers():
     """Setup additional routers after main startup."""
     setup_routers()
+    
+    # Add real orchestrator endpoint
+    @app.post("/orchestrator/run_tests")
+    async def run_tests_endpoint(request: dict):
+        """Real orchestrator endpoint with Universal RAG Evaluation."""
+        try:
+            import subprocess
+            import json
+            import tempfile
+            import os
+            
+            # Write request to temp file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                json.dump(request, f)
+                temp_file = f.name
+            
+            try:
+                # Run orchestrator as subprocess
+                orchestrator_dir = os.path.join(os.path.dirname(__file__), '..', 'orchestrator')
+                cmd = [
+                    sys.executable, '-c',
+                    f'''
+import sys
+import os
+import json
+sys.path.insert(0, "{orchestrator_dir}")
+os.chdir("{orchestrator_dir}")
+
+# Fix relative imports
+import importlib.util
+spec = importlib.util.spec_from_file_location("run_tests", "{orchestrator_dir}/run_tests.py")
+run_tests_module = importlib.util.module_from_spec(spec)
+sys.modules["run_tests"] = run_tests_module
+spec.loader.exec_module(run_tests_module)
+
+# Load request
+with open("{temp_file}", "r") as f:
+    request_data = json.load(f)
+
+# Run tests
+runner = run_tests_module.TestRunner()
+result = runner.run_tests(request_data)
+print(json.dumps(result))
+                    '''
+                ]
+                
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                
+                if result.returncode == 0:
+                    # Parse JSON output
+                    output_lines = result.stdout.strip().split('\\n')
+                    json_line = output_lines[-1]  # Last line should be JSON
+                    return json.loads(json_line)
+                else:
+                    logger.error(f"Orchestrator subprocess failed: {result.stderr}")
+                    raise Exception(f"Subprocess failed: {result.stderr}")
+                    
+            finally:
+                # Cleanup temp file
+                if os.path.exists(temp_file):
+                    os.unlink(temp_file)
+                    
+        except Exception as e:
+            logger.error(f"Test execution failed: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    logger.info("🎯 Real orchestrator endpoint with Universal RAG added successfully")
 
 
 if __name__ == "__main__":

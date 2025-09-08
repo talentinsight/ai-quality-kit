@@ -55,10 +55,10 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
       const isGtTransition = prevGtState.current !== hasGroundTruth;
       prevGtState.current = hasGroundTruth;
       
-      // Get default RAG selection based on GT availability (only affects RAG suite)
+      // RAG Metrics Spec: Default selection based on GT availability
       const ragDefaults = hasGroundTruth 
-        ? ['basic_faithfulness', 'context_recall', 'answer_relevancy', 'context_precision', 'answer_correctness', 'answer_similarity', 'context_entities_recall', 'context_relevancy']
-        : ['basic_faithfulness', 'context_recall', 'answer_relevancy'];
+        ? ['faithfulness', 'context_recall', 'answer_relevancy', 'context_precision', 'answer_correctness', 'answer_similarity', 'context_entities_recall', 'context_relevancy']  // 8 defaults with GT
+        : ['faithfulness', 'context_recall', 'answer_relevancy'];  // 3 defaults without GT
       
       // Default selection for companion suites (always all tests enabled)
       const companionDefaults = {
@@ -90,12 +90,12 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
                 // On GT transitions, only update GT-specific tests
                 if (!hasGroundTruth) {
                   // GT → No-GT: Disable GT-only metrics
-                  if (['answer_correctness', 'answer_similarity', 'context_entities_recall', 'context_relevancy'].includes(test.id)) {
+                  if (['context_precision', 'answer_correctness', 'answer_similarity', 'context_entities_recall', 'context_relevancy'].includes(test.id)) {
                     return { ...test, enabled: false };
                   }
                 } else {
                   // No-GT → GT: Enable GT metrics based on defaults
-                  if (['answer_correctness', 'answer_similarity', 'context_entities_recall', 'context_relevancy'].includes(test.id)) {
+                  if (['context_precision', 'answer_correctness', 'answer_similarity', 'context_entities_recall', 'context_relevancy'].includes(test.id)) {
                     return { ...test, enabled: ragDefaults.includes(test.id) };
                   }
                 }
@@ -144,7 +144,7 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
       expanded: false,
       tests: [
         {
-          id: 'basic_faithfulness',
+          id: 'faithfulness',
           name: 'Faithfulness Evaluation',
           description: 'Measures how grounded the answer is in the provided context',
           enabled: true,
@@ -172,42 +172,42 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
           id: 'context_precision',
           name: 'Context Precision',
           description: 'Measures how relevant the retrieved contexts are to the question',
-          enabled: false,
+          enabled: true,  // RAG Metrics Spec: Default with GT
           estimatedDuration: '3-7 min',
         },
         {
           id: 'answer_correctness',
           name: 'Answer Correctness',
           description: 'Measures the accuracy of the answer compared to ground truth',
-          enabled: false,
+          enabled: true,  // RAG Metrics Spec: Default with GT
           estimatedDuration: '4-8 min',
         },
         {
           id: 'answer_similarity',
           name: 'Answer Similarity',
           description: 'Measures semantic similarity between generated and ground truth answers',
-          enabled: false,
+          enabled: true,  // RAG Metrics Spec: Default with GT
           estimatedDuration: '3-6 min',
         },
         {
           id: 'context_entities_recall',
           name: 'Context Entities Recall',
           description: 'Measures how well entities from ground truth are captured in retrieved contexts',
-          enabled: false,
+          enabled: true,  // RAG Metrics Spec: Default with GT
           estimatedDuration: '4-7 min',
         },
         {
           id: 'context_relevancy',
           name: 'Context Relevancy',
           description: 'Measures how relevant the retrieved contexts are to the question',
-          enabled: false,
+          enabled: true,  // RAG Metrics Spec: Default with GT
           estimatedDuration: '3-6 min',
         },
         {
           id: 'prompt_robustness',
           name: 'Prompt Robustness (Structured Prompting)',
           description: 'Tests prompt robustness across simple, CoT, and scaffold modes',
-          enabled: false,
+          enabled: false,  // RAG Metrics Spec: Optional, off by default
           estimatedDuration: '10-20 min',
         }
       ]
@@ -869,10 +869,10 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
           {llmModelType === 'rag' && (
             <button
               onClick={() => {
-                // Get default RAG selection based on GT availability (only affects RAG suite)
+                // RAG Metrics Spec: Default selection based on GT availability
                 const ragDefaults = hasGroundTruth 
-                  ? ['basic_faithfulness', 'context_recall', 'answer_relevancy', 'context_precision', 'answer_correctness', 'answer_similarity', 'context_entities_recall', 'context_relevancy']
-                  : ['basic_faithfulness', 'context_recall', 'answer_relevancy'];
+                  ? ['faithfulness', 'context_recall', 'answer_relevancy', 'context_precision', 'answer_correctness', 'answer_similarity', 'context_entities_recall', 'context_relevancy']  // 8 defaults with GT
+                  : ['faithfulness', 'context_recall', 'answer_relevancy'];  // 3 defaults without GT
                 
                 // Default selection for companion suites (always all tests enabled)
                 const companionDefaults = {
