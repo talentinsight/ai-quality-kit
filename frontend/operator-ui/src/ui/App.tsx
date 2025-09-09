@@ -55,6 +55,12 @@ export default function App() {
     retrievalJsonPath: "",
     retrievalTopK: ""
   });
+
+  // Advanced Options state (separate from API Configuration)
+  const [advancedOptions, setAdvancedOptions] = useState({
+    retrievedContextsJsonPath: "",
+    topKReporting: "4"
+  });
   
   // MCP mode state
   const [mcpFormState, setMcpFormState] = useState({
@@ -81,7 +87,7 @@ export default function App() {
   // Backward compatibility - derive from new state structure
   const apiBaseUrl = apiFormState.serverUrl;
   const token = apiFormState.bearerToken;
-  const retrievalJsonPath = apiFormState.retrievalJsonPath;
+  const apiRetrievalJsonPath = apiFormState.retrievalJsonPath;
   const retrievalTopK = apiFormState.retrievalTopK;
   
   // MCP backward compatibility
@@ -491,7 +497,17 @@ export default function App() {
   }
 
   async function runTests() {
-    setBusy(true); setMessage(""); 
+    setBusy(true); setMessage("");
+    
+    // Professional refresh: Auto-validate testdata before running tests
+    if (testdataId.trim()) {
+      await validateTestdataId(true);
+      // If validation failed and cleared testdata_id, stop execution
+      if (!testdataId.trim()) {
+        setBusy(false);
+        return;
+      }
+    } 
     
     // Generate run_id immediately for cancel functionality
     const tempRunId = `run_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
@@ -502,6 +518,8 @@ export default function App() {
       // Build payload strictly from active mode state (payload hygiene)
       const payload: OrchestratorRequest = {
         target_mode: targetMode as "api"|"mcp",
+        provider: provider || "openai",  // ✅ Top-level provider
+        model: model || "gpt-4",         // ✅ Top-level model
         suites,
         thresholds,
         testdata_id: testdataId.trim() || undefined,
@@ -704,8 +722,8 @@ export default function App() {
     }
   };
 
-  // Validate testdata_id
-  const validateTestdataId = async () => {
+  // Validate testdata_id with professional expiry handling
+  const validateTestdataId = async (showToast = false) => {
     if (!testdataId.trim()) {
       setTestdataValid(null);
       return;
@@ -713,11 +731,47 @@ export default function App() {
 
     setValidatingTestdata(true);
     try {
-      await getTestdataMeta(testdataId.trim(), token);
-      setTestdataValid(true);
+      const meta = await getTestdataMeta(testdataId.trim(), token);
+      
+      // Check if data is expired or about to expire (within 5 minutes)
+      const now = new Date();
+      const expiresAt = new Date(meta.expires_at);
+      const timeUntilExpiry = expiresAt.getTime() - now.getTime();
+      const fiveMinutes = 5 * 60 * 1000;
+      
+      if (timeUntilExpiry <= 0) {
+        // Expired - clear cache and show message
+        localStorage.removeItem('aqk:last_testdata_id');
+        setTestdataId('');
+        setTestdataValid(false);
+        if (showToast) {
+          setMessage('⚠️ Test data has expired. Please upload new data.');
+        }
+      } else if (timeUntilExpiry <= fiveMinutes) {
+        // About to expire - warn user
+        setTestdataValid(true);
+        if (showToast) {
+          const minutesLeft = Math.ceil(timeUntilExpiry / 60000);
+          setMessage(`⏰ Test data expires in ${minutesLeft} minute(s). Consider uploading fresh data.`);
+        }
+      } else {
+        // Valid
+        setTestdataValid(true);
+        if (showToast) {
+          const hoursLeft = Math.floor(timeUntilExpiry / 3600000);
+          const minutesLeft = Math.floor((timeUntilExpiry % 3600000) / 60000);
+          setMessage(`✅ Test data is valid. Expires in ${hoursLeft}h ${minutesLeft}m.`);
+        }
+      }
     } catch (error) {
       console.error('Testdata validation error:', error);
+      // If validation fails, assume expired and clear cache
+      localStorage.removeItem('aqk:last_testdata_id');
+      setTestdataId('');
       setTestdataValid(false);
+      if (showToast) {
+        setMessage('❌ Test data not found or expired. Please upload new data.');
+      }
     } finally {
       setValidatingTestdata(false);
     }
@@ -990,9 +1044,9 @@ export default function App() {
                       </label>
                       <input
                         type="text"
-                        value={retrievalJsonPath}
-                        onChange={(e) => setRetrievalJsonPath(e.target.value)}
-                        placeholder="e.g., $.contexts or $.retrieved"
+                        value={advancedOptions.retrievedContextsJsonPath}
+                        onChange={(e) => setAdvancedOptions(prev => ({ ...prev, retrievedContextsJsonPath: e.target.value }))}
+                        placeholder="e.g., $.context[*].id"
                         className="w-full px-2 py-1 text-sm border border-slate-300 dark:border-slate-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:text-slate-100"
                       />
                       <p className="text-xs text-slate-500 mt-1">
@@ -1007,8 +1061,8 @@ export default function App() {
                       </label>
                       <input
                         type="number"
-                        value={retrievalTopK}
-                        onChange={(e) => setRetrievalTopK(e.target.value)}
+                        value={advancedOptions.topKReporting}
+                        onChange={(e) => setAdvancedOptions(prev => ({ ...prev, topKReporting: e.target.value }))}
                         placeholder="e.g., 5"
                         min="1"
                         max="20"
@@ -1168,7 +1222,7 @@ export default function App() {
                           </div>
 
                           {/* Warning if no contexts JSONPath */}
-                          {!retrievalJsonPath && (
+                          {!advancedOptions.retrievedContextsJsonPath && (
                             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded p-2">
                               <p className="text-xs text-yellow-800 dark:text-yellow-200">
                                 <strong>Warning:</strong> No contexts JSONPath configured; comparison may skip all items.
@@ -1558,19 +1612,19 @@ export default function App() {
                     </button>
                     <button
                       className="btn btn-ghost"
-                      onClick={validateTestdataId}
+                      onClick={() => validateTestdataId(true)}
                       disabled={validatingTestdata || !testdataId.trim()}
-                      title="Validate testdata_id"
+                      title="Check if test data is still valid and show expiry info"
                     >
                       {validatingTestdata ? (
                         <>
                           <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent" />
-                          Validate
+                          Checking...
                         </>
                       ) : (
                         <>
                           <RefreshCw size={16} />
-                          Validate
+                          Check Status
                         </>
                       )}
                     </button>
@@ -2034,27 +2088,6 @@ export default function App() {
 
 
 
-          {/* Summary row */}
-          {run?.summary && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="kpi">
-              <div className="title">Run</div>
-              <div className="value truncate">{run.run_id}</div>
-            </div>
-            <div className="kpi">
-              <div className="title">Artifacts</div>
-              <div className="value">JSON & Excel</div>
-            </div>
-            <div className="kpi">
-              <div className="title">Status</div>
-              <div className="value flex items-center gap-2"><CheckCircle2 className="text-emerald-500" /> Ready</div>
-            </div>
-            <div className="kpi">
-              <div className="title">Sheets</div>
-              <div className="value text-sm leading-tight">{REQUIRED_SHEETS.join(", ")}</div>
-            </div>
-          </div>
-        )}
 
         {/* Download card */}
         {hasRun && (

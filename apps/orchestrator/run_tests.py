@@ -1800,7 +1800,14 @@ class TestRunner:
                 "model": model,
                 "prompt_tokens": synthetic_result.get("prompt_tokens", len(query.split())),
                 "completion_tokens": synthetic_result.get("completion_tokens", 20),
-                "total_tokens": synthetic_result.get("prompt_tokens", len(query.split())) + synthetic_result.get("completion_tokens", 20)
+                "total_tokens": synthetic_result.get("prompt_tokens", len(query.split())) + synthetic_result.get("completion_tokens", 20),
+                # API details for tracking
+                "endpoint": "synthetic://provider",
+                "status_code": 200,
+                "source": "synthetic",
+                "perf_phase": "warm",
+                "latency_from_header": "50",
+                "request_id": f"synthetic_{int(time.time())}"
             }
         elif provider == "mock":
             print(f"🎭 MOCK: Using mock provider for test {item.get('test_id', 'unknown')}")
@@ -1823,7 +1830,12 @@ class TestRunner:
                 "provider": provider,
                 "model": model,
                 "source": "mock",
-                "perf_phase": "warm"
+                "perf_phase": "warm",
+                # API details for tracking
+                "endpoint": "http://localhost:8000/ask",
+                "status_code": 200,
+                "latency_from_header": "100",
+                "request_id": f"mock_{int(time.time())}"
             }
         
         # Determine base URL based on provider and test type
@@ -1939,11 +1951,15 @@ class TestRunner:
                         raise ValueError("Invalid OpenAI response format")
                 # For RAG endpoint responses, result already has correct format with contexts
                 
-                # Extract headers for non-OpenAI providers
-                if provider != "openai":
-                    result["source"] = response.headers.get("X-Source", "unknown")
-                    result["perf_phase"] = response.headers.get("X-Perf-Phase", "unknown")
-                    result["latency_from_header"] = response.headers.get("X-Latency-MS", "0")
+                # Extract headers and API metadata for all providers
+                result["source"] = response.headers.get("X-Source", "live")
+                result["perf_phase"] = response.headers.get("X-Perf-Phase", "warm")
+                result["latency_from_header"] = response.headers.get("X-Latency-MS", str(response_time_ms))
+                
+                # Add API details for tracking
+                result["endpoint"] = endpoint
+                result["status_code"] = response.status_code
+                result["request_id"] = response.headers.get("X-Request-ID", "")
                 
                 return result
         except Exception as e:
@@ -2309,7 +2325,11 @@ class TestRunner:
             honest_patterns = [
                 "i don't know", "i do not know", "i dont know",
                 "no information", "cannot answer", "unable to answer",
-                "not sure", "unclear", "unknown", "no data"
+                "not sure", "unclear", "unknown", "no data",
+                "context does not provide", "context doesn't provide",
+                "not provided in the context", "not available in the context",
+                "context does not contain", "context doesn't contain",
+                "no relevant information", "insufficient information"
             ]
             
             is_honest_response = any(pattern in answer for pattern in honest_patterns)
@@ -2332,16 +2352,23 @@ class TestRunner:
             
             print(f"🎯 UNIVERSAL: is_honest={is_honest_response}, context_relevance={context_relevance:.3f}")
             
-            # Universal evaluation logic
-            if is_honest_response and context_relevance < 0.3:
+            # Universal evaluation logic - Calculate REAL metrics, use thresholds for pass/fail only
+            import os
+            context_relevance_threshold = float(os.getenv("CONTEXT_RELEVANCE_THRESHOLD", "0.3"))
+            faithfulness_threshold = float(os.getenv("FAITHFULNESS_THRESHOLD", "0.5"))
+            context_recall_threshold = float(os.getenv("CONTEXT_RECALL_THRESHOLD", "0.4"))
+            match_ratio_threshold = float(os.getenv("RAG_QUALITY_THRESHOLD", "0.3"))
+            
+            if is_honest_response and context_relevance < context_relevance_threshold:
                 # Honest response with irrelevant context = PASS
-                evaluation["faithfulness"] = 0.9
-                evaluation["context_recall"] = 0.8
-                evaluation["passed"] = True
+                # Calculate realistic metrics for honest behavior with irrelevant context
+                evaluation["faithfulness"] = 0.95  # High faithfulness - honest about not knowing
+                evaluation["context_recall"] = context_relevance  # Low recall due to irrelevant context
+                evaluation["passed"] = True  # Override pass/fail logic for honest behavior
                 print(f"🎉 UNIVERSAL PASS: Honest response with irrelevant context (relevance: {context_relevance:.3f})")
                 self.capture_log("INFO", "evals.rag", f"🎉 UNIVERSAL PASS: Honest 'I don't know' with irrelevant context")
             else:
-                # Standard evaluation for other cases
+                # Standard evaluation for other cases - calculate real metrics
                 expected = item.get("expected_answer", "").lower()
                 print(f"🎯 UNIVERSAL: expected='{expected[:100]}...'")
                 if expected:
@@ -2355,25 +2382,37 @@ class TestRunner:
                     
                     print(f"🎯 UNIVERSAL: matches={matches}/{len(expected_words)}, ratio={match_ratio:.2f}")
                     
-                    # More lenient threshold - pass if 30% of key words match
-                    if match_ratio >= 0.3 or any(key_phrase in answer_lower for key_phrase in expected_words[:2]):
-                        evaluation["faithfulness"] = 0.8
-                        evaluation["context_recall"] = 0.7
-                        evaluation["passed"] = True
-                        print(f"🎯 UNIVERSAL PASS: {matches}/{len(expected_words)} words matched ({match_ratio:.2f})")
+                    # Calculate realistic metrics based on match quality
+                    calculated_faithfulness = min(0.95, max(0.1, match_ratio * 0.8 + context_relevance * 0.2))
+                    calculated_context_recall = min(0.95, max(0.1, context_relevance * 0.7 + match_ratio * 0.3))
+                    
+                    # Set calculated metrics (not thresholds!)
+                    evaluation["faithfulness"] = calculated_faithfulness
+                    evaluation["context_recall"] = calculated_context_recall
+                    
+                    # Use thresholds for pass/fail decision only
+                    passed_faithfulness = calculated_faithfulness >= faithfulness_threshold
+                    passed_context_recall = calculated_context_recall >= context_recall_threshold
+                    passed_match_quality = match_ratio >= match_ratio_threshold
+                    
+                    evaluation["passed"] = passed_faithfulness and passed_context_recall and passed_match_quality
+                    
+                    if evaluation["passed"]:
+                        print(f"🎯 UNIVERSAL PASS: {matches}/{len(expected_words)} words matched ({match_ratio:.2f}), faithfulness={calculated_faithfulness:.3f}, context_recall={calculated_context_recall:.3f}")
                         self.capture_log("INFO", "evals.rag", f"🎯 UNIVERSAL PASS: {matches}/{len(expected_words)} words matched ({match_ratio:.2f})")
                     else:
-                        evaluation["faithfulness"] = 0.3
-                        evaluation["context_recall"] = 0.4
-                        evaluation["passed"] = False
-                        print(f"❌ UNIVERSAL FAIL: {matches}/{len(expected_words)} words matched ({match_ratio:.2f})")
+                        print(f"❌ UNIVERSAL FAIL: {matches}/{len(expected_words)} words matched ({match_ratio:.2f}), faithfulness={calculated_faithfulness:.3f}, context_recall={calculated_context_recall:.3f}")
                         self.capture_log("INFO", "evals.rag", f"❌ UNIVERSAL FAIL: {matches}/{len(expected_words)} words matched ({match_ratio:.2f})")
                 else:
-                    # No expected answer - pass if we got any response
-                    evaluation["faithfulness"] = 0.8 if answer.strip() else 0.3
-                    evaluation["context_recall"] = 0.7 if answer.strip() else 0.4
-                    evaluation["passed"] = bool(answer.strip())
-                    print(f"🎯 UNIVERSAL: No expected answer, got response: {bool(answer.strip())}")
+                    # No expected answer - calculate metrics based on response quality
+                    has_response = bool(answer.strip())
+                    calculated_faithfulness = 0.8 if has_response else 0.2
+                    calculated_context_recall = context_relevance if has_response else 0.1
+                    
+                    evaluation["faithfulness"] = calculated_faithfulness
+                    evaluation["context_recall"] = calculated_context_recall
+                    evaluation["passed"] = has_response and calculated_faithfulness >= faithfulness_threshold
+                    print(f"🎯 UNIVERSAL: No expected answer, got response: {has_response}, faithfulness={calculated_faithfulness:.3f}")
         
         elif suite in ["red_team", "safety"]:
             # Legacy safety evaluation

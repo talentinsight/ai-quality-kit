@@ -40,14 +40,20 @@ def to_jsonl_qaset(excel_file_path: str) -> Tuple[str, List[Dict[str, Any]]]:
         # Map expected column names to indices
         column_map = {}
         for i, header in enumerate(headers):
-            if "question" in header:
+            if header in ["qid", "id"]:
+                column_map["qid"] = i
+            elif "question" in header:
                 column_map["question"] = i
             elif "context" in header:
-                column_map["context"] = i
+                column_map["contexts"] = i
             elif "expected" in header and "answer" in header:
                 column_map["expected_answer"] = i
             elif "answer" in header and "expected" not in header:
                 column_map["expected_answer"] = i
+            elif "meta" in header and "category" in header:
+                column_map["meta_category"] = i
+            elif "meta" in header and "difficulty" in header:
+                column_map["meta_difficulty"] = i
             elif "metadata" in header or "meta" in header:
                 column_map["metadata"] = i
         
@@ -73,29 +79,57 @@ def to_jsonl_qaset(excel_file_path: str) -> Tuple[str, List[Dict[str, Any]]]:
             if not question or not expected_answer:
                 continue
             
+            # Extract QID (use provided or generate)
+            qid = None
+            if "qid" in column_map and column_map["qid"] < len(row):
+                qid = row[column_map["qid"]]
+            if not qid:
+                qid = f"q{row_num-1}"
+            
             # Build record
             record: Dict[str, Any] = {
-                "qid": f"q{row_num-1}",  # Generate QID
+                "qid": str(qid).strip(),
                 "question": str(question).strip(),
                 "expected_answer": str(expected_answer).strip()
             }
             
-            # Add context if present
-            if "context" in column_map and column_map["context"] < len(row):
-                context = row[column_map["context"]]
-                if context:
-                    record["contexts"] = [f"p{row_num-1}"]  # Reference to passage ID
-                    # TODO: Extract actual context text and create passages
+            # Add contexts if present
+            if "contexts" in column_map and column_map["contexts"] < len(row):
+                contexts = row[column_map["contexts"]]
+                if contexts:
+                    # Handle both single ID and comma-separated IDs
+                    context_ids = [c.strip() for c in str(contexts).split(",")]
+                    record["contexts"] = context_ids
             
-            # Add metadata if present
+            # Build metadata object
+            meta = {}
+            
+            # Add category if present
+            if "meta_category" in column_map and column_map["meta_category"] < len(row):
+                category = row[column_map["meta_category"]]
+                if category:
+                    meta["category"] = str(category).strip()
+            
+            # Add difficulty if present
+            if "meta_difficulty" in column_map and column_map["meta_difficulty"] < len(row):
+                difficulty = row[column_map["meta_difficulty"]]
+                if difficulty:
+                    meta["difficulty"] = str(difficulty).strip()
+            
+            # Add legacy metadata if present
             if "metadata" in column_map and column_map["metadata"] < len(row):
                 metadata = row[column_map["metadata"]]
                 if metadata:
                     try:
                         # Try to parse as JSON, otherwise use as string
-                        record["meta"] = json.loads(str(metadata))
+                        legacy_meta = json.loads(str(metadata))
+                        meta.update(legacy_meta)
                     except:
-                        record["meta"] = {"category": str(metadata)}
+                        meta["category"] = str(metadata)
+            
+            # Add meta to record if not empty
+            if meta:
+                record["meta"] = meta
             
             records.append(record)
             jsonl_lines.append(json.dumps(record))
@@ -143,6 +177,10 @@ def to_jsonl_passages(excel_file_path: str) -> Tuple[str, List[Dict[str, Any]]]:
                 column_map["id"] = i
             elif "text" in header or "content" in header or "passage" in header:
                 column_map["text"] = i
+            elif "meta" in header and "source" in header:
+                column_map["meta_source"] = i
+            elif "meta" in header and "category" in header:
+                column_map["meta_category"] = i
             elif "metadata" in header or "meta" in header:
                 column_map["metadata"] = i
         
@@ -178,14 +216,34 @@ def to_jsonl_passages(excel_file_path: str) -> Tuple[str, List[Dict[str, Any]]]:
             else:
                 record["id"] = f"p{row_num-1}"
             
-            # Add metadata if present
+            # Build metadata object
+            meta = {}
+            
+            # Add source if present
+            if "meta_source" in column_map and column_map["meta_source"] < len(row):
+                source = row[column_map["meta_source"]]
+                if source:
+                    meta["source"] = str(source).strip()
+            
+            # Add category if present
+            if "meta_category" in column_map and column_map["meta_category"] < len(row):
+                category = row[column_map["meta_category"]]
+                if category:
+                    meta["category"] = str(category).strip()
+            
+            # Add legacy metadata if present
             if "metadata" in column_map and column_map["metadata"] < len(row):
                 metadata = row[column_map["metadata"]]
                 if metadata:
                     try:
-                        record["meta"] = json.loads(str(metadata))
+                        legacy_meta = json.loads(str(metadata))
+                        meta.update(legacy_meta)
                     except:
-                        record["meta"] = {"source": str(metadata)}
+                        meta["source"] = str(metadata)
+            
+            # Add meta to record if not empty
+            if meta:
+                record["meta"] = meta
             
             records.append(record)
             jsonl_lines.append(json.dumps(record))

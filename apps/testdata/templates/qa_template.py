@@ -13,33 +13,39 @@ def create_qa_template() -> bytes:
     ws = wb.active
     ws.title = "QA Template"
     
-    # Headers
-    headers = ["Question", "Context", "Expected Answer", "Metadata (Optional)"]
+    # Headers - Match JSONL format exactly
+    headers = ["QID", "Question", "Expected Answer", "Contexts", "Meta Category", "Meta Difficulty"]
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=header)
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
         cell.alignment = Alignment(horizontal="center")
     
-    # Sample data
+    # Sample data - Match JSONL format exactly
     sample_data = [
         [
-            "What is the capital of France?",
-            "France is a country in Western Europe. Paris is the capital and largest city of France.",
-            "Paris",
-            "geography"
+            "q1",  # QID
+            "What is the capital of France?",  # Question
+            "Paris",  # Expected Answer
+            "p1",  # Contexts (passage ID)
+            "geography",  # Meta Category
+            "easy"  # Meta Difficulty
         ],
         [
+            "q2",
             "How do you calculate compound interest?",
-            "Compound interest is calculated using the formula: A = P(1 + r/n)^(nt), where A is the amount, P is principal, r is annual interest rate, n is number of times interest compounds per year, and t is time in years.",
             "A = P(1 + r/n)^(nt)",
-            "finance"
+            "p2",
+            "finance",
+            "medium"
         ],
         [
+            "q3",
             "What is machine learning?",
-            "Machine learning is a subset of artificial intelligence that enables computers to learn and make decisions from data without being explicitly programmed for every task.",
             "A subset of AI that enables computers to learn from data",
-            "technology"
+            "p3",
+            "technology",
+            "easy"
         ]
     ]
     
@@ -83,29 +89,32 @@ def create_passages_template() -> bytes:
     ws = wb.active
     ws.title = "Passages Template"
     
-    # Headers
-    headers = ["ID", "Text", "Metadata (Optional)"]
+    # Headers - Match JSONL format exactly
+    headers = ["ID", "Text", "Meta Source", "Meta Category"]
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=header)
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
         cell.alignment = Alignment(horizontal="center")
     
-    # Sample data
+    # Sample data - Match JSONL format exactly
     sample_data = [
         [
-            "p1",
-            "France is a country in Western Europe. Paris is the capital and largest city of France, with a population of over 2 million people.",
-            "geography"
+            "p1",  # ID
+            "France is a country in Western Europe. Paris is the capital and largest city of France, with a population of over 2 million people.",  # Text
+            "geography_textbook",  # Meta Source
+            "geography"  # Meta Category
         ],
         [
             "p2", 
             "Compound interest is the interest calculated on the initial principal and also on the accumulated interest of previous periods. The formula is A = P(1 + r/n)^(nt).",
+            "finance_guide",
             "finance"
         ],
         [
             "p3",
             "Machine learning is a subset of artificial intelligence that enables computers to learn and improve from experience without being explicitly programmed.",
+            "tech_encyclopedia",
             "technology"
         ]
     ]

@@ -133,7 +133,9 @@ def _get_anthropic_chat(model_override: Optional[str] = None, deterministic: boo
     if not api_key:
         raise ValueError("ANTHROPIC_API_KEY environment variable is required for Anthropic provider")
     
-    model_name = model_override or os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet")
+    model_name = model_override or os.getenv("ANTHROPIC_MODEL")
+    if not model_name:
+        raise ValueError("ANTHROPIC_MODEL environment variable is required for Anthropic provider")
     client = Anthropic(api_key=api_key)
     resilient_client = get_resilient_client()
     

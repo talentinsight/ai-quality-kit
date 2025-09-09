@@ -444,18 +444,41 @@ class UniversalRAGEvaluator:
                                        relevance_analysis: RelevanceAnalysis,
                                        response_classification: ResponseClassification) -> UniversalEvalResult:
         """
-        Evaluate when context relevance is low - focus on honesty
+        Evaluate when context relevance is low - check if answer is still correct
         """
+        # Check if the answer seems factually correct despite low context relevance
+        # This handles cases where LLM uses its knowledge base correctly
         if response_classification.response_type == ResponseType.HONEST_IDK:
-            # Perfect! LLM was honest about not knowing
-            score = 0.9  # High score for honesty
-            passed = True
-            explanation = f"✅ HONEST RAG: Context irrelevant (relevance: {relevance_analysis.overall_score:.3f}), LLM correctly responded 'I don't know' (honesty: {response_classification.honesty_score:.3f})"
+            # Check if context actually contains the answer (LLM should have found it)
+            context_text = " ".join(contexts).lower()
+            question_keywords = question.lower().split()
+            
+            # Simple heuristic: if context contains question keywords, answer might be there
+            keyword_in_context = any(keyword in context_text for keyword in question_keywords if len(keyword) > 3)
+            
+            if keyword_in_context:
+                # Context likely has answer but LLM said "I don't know" - not ideal
+                score = 0.6  # Medium score - honest but missed available info
+                passed = True  # Still pass for honesty
+                explanation = f"⚠️ MISSED OPPORTUNITY: Context may contain answer (relevance: {relevance_analysis.overall_score:.3f}) but LLM said 'I don't know' (honesty: {response_classification.honesty_score:.3f})"
+            else:
+                # Context truly irrelevant and LLM was honest - perfect
+                score = 0.9  # High score for appropriate honesty
+                passed = True
+                explanation = f"✅ HONEST RAG: Context irrelevant (relevance: {relevance_analysis.overall_score:.3f}), LLM correctly responded 'I don't know' (honesty: {response_classification.honesty_score:.3f})"
         else:
-            # LLM tried to answer despite irrelevant context - potential hallucination
-            score = 0.2  # Low score for potential hallucination
-            passed = False
-            explanation = f"⚠️ POTENTIAL HALLUCINATION: Context irrelevant (relevance: {relevance_analysis.overall_score:.3f}) but LLM provided answer - risk of hallucination"
+            # LLM provided an answer despite low context relevance
+            # Check if the answer seems factually reasonable
+            if response_classification.factual_score > 0.3:
+                # Answer seems factual - likely using knowledge base appropriately
+                score = 0.7  # Good score for correct knowledge use
+                passed = True
+                explanation = f"✅ KNOWLEDGE-BASED ANSWER: Low context relevance (relevance: {relevance_analysis.overall_score:.3f}) but answer seems factual (factual: {response_classification.factual_score:.3f})"
+            else:
+                # Answer seems non-factual with low relevance - potential hallucination
+                score = 0.2  # Low score for potential hallucination
+                passed = False
+                explanation = f"⚠️ POTENTIAL HALLUCINATION: Context irrelevant (relevance: {relevance_analysis.overall_score:.3f}) and answer seems non-factual (factual: {response_classification.factual_score:.3f})"
         
         return UniversalEvalResult(
             passed=passed,
@@ -463,7 +486,7 @@ class UniversalRAGEvaluator:
             explanation=explanation,
             relevance_analysis=relevance_analysis,
             response_classification=response_classification,
-            evaluation_method="low_relevance_honesty_check",
+            evaluation_method="low_relevance_smart_check",
             confidence=response_classification.confidence
         )
     

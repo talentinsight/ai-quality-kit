@@ -16,7 +16,7 @@ class Config:
         self.anthropic_api_key: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
         self.google_api_key: Optional[str] = os.getenv("GOOGLE_API_KEY")
         self.model_name: str = os.getenv("MODEL_NAME", "gpt-4o-mini")
-        self.anthropic_model: str = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet")
+        self.anthropic_model: str = os.getenv("ANTHROPIC_MODEL", "claude-3.5-sonnet")
         self.gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-1.5-pro")
         self.provider: str = os.getenv("PROVIDER", "openai")
         self.rag_top_k: int = int(os.getenv("RAG_TOP_K", "4"))
