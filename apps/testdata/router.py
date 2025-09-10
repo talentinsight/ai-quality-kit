@@ -19,7 +19,7 @@ from apps.utils.pii_redaction import mask_text
 from .models import (
     UploadResponse, URLRequest, PasteRequest, TestDataMeta,
     PassageRecord, QARecord, ValidationError,
-    validate_jsonl_content, validate_attacks_content, validate_schema_content,
+    validate_jsonl_content, validate_attacks_content, validate_bias_content, validate_perf_content, validate_schema_content,
     MAX_FILE_SIZE
 )
 from .store import get_store, create_bundle
@@ -36,13 +36,19 @@ HTTP_TIMEOUT = int(os.getenv("INTAKE_HTTP_TIMEOUT", "15"))
 ALLOWED_EXTENSIONS = {
     "passages": [".jsonl", ".xlsx", ".xls"],
     "qaset": [".jsonl", ".xlsx", ".xls"],
-    "attacks": [".txt", ".yaml", ".yml"],
+    "attacks": [".yaml", ".yml", ".json", ".jsonl"],
+    "safety": [".yaml", ".yml", ".json", ".jsonl"],
+    "bias": [".yaml", ".yml", ".json", ".jsonl"],
+    "performance": [".yaml", ".yml", ".json", ".jsonl"],
     "schema": [".json"]
 }
 ALLOWED_CONTENT_TYPES = {
     "passages": ["application/json", "text/plain", "application/octet-stream", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"],
     "qaset": ["application/json", "text/plain", "application/octet-stream", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"],
-    "attacks": ["text/plain", "application/x-yaml", "text/yaml", "application/octet-stream"],
+    "attacks": ["text/plain", "application/x-yaml", "text/yaml", "application/json", "application/jsonl", "application/octet-stream"],
+    "safety": ["text/plain", "application/x-yaml", "text/yaml", "application/json", "application/jsonl", "application/octet-stream"],
+    "bias": ["text/plain", "application/x-yaml", "text/yaml", "application/json", "application/jsonl", "application/octet-stream"],
+    "performance": ["text/plain", "application/x-yaml", "text/yaml", "application/json", "application/jsonl", "application/octet-stream"],
     "schema": ["application/json", "application/octet-stream"]
 }
 
@@ -132,6 +138,14 @@ async def _read_and_validate_file(file: UploadFile, artifact_type: str) -> tuple
         attacks, errors = validate_attacks_content(content)
         _increment_metrics(0, len(attacks))
         return content, attacks, errors
+    elif artifact_type == "bias":
+        bias_cases, errors = validate_bias_content(content)
+        _increment_metrics(0, len(bias_cases))
+        return content, bias_cases, errors
+    elif artifact_type == "performance":
+        perf_scenarios, errors = validate_perf_content(content)
+        _increment_metrics(0, len(perf_scenarios))
+        return content, perf_scenarios, errors
     elif artifact_type == "schema":
         schema, errors = validate_schema_content(content)
         _increment_metrics(0, 1 if schema else 0)
@@ -175,6 +189,14 @@ async def _fetch_url_content(url: str, artifact_type: str) -> tuple[str, Any, Li
                 attacks, errors = validate_attacks_content(content)
                 _increment_metrics(0, len(attacks))
                 return content, attacks, errors
+            elif artifact_type == "bias":
+                bias_cases, errors = validate_bias_content(content)
+                _increment_metrics(0, len(bias_cases))
+                return content, bias_cases, errors
+            elif artifact_type == "performance":
+                perf_scenarios, errors = validate_perf_content(content)
+                _increment_metrics(0, len(perf_scenarios))
+                return content, perf_scenarios, errors
             elif artifact_type == "schema":
                 schema, errors = validate_schema_content(content)
                 _increment_metrics(0, 1 if schema else 0)
@@ -213,6 +235,14 @@ def _validate_paste_content(content: str, artifact_type: str) -> tuple[Any, List
         attacks, errors = validate_attacks_content(content)
         _increment_metrics(0, len(attacks))
         return attacks, errors
+    elif artifact_type == "bias":
+        bias_cases, errors = validate_bias_content(content)
+        _increment_metrics(0, len(bias_cases))
+        return bias_cases, errors
+    elif artifact_type == "performance":
+        perf_scenarios, errors = validate_perf_content(content)
+        _increment_metrics(0, len(perf_scenarios))
+        return perf_scenarios, errors
     elif artifact_type == "schema":
         schema, errors = validate_schema_content(content)
         _increment_metrics(0, 1 if schema else 0)
@@ -227,6 +257,8 @@ async def upload_testdata(
     passages: Optional[UploadFile] = File(None),
     qaset: Optional[UploadFile] = File(None),
     attacks: Optional[UploadFile] = File(None),
+    bias: Optional[UploadFile] = File(None),
+    performance: Optional[UploadFile] = File(None),
     json_schema: Optional[UploadFile] = File(None),
     principal: Optional[Principal] = Depends(require_user_or_admin())
 ):
@@ -235,7 +267,7 @@ async def upload_testdata(
     
     try:
         # Check that at least one file is provided
-        files = {"passages": passages, "qaset": qaset, "attacks": attacks, "schema": json_schema}
+        files = {"passages": passages, "qaset": qaset, "attacks": attacks, "bias": bias, "performance": performance, "schema": json_schema}
         provided_files = {k: v for k, v in files.items() if v is not None}
         
         if not provided_files:
@@ -291,6 +323,9 @@ async def upload_testdata(
             passages=bundle_data.get("passages"),
             qaset=bundle_data.get("qaset"),
             attacks=bundle_data.get("attacks"),
+            safety=bundle_data.get("safety"),
+            bias=bundle_data.get("bias"),
+            performance=bundle_data.get("performance"),
             json_schema=bundle_data.get("schema"),
             raw_payloads=raw_payloads
         )
@@ -326,7 +361,9 @@ async def upload_testdata_enhanced(
     passages: Optional[UploadFile] = File(None),
     qaset: Optional[UploadFile] = File(None),
     attacks: Optional[UploadFile] = File(None),
-    schema: Optional[UploadFile] = File(None),
+    bias: Optional[UploadFile] = File(None),
+    performance: Optional[UploadFile] = File(None),
+    json_schema: Optional[UploadFile] = File(None),
     # Legacy approach: files[] + kinds[]
     files: Optional[List[UploadFile]] = File(None),
     kinds: Optional[List[str]] = Form(None),
@@ -341,7 +378,7 @@ async def upload_testdata_enhanced(
     
     try:
         # Determine which approach is being used
-        named_files = {"passages": passages, "qaset": qaset, "attacks": attacks, "schema": schema}
+        named_files = {"passages": passages, "qaset": qaset, "attacks": attacks, "bias": bias, "performance": performance, "schema": json_schema}
         provided_named = {k: v for k, v in named_files.items() if v is not None}
         
         # Process files based on approach
@@ -358,10 +395,10 @@ async def upload_testdata_enhanced(
             
             file_map = {}
             for file, kind in zip(files, kinds):
-                if kind not in ["passages", "qaset", "attacks", "schema"]:
+                if kind not in ["passages", "qaset", "attacks", "bias", "performance", "schema"]:
                     raise HTTPException(
                         status_code=400,
-                        detail=f"Invalid kind '{kind}'. Must be one of: passages, qaset, attacks, schema"
+                        detail=f"Invalid kind '{kind}'. Must be one of: passages, qaset, attacks, bias, performance, schema"
                     )
                 file_map[kind] = file
         else:
@@ -517,6 +554,9 @@ async def upload_testdata_enhanced(
                 passages=bundle_data.get("passages"),
                 qaset=bundle_data.get("qaset"),
                 attacks=bundle_data.get("attacks"),
+                safety=bundle_data.get("safety"),
+                bias=bundle_data.get("bias"),
+                performance=bundle_data.get("performance"),
                 json_schema=bundle_data.get("schema"),
                 raw_payloads=raw_payloads or {}
             )
@@ -648,6 +688,9 @@ async def ingest_by_url(
             passages=bundle_data.get("passages"),
             qaset=bundle_data.get("qaset"),
             attacks=bundle_data.get("attacks"),
+            safety=bundle_data.get("safety"),
+            bias=bundle_data.get("bias"),
+            performance=bundle_data.get("performance"),
             json_schema=bundle_data.get("schema"),
             raw_payloads=raw_payloads
         )
@@ -740,6 +783,9 @@ async def ingest_by_paste(
             passages=bundle_data.get("passages"),
             qaset=bundle_data.get("qaset"),
             attacks=bundle_data.get("attacks"),
+            safety=bundle_data.get("safety"),
+            bias=bundle_data.get("bias"),
+            performance=bundle_data.get("performance"),
             json_schema=bundle_data.get("schema"),
             raw_payloads=raw_payloads
         )
@@ -858,9 +904,15 @@ async def download_qa_jsonl_template(
     response: Response,
     principal: Optional[Principal] = Depends(require_user_or_admin())
 ):
-    """Download JSONL template for QA set."""
+    """Download     JSONL template for QA set."""
     try:
-        template_content = create_qa_jsonl_template()
+        template_path = Path(__file__).parent.parent.parent / "data" / "templates" / "qaset.template.jsonl"
+        
+        if not template_path.exists():
+            # Fallback to dynamic generation if file doesn't exist
+            template_content = create_qa_jsonl_template()
+        else:
+            template_content = template_path.read_text(encoding='utf-8')
         
         return Response(
             content=template_content,
@@ -870,7 +922,7 @@ async def download_qa_jsonl_template(
             }
         )
     except Exception as e:
-        logger.error(f"Error creating QA JSONL template: {e}")
+        logger.error(f"Error serving QA JSONL template: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate template")
 
 
@@ -881,7 +933,13 @@ async def download_passages_jsonl_template(
 ):
     """Download JSONL template for passages."""
     try:
-        template_content = create_passages_jsonl_template()
+        template_path = Path(__file__).parent.parent.parent / "data" / "templates" / "passages.template.jsonl"
+        
+        if not template_path.exists():
+            # Fallback to dynamic generation if file doesn't exist
+            template_content = create_passages_jsonl_template()
+        else:
+            template_content = template_path.read_text(encoding='utf-8')
         
         return Response(
             content=template_content,
@@ -891,5 +949,174 @@ async def download_passages_jsonl_template(
             }
         )
     except Exception as e:
-        logger.error(f"Error creating passages JSONL template: {e}")
+        logger.error(f"Error serving passages JSONL template: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate template")
+
+
+
+
+
+
+@router.get("/templates/attacks.yaml")
+async def download_attacks_yaml_template(
+    response: Response,
+    principal: Optional[Principal] = Depends(require_user_or_admin())
+):
+    """Download YAML template for Red Team attacks."""
+    try:
+        # Check if templates are enabled
+        templates_enabled = os.getenv("TEMPLATES_ENDPOINTS_ENABLED", "true").lower() == "true"
+        if not templates_enabled:
+            raise HTTPException(status_code=404, detail="Templates endpoint disabled")
+        
+        template_path = Path(__file__).parent.parent.parent / "data" / "templates" / "attacks.yaml"
+        
+        if not template_path.exists():
+            raise HTTPException(status_code=404, detail="Attacks YAML template not found")
+        
+        template_content = template_path.read_text(encoding='utf-8')
+        
+        return Response(
+            content=template_content,
+            media_type="application/x-yaml",
+            headers={
+                "Content-Disposition": "attachment; filename=attacks.yaml"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error serving attacks YAML template: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate template")
+
+
+@router.get("/templates/attacks.json")
+async def download_attacks_json_template(
+    response: Response,
+    principal: Optional[Principal] = Depends(require_user_or_admin())
+):
+    """Download JSON template for Red Team attacks."""
+    try:
+        # Check if templates are enabled
+        templates_enabled = os.getenv("TEMPLATES_ENDPOINTS_ENABLED", "true").lower() == "true"
+        if not templates_enabled:
+            raise HTTPException(status_code=404, detail="Templates endpoint disabled")
+        
+        template_path = Path(__file__).parent.parent.parent / "data" / "templates" / "attacks.json"
+        
+        if not template_path.exists():
+            raise HTTPException(status_code=404, detail="Attacks JSON template not found")
+        
+        template_content = template_path.read_text(encoding='utf-8')
+        
+        return Response(
+            content=template_content,
+            media_type="application/json",
+            headers={
+                "Content-Disposition": "attachment; filename=attacks.json"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error serving attacks JSON template: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate template")
+
+
+@router.get("/templates/attacks.jsonl")
+async def download_attacks_jsonl_template(
+    response: Response,
+    principal: Optional[Principal] = Depends(require_user_or_admin())
+):
+    """Download JSONL template for Red Team attacks."""
+    try:
+        # Check if templates are enabled
+        templates_enabled = os.getenv("TEMPLATES_ENDPOINTS_ENABLED", "true").lower() == "true"
+        if not templates_enabled:
+            raise HTTPException(status_code=404, detail="Templates endpoint disabled")
+        
+        template_path = Path(__file__).parent.parent.parent / "data" / "templates" / "attacks.template.jsonl"
+        
+        if not template_path.exists():
+            raise HTTPException(status_code=404, detail="Attacks JSONL template not found")
+        
+        template_content = template_path.read_text(encoding='utf-8')
+        
+        return Response(
+            content=template_content,
+            media_type="application/jsonl",
+            headers={
+                "Content-Disposition": "attachment; filename=attacks.jsonl"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error serving attacks JSONL template: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate template")
+
+
+@router.get("/templates/safety.yaml")
+async def download_safety_yaml_template(
+    response: Response,
+    principal: Optional[Principal] = Depends(require_user_or_admin())
+):
+    """Download YAML template for Safety dataset."""
+    try:
+        # Check if templates are enabled
+        templates_enabled = os.getenv("TEMPLATES_ENDPOINTS_ENABLED", "true").lower() == "true"
+        if not templates_enabled:
+            raise HTTPException(status_code=404, detail="Templates endpoint disabled")
+        
+        template_path = Path(__file__).parent.parent.parent / "data" / "templates" / "safety.yaml"
+        
+        if not template_path.exists():
+            raise HTTPException(status_code=404, detail="Safety YAML template not found")
+        
+        template_content = template_path.read_text(encoding='utf-8')
+        
+        return Response(
+            content=template_content,
+            media_type="application/x-yaml",
+            headers={
+                "Content-Disposition": "attachment; filename=safety.yaml"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error serving safety YAML template: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate template")
+
+
+@router.get("/templates/safety.json")
+async def download_safety_json_template(
+    response: Response,
+    principal: Optional[Principal] = Depends(require_user_or_admin())
+):
+    """Download JSON template for Safety dataset."""
+    try:
+        # Check if templates are enabled
+        templates_enabled = os.getenv("TEMPLATES_ENDPOINTS_ENABLED", "true").lower() == "true"
+        if not templates_enabled:
+            raise HTTPException(status_code=404, detail="Templates endpoint disabled")
+        
+        template_path = Path(__file__).parent.parent.parent / "data" / "templates" / "safety.json"
+        
+        if not template_path.exists():
+            raise HTTPException(status_code=404, detail="Safety JSON template not found")
+        
+        template_content = template_path.read_text(encoding='utf-8')
+        
+        return Response(
+            content=template_content,
+            media_type="application/json",
+            headers={
+                "Content-Disposition": "attachment; filename=safety.json"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error serving safety JSON template: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate template")

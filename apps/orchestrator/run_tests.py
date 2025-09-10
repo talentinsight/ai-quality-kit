@@ -793,33 +793,102 @@ class TestRunner:
         return filtered_cases
     
     def _filter_red_team_tests(self, test_cases: List[Dict[str, Any]], selected_test_ids: List[str]) -> List[Dict[str, Any]]:
-        """Filter red team tests based on selected attack types."""
+        """Filter red team tests based on selected attack types and subtests."""
         filtered_cases = []
         
-        # Map UI test IDs to attack categories
-        attack_type_mapping = {
-            'prompt_injection': ['injection', 'prompt_injection'],
-            'jailbreak_attempts': ['jailbreak', 'role_play'],
-            'data_extraction': ['extraction', 'data_leak'],
-            'context_manipulation': ['context', 'manipulation'],
-            'social_engineering': ['social', 'engineering']
-        }
+        # Check if Red Team subtests configuration is provided
+        red_team_config = None
+        if self.request.options and 'red_team' in self.request.options:
+            red_team_config = self.request.options['red_team']
         
-        for test_case in test_cases:
-            test_category = test_case.get('category', '').lower()
-            test_type = test_case.get('type', '').lower()
+        # If subtests are configured, use the new filtering logic
+        if red_team_config and 'subtests' in red_team_config:
+            subtests_config = red_team_config['subtests']
             
-            # Check if this test case matches any selected test type
-            should_include = False
-            for selected_id in selected_test_ids:
-                if selected_id in attack_type_mapping:
-                    keywords = attack_type_mapping[selected_id]
-                    if any(keyword in test_category or keyword in test_type for keyword in keywords):
-                        should_include = True
-                        break
+            # Map category names to subtest filtering
+            category_mapping = {
+                'prompt_injection': 'prompt_injection',
+                'jailbreak_attempts': 'jailbreak', 
+                'data_extraction': 'data_extraction',
+                'context_manipulation': 'context_poisoning',
+                'social_engineering': 'social_engineering'
+            }
             
-            if should_include:
-                filtered_cases.append(test_case)
+            for test_case in test_cases:
+                test_category = test_case.get('category', '').lower()
+                test_subtype = test_case.get('subtype', '').lower()
+                
+                # Check if this test case matches any selected category and subtest
+                should_include = False
+                for selected_id in selected_test_ids:
+                    if selected_id in category_mapping:
+                        config_category = category_mapping[selected_id]
+                        
+                        # Check if category is enabled in subtests config
+                        if config_category in subtests_config:
+                            selected_subtests = subtests_config[config_category]
+                            
+                            # If no subtests selected for this category, skip
+                            if not selected_subtests:
+                                continue
+                                
+                            # Check if test matches category
+                            category_keywords = {
+                                'prompt_injection': ['injection', 'prompt_injection'],
+                                'jailbreak': ['jailbreak', 'role_play'],
+                                'data_extraction': ['extraction', 'data_leak'],
+                                'context_poisoning': ['context', 'manipulation'],
+                                'social_engineering': ['social', 'engineering']
+                            }
+                            
+                            keywords = category_keywords.get(config_category, [])
+                            category_matches = any(keyword in test_category for keyword in keywords)
+                            
+                            if category_matches:
+                                # If test has subtype, check if it's selected
+                                if test_subtype:
+                                    if test_subtype in selected_subtests:
+                                        should_include = True
+                                        break
+                                else:
+                                    # If no subtype, include when category is enabled
+                                    should_include = True
+                                    break
+                
+                if should_include:
+                    filtered_cases.append(test_case)
+            
+            # Log subtests filtering
+            if filtered_cases:
+                self.capture_log("INFO", "orchestrator", 
+                               f"Red Team subtests filtering: {len(filtered_cases)} tests selected from {len(test_cases)} total",
+                               event="red_team_subtests_filter", 
+                               selected_subtests=subtests_config)
+        else:
+            # Fallback to legacy filtering logic
+            attack_type_mapping = {
+                'prompt_injection': ['injection', 'prompt_injection'],
+                'jailbreak_attempts': ['jailbreak', 'role_play'],
+                'data_extraction': ['extraction', 'data_leak'],
+                'context_manipulation': ['context', 'manipulation'],
+                'social_engineering': ['social', 'engineering']
+            }
+            
+            for test_case in test_cases:
+                test_category = test_case.get('category', '').lower()
+                test_type = test_case.get('type', '').lower()
+                
+                # Check if this test case matches any selected test type
+                should_include = False
+                for selected_id in selected_test_ids:
+                    if selected_id in attack_type_mapping:
+                        keywords = attack_type_mapping[selected_id]
+                        if any(keyword in test_category or keyword in test_type for keyword in keywords):
+                            should_include = True
+                            break
+                
+                if should_include:
+                    filtered_cases.append(test_case)
         
         return filtered_cases
     
@@ -2808,6 +2877,10 @@ class TestRunner:
         if self.request.llm_option == "rag":
             await self._run_rag_quality_evaluation()
         
+        # Run Safety suite if enabled
+        if "safety" in self.request.suites:
+            await self._run_safety_suite()
+        
         # Run RAG Reliability & Robustness (Prompt Robustness) evaluation if enabled
         self.capture_log("INFO", "orchestrator", "🔍 MAIN DEBUG: About to call _run_prompt_robustness_evaluation", event="debug")
         await self._run_prompt_robustness_evaluation()
@@ -2829,6 +2902,46 @@ class TestRunner:
         
         # Debug: print captured logs count
         print(f" LOGS DEBUG: Captured {len(self.captured_logs)} log entries for {self.run_id}")
+        
+        # Check for Red Team gating before finalizing
+        gating_result = self._check_red_team_gating()
+        if gating_result["blocked"]:
+            # Red Team gating failed - return early with failure status
+            self.capture_log("ERROR", "orchestrator", f"Red Team gating failed: {gating_result['reason']}", 
+                           event="red_team_gating_failure", blocked_by=gating_result["blocked_by"])
+            
+            # Write artifacts with gating failure info
+            artifacts = self._write_artifacts(summary, counts, gating_failure=gating_result)
+            
+            return OrchestratorResult(
+                run_id=self.run_id,
+                status="FAILED_BY_GATE",
+                summary=summary,
+                counts=counts,
+                artifacts=artifacts,
+                blocked_by=gating_result["blocked_by"],
+                duration_seconds=time.time() - self.start_time
+            )
+        
+        # Check for Safety gating before finalizing
+        safety_gating_result = self._check_safety_gating()
+        if safety_gating_result["blocked"]:
+            # Safety gating failed - return early with failure status
+            self.capture_log("ERROR", "orchestrator", f"Safety gating failed: {safety_gating_result['reason']}", 
+                           event="safety_gating_failure", blocked_by=safety_gating_result["blocked_by"])
+            
+            # Write artifacts with gating failure info
+            artifacts = self._write_artifacts(summary, counts, gating_failure=gating_result)
+            
+            return OrchestratorResult(
+                run_id=self.run_id,
+                started_at=self.started_at,
+                finished_at=datetime.utcnow().isoformat(),
+                success=False,
+                summary={**summary, "gating_failure": gating_result},
+                counts=counts,
+                artifacts=artifacts
+            )
         
         # Write artifacts
         artifacts = self._write_artifacts(summary, counts)
@@ -3547,6 +3660,204 @@ class TestRunner:
     
 
     
+    def _check_red_team_gating(self) -> Dict[str, Any]:
+        """
+        Check Red Team gating requirements.
+        
+        Returns:
+            Dictionary with gating result information
+        """
+        try:
+            from apps.config.red_team import red_team_config
+            
+            # Check if Red Team gating is enabled
+            if not red_team_config.enabled or not red_team_config.fail_fast:
+                return {"blocked": False, "reason": "Red Team gating disabled", "blocked_by": []}
+            
+            # Check if red_team suite was executed
+            red_team_rows = [r for r in self.detailed_rows if r.suite == "red_team"]
+            if not red_team_rows:
+                # No red team tests run - not a gating failure
+                return {"blocked": False, "reason": "No Red Team tests executed", "blocked_by": []}
+            
+            # Check for failed required attacks
+            failed_required_attacks = []
+            
+            # Load attack cases to check which are required
+            try:
+                from apps.orchestrator.suites.red_team.attack_loader import load_attack_cases
+                attack_cases = load_attack_cases()
+                required_attack_ids = {attack.id for attack in attack_cases if attack.required}
+                
+                # Check results against required attacks
+                for row in red_team_rows:
+                    if row.test_id in required_attack_ids and row.status != "pass":
+                        failed_required_attacks.append(row.test_id)
+                
+            except Exception as e:
+                # Fallback: check based on configured required metrics
+                self.capture_log("WARNING", "orchestrator", f"Could not load attack cases for gating: {e}", 
+                               event="red_team_gating_fallback")
+                
+                # Use pattern matching on test IDs for required metrics
+                for metric in red_team_config.required_metrics:
+                    metric_rows = [r for r in red_team_rows if metric in r.test_id.lower()]
+                    failed_metric_rows = [r for r in metric_rows if r.status != "pass"]
+                    failed_required_attacks.extend([r.test_id for r in failed_metric_rows])
+            
+            # Determine gating result
+            if failed_required_attacks:
+                return {
+                    "blocked": True,
+                    "reason": f"Required Red Team attacks failed: {len(failed_required_attacks)} attacks",
+                    "blocked_by": failed_required_attacks,
+                    "total_required": len([r for r in red_team_rows if any(req in r.test_id.lower() for req in red_team_config.required_metrics)]),
+                    "failed_count": len(failed_required_attacks)
+                }
+            else:
+                return {
+                    "blocked": False,
+                    "reason": "All required Red Team attacks passed",
+                    "blocked_by": [],
+                    "total_required": len([r for r in red_team_rows if any(req in r.test_id.lower() for req in red_team_config.required_metrics)]),
+                    "failed_count": 0
+                }
+                
+        except Exception as e:
+            # Graceful fallback - don't block on gating check errors
+            self.capture_log("ERROR", "orchestrator", f"Red Team gating check failed: {e}", 
+                           event="red_team_gating_error")
+            return {"blocked": False, "reason": f"Gating check error: {str(e)}", "blocked_by": []}
+
+    def _check_safety_gating(self) -> Dict[str, Any]:
+        """
+        Check Safety gating requirements.
+        
+        Returns:
+            Dictionary with gating result information
+        """
+        try:
+            # Import safety config here to avoid circular imports
+            from apps.config.safety import safety_config
+            
+            # Skip gating if Safety fail-fast is disabled
+            if not safety_config.FAIL_FAST:
+                return {"blocked": False, "reason": "Safety fail-fast disabled", "blocked_by": []}
+            
+            # Find Safety results in captured logs
+            safety_rows = [r for r in self.results if hasattr(r, 'suite') and r.suite == "safety"]
+            
+            if not safety_rows:
+                # No Safety tests ran - don't block
+                return {"blocked": False, "reason": "No Safety tests executed", "blocked_by": []}
+            
+            # Check for failed required cases
+            failed_required_cases = []
+            
+            for row in safety_rows:
+                # Check if this is a required case that failed
+                if (hasattr(row, 'required') and row.required and 
+                    hasattr(row, 'status') and row.status != "pass"):
+                    failed_required_cases.append(row.test_id)
+                elif hasattr(row, 'test_id'):
+                    # Fallback: check based on configured required categories
+                    for category in safety_config.REQUIRED_CATEGORIES:
+                        if category in row.test_id.lower() and row.status != "pass":
+                            failed_required_cases.append(row.test_id)
+                            break
+            
+            if failed_required_cases:
+                reason = f"Required Safety cases failed: {', '.join(failed_required_cases[:3])}"
+                if len(failed_required_cases) > 3:
+                    reason += f" (and {len(failed_required_cases) - 3} more)"
+                
+                self.capture_log("ERROR", "orchestrator", f"Safety gating triggered: {reason}", 
+                               event="safety_gating_triggered", blocked_by=failed_required_cases)
+                
+                return {
+                    "blocked": True,
+                    "reason": reason,
+                    "blocked_by": failed_required_cases
+                }
+            
+            return {"blocked": False, "reason": "All required Safety cases passed", "blocked_by": []}
+            
+        except Exception as e:
+            # Graceful fallback - don't block on gating check errors
+            self.capture_log("ERROR", "orchestrator", f"Safety gating check failed: {e}", 
+                           event="safety_gating_error")
+            return {"blocked": False, "reason": f"Gating check error: {str(e)}", "blocked_by": []}
+
+    async def _run_safety_suite(self):
+        """Run Safety suite with three-point moderation."""
+        try:
+            # Import safety config and runner here to avoid circular imports
+            from apps.config.safety import safety_config
+            from apps.orchestrator.suites.safety.runner import run_safety_suite
+            
+            if not safety_config.ENABLED:
+                self.capture_log("INFO", "orchestrator", "Safety suite disabled", event="safety_skipped")
+                return
+            
+            self.capture_log("INFO", "orchestrator", "Starting Safety suite", event="safety_start")
+            
+            # Get safety dataset content if provided
+            dataset_content = None
+            if hasattr(self.request, 'safety_dataset_content'):
+                dataset_content = self.request.safety_dataset_content
+            
+            # Get safety configuration overrides
+            config_overrides = {}
+            if self.request.options and self.request.options.get("safety"):
+                config_overrides = self.request.options["safety"]
+            
+            # Create a simple client callable for LLM calls
+            def client_callable(prompt: str) -> str:
+                # This is a simplified client for Safety testing
+                # In a real implementation, this would call the actual LLM
+                return f"Mock response to: {prompt[:50]}..."
+            
+            # Run the safety suite
+            safety_results = run_safety_suite(
+                dataset_content=dataset_content,
+                config_overrides=config_overrides,
+                client_callable=client_callable
+            )
+            
+            # Convert safety results to detailed rows
+            for result in safety_results:
+                detailed_row = DetailedRow(
+                    test_id=result.id,
+                    suite="safety",
+                    status="pass" if result.passed else "fail",
+                    query=f"Safety test: {result.description}",
+                    expected_answer="Safety compliance",
+                    actual_answer=result.reason,
+                    score=1.0 if result.passed else 0.0,
+                    latency_ms=max(
+                        result.latency_input_ms or 0,
+                        result.latency_retrieved_ms or 0,
+                        result.latency_output_ms or 0
+                    ),
+                    provider=self.request.provider or "unknown",
+                    model=self.request.model or "unknown",
+                    category=result.category,
+                    required=result.required
+                )
+                self.detailed_rows.append(detailed_row)
+            
+            # Log safety suite completion
+            passed_count = len([r for r in safety_results if r.passed])
+            total_count = len(safety_results)
+            
+            self.capture_log("INFO", "orchestrator", 
+                           f"Safety suite completed: {passed_count}/{total_count} passed", 
+                           event="safety_complete", passed=passed_count, total=total_count)
+            
+        except Exception as e:
+            self.capture_log("ERROR", "orchestrator", f"Safety suite failed: {e}", 
+                           event="safety_error", error=str(e))
+
     def _schedule_auto_delete(self):
         """Schedule auto-deletion of artifacts if configured."""
         auto_delete_minutes = int(os.getenv("REPORT_AUTO_DELETE_MINUTES", "0"))

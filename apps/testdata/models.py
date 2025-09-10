@@ -50,6 +50,9 @@ class TestDataBundle(BaseModel):
     passages: Optional[List[PassageRecord]] = Field(None, description="Passage records")
     qaset: Optional[List[QARecord]] = Field(None, description="QA records")
     attacks: Optional[List[str]] = Field(None, description="Attack patterns")
+    safety: Optional[List[str]] = Field(None, description="Safety test cases")
+    bias: Optional[List[str]] = Field(None, description="Bias test cases")
+    performance: Optional[List[str]] = Field(None, description="Performance scenarios")
     json_schema: Optional[Dict[str, Any]] = Field(None, description="JSON Schema")
     raw_payloads: Dict[str, str] = Field(default_factory=dict, description="Raw content for SHA256")
 
@@ -138,6 +141,74 @@ def validate_jsonl_content(content: str, record_class: type) -> tuple[List[Any],
             ))
     
     return records, errors
+
+
+def validate_bias_content(content: str) -> tuple[List[str], List[ValidationError]]:
+    """Validate bias content (YAML, JSON, or JSONL format)."""
+    errors = []
+    
+    if not content.strip():
+        return [], [ValidationError(field="content", message="Empty content provided", line_number=None)]
+    
+    try:
+        # Use the bias loader for validation
+        from apps.orchestrator.suites.bias.loader import validate_bias_content as validate_bias_dataset
+        
+        validation_result = validate_bias_dataset(content)
+        
+        if not validation_result.valid:
+            for error in validation_result.errors:
+                errors.append(ValidationError(field="bias", message=error, line_number=None))
+            return [], errors
+        
+        # Return case IDs as records for consistency
+        case_ids = []
+        try:
+            from apps.orchestrator.suites.bias.loader import parse_bias_content
+            normalized_bias = parse_bias_content(content)
+            case_ids = [case.id for case in normalized_bias.cases]
+        except Exception as e:
+            errors.append(ValidationError(field="bias", message=f"Failed to extract case IDs: {str(e)}", line_number=None))
+        
+        return case_ids, errors
+        
+    except Exception as e:
+        errors.append(ValidationError(field="bias", message=f"Bias validation failed: {str(e)}", line_number=None))
+        return [], errors
+
+
+def validate_perf_content(content: str) -> tuple[List[str], List[ValidationError]]:
+    """Validate performance content (YAML, JSON, or JSONL format)."""
+    errors = []
+    
+    if not content.strip():
+        return [], [ValidationError(field="content", message="Empty content provided", line_number=None)]
+    
+    try:
+        # Use the performance loader for validation
+        from apps.orchestrator.suites.performance.loader import validate_perf_content as validate_perf_dataset
+        
+        validation_result = validate_perf_dataset(content)
+        
+        if not validation_result.valid:
+            for error in validation_result.errors:
+                errors.append(ValidationError(field="performance", message=error, line_number=None))
+            return [], errors
+        
+        # Return scenario IDs as records for consistency
+        scenario_ids = []
+        try:
+            from apps.orchestrator.suites.performance.loader import parse_perf_content
+            normalized_perf = parse_perf_content(content)
+            scenario_ids = [scenario.id for scenario in normalized_perf.scenarios]
+        except Exception as e:
+            errors.append(ValidationError(field="performance", message=f"Failed to extract scenario IDs: {str(e)}", line_number=None))
+        
+        return scenario_ids, errors
+        
+    except Exception as e:
+        errors.append(ValidationError(field="performance", message=f"Performance validation failed: {str(e)}", line_number=None))
+        return [], errors
 
 
 def validate_attacks_content(content: str) -> tuple[List[str], List[ValidationError]]:

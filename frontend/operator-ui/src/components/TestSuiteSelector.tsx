@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { ChevronDown, ChevronRight, BarChart3, Shield, ShieldCheck, Zap, TrendingUp, Layers, CheckSquare, Square, AlertTriangle, Clock, Database, Scale, LucideIcon, Upload, Lock, Info } from 'lucide-react';
 import { DataRequirements, SUITE_DATA_REQUIREMENTS } from '../types/metrics';
 import { getDefaultRagSelection, isTestDisabledByBundle, getUniqueTestCount, normalizeSelectedTests } from '../utils/test-selection';
+import type { RedTeamCategory, RedTeamSubtests, SafetyCategory, SafetySubtests } from '../types';
+import RedTeamSubtests from './RedTeamSubtests';
+import SafetySubtests from './SafetySubtests';
 
 interface TestDefinition {
   id: string;
@@ -31,6 +34,8 @@ interface TestSuiteSelectorProps {
   hasGroundTruth: boolean;
   onSelectionChange: (selectedTests: Record<string, string[]>) => void;
   onSuiteConfigChange: (suiteId: string, config: any) => void;
+  onRedTeamSubtestsChange?: (subtests: RedTeamSubtests) => void;
+  onSafetySubtestsChange?: (subtests: SafetySubtests) => void;
   onSuitesChange?: (suites: string[]) => void; // Notify parent of suite enable/disable
   dataStatus?: Partial<DataRequirements>; // Current data availability status
   onShowRequirements?: () => void; // Callback to scroll to data requirements section
@@ -41,12 +46,33 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
   hasGroundTruth,
   onSelectionChange,
   onSuiteConfigChange,
+  onRedTeamSubtestsChange,
+  onSafetySubtestsChange,
   onSuitesChange,
   dataStatus,
   onShowRequirements
 }) => {
   // Track previous GT state to handle transitions
   const prevGtState = React.useRef(hasGroundTruth);
+  
+  // Red Team subtests state - initialize with all subtests selected (backward compatible)
+  const [redTeamSubtests, setRedTeamSubtests] = useState<RedTeamSubtests>({
+    prompt_injection: ["direct", "indirect", "passage_embedded", "metadata_embedded"],
+    jailbreak: ["role_play", "system_override"],
+    data_extraction: ["system_prompt", "api_key", "base64"],
+    context_poisoning: ["ignore_citations", "contradict_retrieval", "spoof_citations"],
+    social_engineering: ["authority", "urgency", "scarcity", "reciprocity", "sympathy"]
+  });
+
+  // Safety subtests state - initialize with all subtests selected (backward compatible)
+  const [safetySubtests, setSafetySubtests] = useState<SafetySubtests>({
+    toxicity: ["explicit", "implicit", "contextual"],
+    hate: ["targeted", "general"],
+    violence: ["graphic", "threat"],
+    adult: ["explicit"],
+    self_harm: ["direct", "indirect"],
+    misinformation: ["claim_no_cite", "hallucinated_citation"]
+  });
   
   // Update test selection based on RAG mode and GT availability
   useEffect(() => {
@@ -132,6 +158,34 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
       }
     }
   }, [llmModelType, hasGroundTruth]); // Removed onSelectionChange to prevent infinite loops
+
+  // Handle Red Team subtests changes
+  const handleRedTeamSubtestChange = (category: RedTeamCategory, subtests: string[]) => {
+    const newRedTeamSubtests = {
+      ...redTeamSubtests,
+      [category]: subtests
+    };
+    setRedTeamSubtests(newRedTeamSubtests);
+    
+    // Notify parent component
+    if (onRedTeamSubtestsChange) {
+      onRedTeamSubtestsChange(newRedTeamSubtests);
+    }
+  };
+
+  // Handle Safety subtests changes
+  const handleSafetySubtestChange = (category: SafetyCategory, subtests: string[]) => {
+    const newSafetySubtests = {
+      ...safetySubtests,
+      [category]: subtests
+    };
+    setSafetySubtests(newSafetySubtests);
+    
+    // Notify parent component
+    if (onSafetySubtestsChange) {
+      onSafetySubtestsChange(newSafetySubtests);
+    }
+  };
 
   const [testSuites, setTestSuites] = useState<TestSuite[]>([
     {
@@ -843,6 +897,38 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
                         }`}>
                           {test.description}
                         </p>
+                        
+                        {/* Red Team Subtests */}
+                        {suite.id === 'red_team' && test.enabled && (
+                          <RedTeamSubtests
+                            category={test.id as RedTeamCategory}
+                            selectedSubtests={redTeamSubtests[test.id as RedTeamCategory] || []}
+                            onSubtestsChange={handleRedTeamSubtestChange}
+                            className="mt-2"
+                          />
+                        )}
+                        
+                        {/* Safety Subtests */}
+                        {suite.id === 'safety' && test.enabled && (
+                          <SafetySubtests
+                            testId={test.id}
+                            selectedSubtests={(() => {
+                              // Map test ID to category to get correct subtests
+                              const categoryMap: Record<string, SafetyCategory> = {
+                                'toxicity_detection': 'toxicity',
+                                'hate_speech': 'hate',
+                                'violence_content': 'violence',
+                                'adult_content': 'adult',
+                                'self_harm': 'self_harm',
+                                'misinformation': 'misinformation'
+                              };
+                              const category = categoryMap[test.id];
+                              return category ? safetySubtests[category] || [] : [];
+                            })()}
+                            onSubtestsChange={handleSafetySubtestChange}
+                            className="mt-2"
+                          />
+                        )}
                         {test.dependencies && test.dependencies.length > 0 && (
                           <div className="mt-2 flex items-center space-x-1">
                             <Database size={12} className="text-slate-400" />

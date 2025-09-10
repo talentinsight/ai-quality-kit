@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Download, Play, ShieldCheck, Settings2, MoonStar, Sun, Server, CheckCircle2, XCircle, Rocket, ChevronDown, ChevronRight, RefreshCw, X, Info, Upload } from "lucide-react";
 import clsx from "clsx";
-import type { Provider, TestSuite, OrchestratorRequest, OrchestratorResult } from "../types";
+import type { Provider, TestSuite, OrchestratorRequest, OrchestratorResult, RedTeamSubtests, SafetySubtests, BiasSubtests } from "../types";
 import TestDataPanel from "../features/testdata/TestDataPanel";
 import { getTestdataMeta, ApiError } from "../lib/api";
 import RequirementsMatrix from "../components/RequirementsMatrix";
@@ -294,6 +294,115 @@ export default function App() {
   // Test selection state
   const [selectedTests, setSelectedTests] = useState<Record<string, string[]>>({});
   const [suiteConfigs, setSuiteConfigs] = useState<Record<string, any>>({});
+  
+  // State for Red Team subtests
+  const [redTeamSubtests, setRedTeamSubtests] = useState<RedTeamSubtests>({
+    prompt_injection: ["direct", "indirect", "passage_embedded", "metadata_embedded"],
+    jailbreak: ["role_play", "system_override"],
+    data_extraction: ["system_prompt", "api_key", "base64"],
+    context_poisoning: ["ignore_citations", "contradict_retrieval", "spoof_citations"],
+    social_engineering: ["authority", "urgency", "scarcity", "reciprocity", "sympathy"]
+  });
+
+  // State for Safety subtests
+  const [safetySubtests, setSafetySubtests] = useState<SafetySubtests>({
+    toxicity: ["explicit", "implicit", "contextual"],
+    hate: ["targeted", "general"],
+    violence: ["graphic", "threat"],
+    adult: ["explicit"],
+    self_harm: ["direct", "indirect"],
+    misinformation: ["claim_no_cite", "hallucinated_citation"]
+  });
+
+  // State for Bias subtests
+  const [biasSubtests, setBiasSubtests] = useState<BiasSubtests>({
+    demographic_parity: ["gender", "age", "accent"],
+    refusal_rate: ["gender", "age", "accent"],
+    response_length: ["gender", "age", "accent"]
+  });
+
+  // Handle safety validation from TestDataPanel
+  const handleSafetyValidation = (validation: any) => {
+    if (validation.valid && validation.taxonomy) {
+      // Update safety subtests based on discovered taxonomy
+      const updatedSafetySubtests: SafetySubtests = { ...safetySubtests };
+      
+      // Map validation categories to SafetyCategory types
+      const categoryMap: Record<string, keyof SafetySubtests> = {
+        'toxicity': 'toxicity',
+        'hate': 'hate', 
+        'violence': 'violence',
+        'adult': 'adult',
+        'self_harm': 'self_harm',
+        'misinformation': 'misinformation'
+      };
+      
+      Object.entries(validation.taxonomy).forEach(([category, subtypes]) => {
+        const mappedCategory = categoryMap[category];
+        if (mappedCategory && Array.isArray(subtypes)) {
+          // Initialize with all subtypes selected (backward compatible)
+          updatedSafetySubtests[mappedCategory] = subtypes as string[];
+        }
+      });
+      
+      setSafetySubtests(updatedSafetySubtests);
+      console.log('Updated safety subtests from validation:', updatedSafetySubtests);
+    }
+  };
+
+  // Handle attacks validation from TestDataPanel  
+  const handleAttacksValidation = (validation: any) => {
+    if (validation.valid && validation.taxonomy) {
+      // Update red team subtests based on discovered taxonomy
+      const updatedRedTeamSubtests: RedTeamSubtests = { ...redTeamSubtests };
+      
+      // Map validation categories to RedTeamCategory types
+      const categoryMap: Record<string, keyof RedTeamSubtests> = {
+        'prompt_injection': 'prompt_injection',
+        'jailbreak': 'jailbreak',
+        'data_extraction': 'data_extraction', 
+        'context_poisoning': 'context_poisoning',
+        'social_engineering': 'social_engineering'
+      };
+      
+      Object.entries(validation.taxonomy).forEach(([category, subtypes]) => {
+        const mappedCategory = categoryMap[category];
+        if (mappedCategory && Array.isArray(subtypes)) {
+          // Initialize with all subtypes selected (backward compatible)
+          updatedRedTeamSubtests[mappedCategory] = subtypes as string[];
+        }
+      });
+      
+      setRedTeamSubtests(updatedRedTeamSubtests);
+      console.log('Updated red team subtests from validation:', updatedRedTeamSubtests);
+    }
+  };
+
+  // Handle bias validation from TestDataPanel  
+  const handleBiasValidation = (validation: any) => {
+    if (validation.valid && validation.taxonomy) {
+      // Update bias subtests based on discovered taxonomy
+      const updatedBiasSubtests: BiasSubtests = { ...biasSubtests };
+      
+      // Map validation categories to BiasCategory types
+      const categoryMap: Record<string, keyof BiasSubtests> = {
+        'demographic_parity': 'demographic_parity',
+        'refusal_rate': 'refusal_rate',
+        'response_length': 'response_length'
+      };
+      
+      Object.entries(validation.taxonomy).forEach(([category, subtypes]) => {
+        const mappedCategory = categoryMap[category];
+        if (mappedCategory && Array.isArray(subtypes)) {
+          // Initialize with all subtypes selected (backward compatible)
+          updatedBiasSubtests[mappedCategory] = subtypes as string[];
+        }
+      });
+      
+      setBiasSubtests(updatedBiasSubtests);
+      console.log('Updated bias subtests from validation:', updatedBiasSubtests);
+    }
+  };
 
   const thresholds = useMemo(() => ({
     faithfulness_min: Number(faithMin),
@@ -676,7 +785,26 @@ export default function App() {
                 prompt_robustness: { enabled: false, prompt_source: 'built_in', include_prompts: true }
               }
             };
-          })() : {})
+          })() : {}),
+          // Red Team configuration with subtests
+          ...(suites.includes("red_team") ? {
+            red_team: {
+              enabled: true,
+              subtests: redTeamSubtests
+            }
+          } : {}),
+          ...(suites.includes("safety") ? {
+            safety: {
+              enabled: true,
+              subtests: safetySubtests
+            }
+          } : {}),
+          ...(suites.includes("bias_smoke") ? {
+            bias: {
+              enabled: true,
+              subtests: biasSubtests
+            }
+          } : {})
         }
       };
       // Make request and extract run_id from logs/response
@@ -1765,6 +1893,9 @@ export default function App() {
                   setTestdataId(testdataId);
                   setUploadedArtifacts(artifacts);
                 }}
+                onSafetyValidation={handleSafetyValidation}
+                onAttacksValidation={handleAttacksValidation}
+                onBiasValidation={handleBiasValidation}
               />
             </div>
           </div>
@@ -1792,6 +1923,8 @@ export default function App() {
                   [suiteId]: config
                 }));
               }}
+              onRedTeamSubtestsChange={setRedTeamSubtests}
+              onSafetySubtestsChange={setSafetySubtests}
               dataStatus={{
                 passages: uploadedArtifacts.includes('passages'),
                 qaSet: uploadedArtifacts.includes('qaset'),
@@ -2179,34 +2312,69 @@ export default function App() {
               <div className="flex items-center gap-3">
                 {/* Requirements status indicator */}
                 {(() => {
-                  const requiredFields = [];
-                  if (llmModelType === "rag") {
-                    if (hasGroundTruth && !uploadedArtifacts.includes('qaset')) {
-                      requiredFields.push('QA Set (for Ground Truth evaluation)');
-                    }
-                    // Check if any context metrics are selected that require passages
-                    const hasContextMetrics = selectedTests['rag_reliability_robustness']?.some(test => 
-                      test.includes('context') || test.includes('precision') || test.includes('recall')
-                    );
-                    if (hasContextMetrics && !uploadedArtifacts.includes('passages')) {
-                      requiredFields.push('Passages (for Context metrics)');
-                    }
-                  }
+                  const requiredFields: string[] = [];
                   
-                  const isDisabled = requiredFields.length > 0 || !targetMode || !provider || !model;
+                  // Check requirements based on selected test suites
+                  suites.forEach(suite => {
+                    switch (suite) {
+                      case 'rag_reliability_robustness':
+                        if (hasGroundTruth && !uploadedArtifacts.includes('qaset')) {
+                          requiredFields.push('QA Set (for Ground Truth evaluation)');
+                        }
+                        // Check if any context metrics are selected that require passages
+                        const hasContextMetrics = selectedTests['rag_reliability_robustness']?.some(test => 
+                          test.includes('context') || test.includes('precision') || test.includes('recall')
+                        );
+                        if (hasContextMetrics && !uploadedArtifacts.includes('passages')) {
+                          requiredFields.push('Passages (for Context metrics)');
+                        }
+                        break;
+                        
+                      case 'red_team':
+                        if (!uploadedArtifacts.includes('attacks')) {
+                          requiredFields.push('Attacks dataset (for Red Team testing)');
+                        }
+                        break;
+                        
+                      case 'safety':
+                        if (!uploadedArtifacts.includes('safety')) {
+                          requiredFields.push('Safety dataset (for Safety testing)');
+                        }
+                        break;
+                        
+                      case 'bias_smoke':
+                        if (!uploadedArtifacts.includes('bias')) {
+                          requiredFields.push('Bias dataset (for Bias Detection testing)');
+                        }
+                        break;
+                        
+                      case 'performance':
+                        // Performance testing can work with any data, but needs at least something
+                        if (uploadedArtifacts.length === 0) {
+                          requiredFields.push('Test data (for Performance testing)');
+                        }
+                        break;
+                    }
+                  });
+                  
+                  // Remove duplicates and sort for consistent display
+                  const uniqueRequiredFields = [...new Set(requiredFields)];
+                  
+                  const isDisabled = uniqueRequiredFields.length > 0 || !targetMode || !provider || !model;
                   
                   return (
                     <>
-                      {requiredFields.length > 0 && (
-                        <div className="text-sm text-amber-600 dark:text-amber-400">
-                          Missing: {requiredFields.join(', ')}
+                      {uniqueRequiredFields.length > 0 && (
+                        <div className="text-sm text-amber-600 dark:text-amber-400 flex items-center gap-2">
+                          <span>⚠️</span>
+                          <span>Missing: {uniqueRequiredFields.join(', ')}</span>
                         </div>
                       )}
                       <button
                         onClick={runTests}
                         disabled={isDisabled || busy}
                         className={`btn ${isDisabled ? 'btn-disabled' : 'btn-primary'} px-6`}
-                        title={isDisabled ? `Missing required data: ${requiredFields.join(', ')}` : ''}
+                        title={isDisabled ? `Missing required data: ${uniqueRequiredFields.join(', ')}` : ''}
                       >
                         {busy ? (
                           <>

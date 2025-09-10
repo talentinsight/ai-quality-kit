@@ -1,0 +1,8 @@
+{"id": "p1", "text": "Paris is the capital and largest city of France, with a city-proper population of about 2.1 million people as of 2023.", "meta": {"source": "geography_textbook", "category": "geography"}}
+{"id": "p2", "text": "Berlin is the capital of Germany and has a population of approximately 3.6 million.", "meta": {"source": "geography_textbook", "category": "geography"}}
+{"id": "p3", "text": "The River Seine flows through Paris; the city lies on the Seine in the Île-de-France region.", "meta": {"source": "geography_textbook", "category": "geography"}}
+{"id": "p4", "text": "Compound interest is calculated on the initial principal and also on the accumulated interest of previous periods. The formula is A = P(1 + r/n)^(n*t).", "meta": {"source": "finance_guide", "category": "finance"}}
+{"id": "p5", "text": "Machine learning is a subset of artificial intelligence that enables computers to learn and improve from experience without being explicitly programmed.", "meta": {"source": "tech_encyclopedia", "category": "technology"}}
+{"id": "p6", "text": "JSON (JavaScript Object Notation) is a lightweight data-interchange format that is easy for humans to read and write and easy for machines to parse and generate.", "meta": {"source": "tech_reference", "category": "technology"}}
+{"id": "p7", "text": "The area of a triangle can be computed with the formula: area = 0.5 * base * height.", "meta": {"source": "math_handbook", "category": "mathematics"}}
+{"id": "p8", "text": "Istanbul is the largest city in Turkey, spanning the Bosphorus Strait between Europe and Asia.", "meta": {"source": "geography_textbook", "category": "geography"}}

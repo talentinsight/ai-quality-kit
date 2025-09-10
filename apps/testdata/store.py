@@ -209,13 +209,16 @@ class TestDataStore:
             passages = None
             qaset = None  
             attacks = None
+            safety = None
+            bias = None
+            performance = None
             schema = None
             raw_payloads = {}
             
             for key, value in payload_data.items():
                 if key.startswith("raw_"):
                     raw_payloads[key[4:]] = value  # Remove "raw_" prefix
-                elif key in ["passages", "qaset", "attacks", "schema"]:
+                elif key in ["passages", "qaset", "attacks", "safety", "bias", "performance", "schema"]:
                     try:
                         parsed_value = json.loads(value)
                         if key == "passages":
@@ -224,6 +227,12 @@ class TestDataStore:
                             qaset = [QARecord(**q) for q in parsed_value]
                         elif key == "attacks":
                             attacks = parsed_value
+                        elif key == "safety":
+                            safety = parsed_value
+                        elif key == "bias":
+                            bias = parsed_value
+                        elif key == "performance":
+                            performance = parsed_value
                         elif key == "schema":
                             schema = parsed_value
                     except json.JSONDecodeError:
@@ -239,6 +248,9 @@ class TestDataStore:
                 passages=passages,
                 qaset=qaset,
                 attacks=attacks,
+                safety=safety,
+                bias=bias,
+                performance=performance,
                 json_schema=schema,
                 raw_payloads=raw_payloads
             )
@@ -257,33 +269,24 @@ class TestDataStore:
         
         artifacts = {}
         
-        # Passages
-        artifacts["passages"] = ArtifactInfo(
-            present=bundle.passages is not None,
-            count=len(bundle.passages) if bundle.passages else None,
-            sha256=self._get_sha256(bundle.raw_payloads.get("passages")) if bundle.passages else None
-        )
+        # Dynamic artifact detection - only include artifacts that are present
+        artifact_mappings = {
+            "passages": (bundle.passages, lambda x: len(x) if isinstance(x, list) else 1),
+            "qaset": (bundle.qaset, lambda x: len(x) if isinstance(x, list) else 1),
+            "attacks": (bundle.attacks, lambda x: len(x) if isinstance(x, list) else 1),
+            "safety": (bundle.safety, lambda x: len(x) if isinstance(x, list) else 1),
+            "bias": (bundle.bias, lambda x: len(x) if isinstance(x, list) else 1),
+            "performance": (bundle.performance, lambda x: len(x) if isinstance(x, list) else 1),
+            "schema": (bundle.json_schema, lambda x: 1)
+        }
         
-        # QA Set
-        artifacts["qaset"] = ArtifactInfo(
-            present=bundle.qaset is not None,
-            count=len(bundle.qaset) if bundle.qaset else None,
-            sha256=self._get_sha256(bundle.raw_payloads.get("qaset")) if bundle.qaset else None
-        )
-        
-        # Attacks
-        artifacts["attacks"] = ArtifactInfo(
-            present=bundle.attacks is not None,
-            count=len(bundle.attacks) if bundle.attacks else None,
-            sha256=self._get_sha256(bundle.raw_payloads.get("attacks")) if bundle.attacks else None
-        )
-        
-        # Schema
-        artifacts["schema"] = ArtifactInfo(
-            present=bundle.json_schema is not None,
-            count=1 if bundle.json_schema else None,
-            sha256=self._get_sha256(bundle.raw_payloads.get("schema")) if bundle.json_schema else None
-        )
+        for artifact_name, (artifact_data, count_func) in artifact_mappings.items():
+            if artifact_data is not None:
+                artifacts[artifact_name] = ArtifactInfo(
+                    present=True,
+                    count=count_func(artifact_data),
+                    sha256=self._get_sha256(bundle.raw_payloads.get(artifact_name))
+                )
         
         return TestDataMeta(
             testdata_id=testdata_id,
@@ -368,6 +371,9 @@ def create_bundle(
     passages=None,
     qaset=None,
     attacks=None,
+    safety=None,
+    bias=None,
+    performance=None,
     json_schema=None,
     raw_payloads=None
 ) -> TestDataBundle:
@@ -382,6 +388,9 @@ def create_bundle(
         passages=passages,
         qaset=qaset,
         attacks=attacks,
+        safety=safety,
+        bias=bias,
+        performance=performance,
         json_schema=json_schema,
         raw_payloads=raw_payloads or {}
     )

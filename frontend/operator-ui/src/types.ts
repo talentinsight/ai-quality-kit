@@ -134,6 +134,89 @@ export interface MCPTargetConfig {
   retry?: MCPRetryConfig;
 }
 
+// Red Team subtest categories and their available subtests
+export type RedTeamCategory = "prompt_injection" | "jailbreak" | "data_extraction" | "context_poisoning" | "social_engineering";
+
+export interface RedTeamSubtests {
+  prompt_injection: string[];
+  jailbreak: string[];
+  data_extraction: string[];
+  context_poisoning: string[];
+  social_engineering: string[];
+}
+
+export interface RedTeamConfig {
+  enabled: boolean;
+  subtests?: RedTeamSubtests;
+}
+
+export interface AttacksValidationResult {
+  valid: boolean;
+  counts_by_category: Record<string, number>;
+  required_count: number;
+  taxonomy: Record<string, string[]>;
+  format: string;
+  warnings: string[];
+  errors: string[];
+}
+
+export interface SafetyValidationResult {
+  valid: boolean;
+  counts_by_category: Record<string, number>;
+  required_count: number;
+  taxonomy: Record<string, string[]>;
+  format: string;
+  warnings: string[];
+  errors: string[];
+}
+
+export type SafetyCategory = "toxicity" | "hate" | "violence" | "adult" | "self_harm" | "misinformation";
+
+export type SafetySubtests = Record<SafetyCategory, string[]>;
+
+export interface SafetyConfig {
+  enabled: boolean;
+  subtests?: SafetySubtests;
+}
+
+export type BiasCategory = "demographic_parity" | "refusal_rate" | "response_length";
+
+export type BiasSubtests = Record<BiasCategory, string[]>;
+
+export interface BiasValidationResult {
+  valid: boolean;
+  format: string;
+  counts_by_category: Record<string, number>;
+  taxonomy: Record<string, string[]>;
+  errors: string[];
+  warnings: string[];
+  required_count: number;
+}
+
+export interface BiasConfig {
+  enabled: boolean;
+  subtests?: BiasSubtests;
+}
+
+export type PerfCategory = "cold_start" | "warm" | "throughput" | "stress" | "memory";
+
+export type PerfSubtests = Record<PerfCategory, string[]>;
+
+export interface PerfValidationResult {
+  valid: boolean;
+  format: string;
+  counts_by_category: Record<string, number>;
+  taxonomy: Record<string, string[]>;
+  errors: string[];
+  warnings: string[];
+  required_count: number;
+}
+
+export interface PerfConfig {
+  enabled: boolean;
+  subtests?: PerfSubtests;
+}
+
 export interface OrchestratorRequest {
   target_mode: "api"|"mcp";
   api_base_url?: string;
@@ -162,6 +245,10 @@ export interface OrchestratorRequest {
     compliance_smoke?: ComplianceSmokeOptions;
     bias_smoke?: BiasSmokeOptions;
     rag_reliability_robustness?: RagReliabilityRobustnessConfig;
+    red_team?: RedTeamConfig;
+    safety?: SafetyConfig;
+    bias?: BiasConfig;
+    performance?: PerfConfig;
   };
   testdata_id?: string;
   use_expanded?: boolean;
@@ -219,7 +306,7 @@ export interface OrchestratorStartResponse {
 }
 
 // Test Data Intake types
-export type ArtifactType = 'passages' | 'qaset' | 'attacks' | 'schema';
+export type ArtifactType = 'passages' | 'qaset' | 'attacks' | 'safety' | 'bias' | 'performance' | 'schema';
 
 export interface TestDataUploadResponse {
   testdata_id: string;

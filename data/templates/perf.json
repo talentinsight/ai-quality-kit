@@ -1,0 +1,131 @@
+{
+  "scenarios": [
+    {
+      "id": "cold_start_baseline",
+      "category": "cold_start",
+      "subtype": "closed_loop",
+      "description": "Measure cold start latency with closed-loop load",
+      "required": true,
+      "request": {
+        "input_template": "What is artificial intelligence? Please provide a comprehensive explanation.",
+        "repeats": 5
+      },
+      "load": {
+        "mode": "closed_loop",
+        "concurrency": 1,
+        "duration_sec": 30,
+        "think_time_ms": 1000
+      },
+      "segmentation": {
+        "cold_n": 3,
+        "warmup_exclude_n": 0,
+        "phase_headers": true
+      },
+      "thresholds": {
+        "p95_ms_max": 3000,
+        "error_rate_max": 0.05
+      }
+    },
+    {
+      "id": "warm_performance_test",
+      "category": "warm",
+      "subtype": "closed_loop",
+      "description": "Measure warm performance with moderate load",
+      "required": true,
+      "request": {
+        "input_template": "Explain the concept of machine learning in simple terms."
+      },
+      "load": {
+        "mode": "closed_loop",
+        "concurrency": 4,
+        "duration_sec": 60,
+        "think_time_ms": 500
+      },
+      "segmentation": {
+        "cold_n": 2,
+        "warmup_exclude_n": 5,
+        "phase_headers": true
+      },
+      "thresholds": {
+        "p95_ms_max": 2000,
+        "error_rate_max": 0.02,
+        "throughput_min_rps": 2
+      }
+    },
+    {
+      "id": "throughput_sustained",
+      "category": "throughput",
+      "subtype": "open_loop",
+      "description": "Sustained throughput test with open-loop load",
+      "required": true,
+      "request": {
+        "input_template": "Generate a short summary about renewable energy."
+      },
+      "load": {
+        "mode": "open_loop",
+        "rate_rps": 10,
+        "duration_sec": 120
+      },
+      "segmentation": {
+        "cold_n": 1,
+        "warmup_exclude_n": 10
+      },
+      "thresholds": {
+        "p95_ms_max": 2500,
+        "error_rate_max": 0.03,
+        "throughput_min_rps": 8,
+        "tokens_per_sec_min": 50
+      }
+    },
+    {
+      "id": "stress_high_concurrency",
+      "category": "stress",
+      "subtype": "spike",
+      "description": "High concurrency stress test",
+      "required": false,
+      "request": {
+        "input_template": "Write a brief explanation of quantum computing."
+      },
+      "load": {
+        "mode": "closed_loop",
+        "concurrency": 20,
+        "duration_sec": 90,
+        "think_time_ms": 100
+      },
+      "segmentation": {
+        "cold_n": 1,
+        "warmup_exclude_n": 20
+      },
+      "thresholds": {
+        "p95_ms_max": 5000,
+        "error_rate_max": 0.10,
+        "timeout_rate_max": 0.05
+      }
+    },
+    {
+      "id": "memory_usage_test",
+      "category": "memory",
+      "subtype": "soak",
+      "description": "Long-running memory usage test",
+      "required": false,
+      "request": {
+        "input_template": "Provide a detailed analysis of climate change impacts and solutions."
+      },
+      "load": {
+        "mode": "closed_loop",
+        "concurrency": 8,
+        "duration_sec": 300,
+        "think_time_ms": 2000
+      },
+      "segmentation": {
+        "cold_n": 1,
+        "warmup_exclude_n": 10
+      },
+      "thresholds": {
+        "p95_ms_max": 3000,
+        "error_rate_max": 0.05,
+        "memory_peak_mb_max": 512
+      }
+    }
+  ]
+}

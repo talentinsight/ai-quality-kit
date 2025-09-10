@@ -391,6 +391,10 @@ def setup_routers():
     from apps.testdata.router import router as testdata_router
     app.include_router(testdata_router)
     
+    # Include datasets router for validation endpoints
+    from apps.datasets.router import router as datasets_router
+    app.include_router(datasets_router)
+    
     # Include orchestrator test data intake
     from apps.orchestrator.router_testdata import router as orchestrator_testdata_router
     app.include_router(orchestrator_testdata_router)
