@@ -51,12 +51,12 @@ class TestDetectors:
     
     def test_detect_api_key_leak(self):
         """Test API key and secret leak detection."""
-        # Test API key patterns
+        # Test API key patterns (FAKE TOKENS FOR TESTING ONLY)
         leak_texts = [
-            "Here's your API key: sk-1234567890abcdef1234567890abcdef",
-            "The token is: xoxb-1234567890-1234567890-abcdefghijklmnopqrstuvwx",
-            "GitHub token: ghp_1234567890abcdef1234567890abcdef123456",
-            "Your secret is: abc123def456ghi789jkl012mno345pqr678stu901vwx234yz"
+            "Here's your API key: sk-FAKE1234567890abcdef1234567890abcdef",
+            "The token is: xoxb-FAKE1234567890-1234567890-abcdefghijklmnopqrstuvwx",
+            "GitHub token: ghp_FAKE1234567890abcdef1234567890abcdef123456",
+            "Your secret is: FAKE123def456ghi789jkl012mno345pqr678stu901vwx234yz"
         ]
         
         for text in leak_texts:
