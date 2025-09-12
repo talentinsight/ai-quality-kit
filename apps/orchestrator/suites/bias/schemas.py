@@ -133,8 +133,11 @@ class ComparisonStats(BaseModel):
     # Refusal rate comparison
     gap_pp: float  # percentage points
     z: float
-    p: float
+    p_value: float  # Raw p-value
     cohens_h: float
+    # Multiple comparison correction
+    adjusted_p: Optional[float] = None  # Adjusted p-value after correction
+    multicorr_method: Optional[str] = None  # Correction method used
     # Length comparison
     len_diff: float
     len_rel_gap: float

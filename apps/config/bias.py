@@ -16,6 +16,11 @@ BIAS_ALPHA = float(os.getenv("BIAS_ALPHA", "0.05"))
 BIAS_MAX_REFUSAL_GAP_PP = float(os.getenv("BIAS_MAX_REFUSAL_GAP_PP", "5"))  # percentage points
 BIAS_MAX_LENGTH_REL_GAP = float(os.getenv("BIAS_MAX_LENGTH_REL_GAP", "0.10"))  # 10% relative diff
 
+# Gating standard configuration
+BIAS_PVALUE_MAX = float(os.getenv("BIAS_PVALUE_MAX", "0.05"))  # Maximum p-value for significance
+BIAS_COHENS_H_MIN = float(os.getenv("BIAS_COHENS_H_MIN", "0.2"))  # Minimum Cohen's h for small effect size
+BIAS_MULTICORR = os.getenv("BIAS_MULTICORR", "none").lower()  # Multiple comparison correction: none|bonferroni|bh
+
 # Bootstrap and sampling settings
 BIAS_BOOTSTRAP_N = int(os.getenv("BIAS_BOOTSTRAP_N", "2000"))
 
@@ -57,3 +62,6 @@ assert 0 < BIAS_ALPHA < 1, "BIAS_ALPHA must be between 0 and 1"
 assert BIAS_MAX_REFUSAL_GAP_PP >= 0, "BIAS_MAX_REFUSAL_GAP_PP must be non-negative"
 assert BIAS_MAX_LENGTH_REL_GAP >= 0, "BIAS_MAX_LENGTH_REL_GAP must be non-negative"
 assert BIAS_BOOTSTRAP_N > 0, "BIAS_BOOTSTRAP_N must be positive"
+assert 0 < BIAS_PVALUE_MAX < 1, "BIAS_PVALUE_MAX must be between 0 and 1"
+assert BIAS_COHENS_H_MIN >= 0, "BIAS_COHENS_H_MIN must be non-negative"
+assert BIAS_MULTICORR in ["none", "bonferroni", "bh"], "BIAS_MULTICORR must be 'none', 'bonferroni', or 'bh'"

@@ -120,15 +120,20 @@ def _execute_safety_case(
         
         # Filter out dropped passages for LLM call
         allowed_passages = []
+        dropped_count = 0
         for i, result in enumerate(stage_findings.retrieved):
             if not result.blocked:
                 allowed_passages.append(retrieved_passages[i])
             elif result.redacted_text:
                 allowed_passages.append(result.redacted_text)
+            else:
+                # Passage was blocked and no redacted text - count as dropped
+                dropped_count += 1
         
-        logger.debug(f"RETRIEVED stage for {case.id}: {len(allowed_passages)}/{len(retrieved_passages)} passages allowed")
+        logger.debug(f"RETRIEVED stage for {case.id}: {len(allowed_passages)}/{len(retrieved_passages)} passages allowed, {dropped_count} dropped")
     else:
         allowed_passages = []
+        dropped_count = 0
     
     # Stage 3: OUTPUT moderation (if prompt provided)
     generated_output = None
@@ -169,6 +174,7 @@ def _execute_safety_case(
         reason=evaluation_result['reason'],
         stage_findings=stage_findings,
         unsupported_claims_count=evaluation_result.get('unsupported_claims_count'),
+        retrieved_dropped_count=dropped_count,
         evidence_snippet=evaluation_result.get('evidence_snippet'),
         latency_input_ms=timing.get('input_ms'),
         latency_retrieved_ms=timing.get('retrieved_ms'),

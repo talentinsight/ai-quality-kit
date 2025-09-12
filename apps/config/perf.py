@@ -28,6 +28,9 @@ PERF_MEMORY_PEAK_MB_MAX = float(os.getenv("PERF_MEMORY_PEAK_MB_MAX", "1024"))
 # Observability settings
 PERF_OBSERVABILITY_HEADERS = os.getenv("PERF_OBSERVABILITY_HEADERS", "true").lower() == "true"
 
+# RPS accuracy tolerance for open-loop validation
+PERF_RPS_TOLERANCE = float(os.getenv("PERF_RPS_TOLERANCE", "0.05"))  # ±5% tolerance
+
 # UI template settings
 SHOW_PERF_JSONL_TEMPLATE = os.getenv("SHOW_PERF_JSONL_TEMPLATE", "false").lower() == "true"
 
@@ -39,3 +42,4 @@ assert PERF_DEFAULT_DURATION_SEC > 0, "PERF_DEFAULT_DURATION_SEC must be positiv
 assert 0 <= PERF_ERROR_RATE_MAX <= 1, "PERF_ERROR_RATE_MAX must be between 0 and 1"
 assert 0 <= PERF_TIMEOUT_RATE_MAX <= 1, "PERF_TIMEOUT_RATE_MAX must be between 0 and 1"
 assert PERF_CLIENT_MODE in ["closed_loop", "open_loop"], "PERF_CLIENT_MODE must be 'closed_loop' or 'open_loop'"
+assert 0 < PERF_RPS_TOLERANCE <= 1, "PERF_RPS_TOLERANCE must be between 0 and 1"

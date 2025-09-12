@@ -11,9 +11,36 @@ from typing import List, Optional, Callable, Dict, Any
 import random
 
 from .metrics import RequestResult
-from apps.config.perf import PERF_OBSERVABILITY_HEADERS, PERF_TIMEOUT_MS
+from apps.config.perf import PERF_OBSERVABILITY_HEADERS, PERF_TIMEOUT_MS, PERF_RPS_TOLERANCE
 
 logger = logging.getLogger(__name__)
+
+
+def compute_schedule(rate_rps: float, duration_sec: int, start_time: float = None) -> List[float]:
+    """
+    Compute accurate request schedule for open-loop load generation.
+    
+    Args:
+        rate_rps: Target requests per second
+        duration_sec: Total duration in seconds
+        start_time: Start time (monotonic), defaults to time.monotonic()
+        
+    Returns:
+        List of absolute timestamps when requests should be sent
+    """
+    if start_time is None:
+        start_time = time.monotonic()
+    
+    total_requests = int(rate_rps * duration_sec)
+    schedule = []
+    
+    # Use precise timing to avoid drift
+    for i in range(total_requests):
+        request_time = start_time + (i / rate_rps)
+        if request_time - start_time < duration_sec:  # Within duration
+            schedule.append(request_time)
+    
+    return schedule
 
 
 class LoadHarness:
@@ -125,7 +152,7 @@ class LoadHarness:
                        cold_n: int = 1,
                        phase_headers: bool = True) -> List[RequestResult]:
         """
-        Open-loop load generation.
+        Open-loop load generation with accurate RPS control.
         
         Args:
             rate_rps: Target requests per second
@@ -142,34 +169,36 @@ class LoadHarness:
         
         results = []
         results_lock = asyncio.Lock()
-        request_counter = 0
         
         self.memory_tracker.start()
         
-        # Calculate inter-request interval
-        interval_sec = 1.0 / rate_rps
+        # Compute precise schedule
+        start_time = time.monotonic()
+        schedule = compute_schedule(rate_rps, duration_sec, start_time)
+        
+        logger.debug(f"Computed schedule for {len(schedule)} requests over {duration_sec}s")
         
         async def scheduler():
-            nonlocal request_counter
-            start_time = time.monotonic()
-            
-            while time.monotonic() - start_time < duration_sec:
+            for i, request_time in enumerate(schedule):
                 # Determine phase
-                phase = "COLD" if request_counter < cold_n else "WARM"
-                request_counter += 1
+                phase = "COLD" if i < cold_n else "WARM"
                 
-                # Schedule request
+                # Wait until it's time for this request
+                current_time = time.monotonic()
+                wait_time = request_time - current_time
+                
+                if wait_time > 0:
+                    await asyncio.sleep(wait_time)
+                
+                # Schedule request (fire and forget)
                 asyncio.create_task(self._scheduled_request(
                     input_template, headers, phase, phase_headers, results, results_lock
                 ))
-                
-                # Wait for next request time
-                await asyncio.sleep(interval_sec)
         
         # Run scheduler
         await scheduler()
         
-        # Wait a bit for in-flight requests to complete
+        # Wait for in-flight requests to complete
         await asyncio.sleep(min(5.0, self.timeout_ms))
         
         memory_peak_mb, cpu_peak_pct = self.memory_tracker.stop()
@@ -181,7 +210,17 @@ class LoadHarness:
             if hasattr(result, 'cpu_peak_pct'):
                 result.cpu_peak_pct = cpu_peak_pct
         
-        logger.info(f"Open-loop test completed: {len(results)} requests")
+        # Validate RPS accuracy
+        actual_duration = time.monotonic() - start_time
+        actual_rps = len(results) / actual_duration if actual_duration > 0 else 0
+        rps_error = abs(actual_rps - rate_rps) / rate_rps if rate_rps > 0 else 0
+        
+        if rps_error > PERF_RPS_TOLERANCE:
+            logger.warning(f"RPS accuracy outside tolerance: target={rate_rps:.2f}, actual={actual_rps:.2f}, error={rps_error:.1%}")
+        else:
+            logger.info(f"RPS accuracy within tolerance: target={rate_rps:.2f}, actual={actual_rps:.2f}, error={rps_error:.1%}")
+        
+        logger.info(f"Open-loop test completed: {len(results)} requests in {actual_duration:.2f}s")
         return results
     
     async def _scheduled_request(self,
@@ -246,6 +285,10 @@ class LoadHarness:
             tokens_out = self._extract_tokens(response)
             cost = self._extract_cost(response)
             
+            # Extract observed latency from response headers if available
+            # Note: This assumes the client could return headers in the future
+            observed_header_latency_ms = self._extract_header_latency(response)
+            
         except asyncio.TimeoutError:
             timeout = True
             logger.debug(f"Request timeout after {self.timeout_ms}s")
@@ -288,7 +331,8 @@ class LoadHarness:
             timeout=timeout,
             tokens_out=tokens_out,
             cost=cost,
-            phase=phase
+            phase=phase,
+            observed_header_latency_ms=observed_header_latency_ms if 'observed_header_latency_ms' in locals() else None
         )
     
     def _extract_tokens(self, response: str) -> int:
@@ -303,6 +347,23 @@ class LoadHarness:
         # For now, return a mock value
         tokens = self._extract_tokens(response)
         return tokens * 0.0001 if tokens > 0 else 0.0
+    
+    def _extract_header_latency(self, response: str) -> Optional[float]:
+        """
+        Extract observed latency from X-Latency-MS header (placeholder implementation).
+        
+        Args:
+            response: Response from client (would need to include headers in future)
+            
+        Returns:
+            Observed latency in milliseconds or None if not available
+        """
+        # This is a placeholder implementation
+        # In a real implementation, the client would need to return headers
+        # and this method would parse the X-Latency-MS header
+        
+        # For now, return None to indicate "N/A"
+        return None
 
 
 class MemoryTracker:

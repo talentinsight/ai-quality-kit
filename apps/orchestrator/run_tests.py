@@ -1559,9 +1559,47 @@ class TestRunner:
             return []
     
     def _load_compliance_smoke_tests(self) -> List[Dict[str, Any]]:
-        """Load compliance smoke tests (PII scanning and RBAC probes)."""
+        """Load adaptive compliance smoke tests based on LLM profile."""
         options = self.request.options or {}
         compliance_opts = options.get("compliance_smoke", {})
+        
+        # Check if adaptive generation is enabled
+        use_adaptive = compliance_opts.get("use_adaptive", True)
+        
+        if use_adaptive:
+            try:
+                from apps.orchestrator.profiling.llm_profile import LLMProfiler
+                from apps.orchestrator.generators.compliance_generator import AdaptiveComplianceGenerator
+                
+                # Create LLM profile
+                model_name = self.request.model or "unknown"
+                provider = self.request.provider or "unknown"
+                llm_profile = LLMProfiler.create_profile(model_name, provider)
+                
+                # Generate adaptive tests
+                industry = compliance_opts.get("industry", "general")
+                max_tests = compliance_opts.get("max_tests", 10)
+                
+                adaptive_tests = AdaptiveComplianceGenerator.generate_tests(
+                    llm_profile=llm_profile,
+                    industry=industry,
+                    max_tests=max_tests
+                )
+                
+                if adaptive_tests:
+                    print(f"✅ Generated {len(adaptive_tests)} adaptive compliance tests for {model_name}")
+                    return adaptive_tests
+                    
+            except ImportError as e:
+                print(f"⚠️ Adaptive compliance generation not available: {e}")
+            except Exception as e:
+                print(f"⚠️ Adaptive compliance generation failed: {e}")
+        
+        # Fallback to hardcoded tests
+        print("📋 Using hardcoded compliance tests (fallback)")
+        return self._load_hardcoded_compliance_tests(compliance_opts)
+    
+    def _load_hardcoded_compliance_tests(self, compliance_opts: Dict[str, Any]) -> List[Dict[str, Any]]:
         
         # Get compliance options with defaults
         pii_patterns_file = compliance_opts.get("pii_patterns_file", "./data/pii_patterns.json")

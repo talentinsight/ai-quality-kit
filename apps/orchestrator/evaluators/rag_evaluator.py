@@ -46,6 +46,7 @@ class RAGMetrics:
     
     # Citation and accuracy metrics
     citation_accuracy: Optional[float] = None  # Can be NA
+    citation_valid: Optional[bool] = None  # Whether citations are valid
     
     # Retrieval trace information
     retrieved_passage_ids: Optional[List[str]] = None
@@ -55,6 +56,9 @@ class RAGMetrics:
     
     # Retrieval stability (for prompt robustness)
     retrieval_stability: Optional[float] = None
+    
+    # Robustness metrics
+    robustness_penalty: Optional[float] = None  # Delta vs baseline when noise injected
     
     # Ground truth evaluation (hybrid)
     ground_truth_ai: Optional[Dict[str, Any]] = None
@@ -317,9 +321,13 @@ class RAGEvaluator(BaseEvaluator):
                 
                 # Citation accuracy (can be None/NA)
                 "citation_accuracy": rag_metrics.citation_accuracy,
+                "citation_valid": rag_metrics.citation_valid,
                 
                 # Retrieval stability (for prompt robustness)
                 "retrieval_stability": rag_metrics.retrieval_stability,
+                
+                # Robustness metrics
+                "robustness_penalty": rag_metrics.robustness_penalty,
                 
                 # Overall assessment
                 "overall_quality": rag_metrics.overall_quality,
@@ -544,6 +552,7 @@ class RAGEvaluator(BaseEvaluator):
         
         # 5. Citation Accuracy: Are citations properly used? (can be NA)
         citation_accuracy = self._calculate_citation_accuracy(answer, retrieved_passage_ids or context)
+        citation_valid = self._validate_citations(answer, retrieved_passage_ids or context)
         
         # 6. Retrieval ranking metrics (if reference passages available)
         ranking_metrics = {}
@@ -560,6 +569,13 @@ class RAGEvaluator(BaseEvaluator):
                 retrieval_stability = self._calculate_retrieval_stability(
                     retrieved_passage_ids, previous_retrieved, top_k
                 )
+        
+        # 6.6. Robustness penalty (if noisy passages were injected)
+        robustness_penalty = None
+        if test_case_metadata and test_case_metadata.get("robustness", {}).get("noisy_passages"):
+            baseline_faithfulness = test_case_metadata.get("baseline_faithfulness")
+            if baseline_faithfulness is not None:
+                robustness_penalty = self._calculate_robustness_penalty(baseline_faithfulness, faithfulness)
         
         # 7. Ground truth metrics (only if ground truth available)
         answer_correctness = None
@@ -683,6 +699,7 @@ class RAGEvaluator(BaseEvaluator):
             
             # Citation accuracy (can be None/NA)
             citation_accuracy=citation_accuracy,
+            citation_valid=citation_valid,
             
             # Retrieval trace information
             retrieved_passage_ids=retrieved_passage_ids,
@@ -692,6 +709,9 @@ class RAGEvaluator(BaseEvaluator):
             
             # Retrieval stability (for prompt robustness)
             retrieval_stability=retrieval_stability,
+            
+            # Robustness metrics
+            robustness_penalty=robustness_penalty,
             
             # Ground truth evaluation results
             ground_truth_ai=ground_truth_ai,
@@ -1135,6 +1155,82 @@ class RAGEvaluator(BaseEvaluator):
                 valid_citations += 1
         
         return valid_citations / len(citations) if citations else 0.0
+    
+    def _validate_citations(self, answer: str, retrieved_passage_ids: List[str]) -> Optional[bool]:
+        """
+        Validate whether all citations in the answer reference existing retrieved passages.
+        
+        Args:
+            answer: The answer text with potential citations
+            retrieved_passage_ids: List of retrieved passage IDs
+            
+        Returns:
+            True if all citations are valid, False if any invalid, None if no citations
+        """
+        citations = self._extract_citations(answer)
+        
+        if not citations:
+            return None  # No citations to validate
+        
+        if not retrieved_passage_ids:
+            return False  # Citations present but no retrieved contexts
+        
+        # Check if ALL citations are valid
+        for citation_idx in citations:
+            # Citation indices are typically 1-based
+            if not (1 <= citation_idx <= len(retrieved_passage_ids)):
+                return False  # Found invalid citation
+        
+        return True  # All citations are valid
+    
+    def _inject_noisy_passages(self, passages: List[str], noise_ratio: float = 0.3) -> List[str]:
+        """
+        Inject noisy/distractor passages into the retrieved set.
+        
+        Args:
+            passages: Original retrieved passages
+            noise_ratio: Ratio of noise passages to inject (0.0 to 1.0)
+            
+        Returns:
+            List of passages with noise injected
+        """
+        if not passages or noise_ratio <= 0:
+            return passages.copy()
+        
+        import random
+        
+        # Generate noise passages (simple approach - scrambled text)
+        noise_passages = []
+        num_noise = max(1, int(len(passages) * noise_ratio))
+        
+        for i in range(num_noise):
+            # Create noise by scrambling words from random passages
+            source_passage = random.choice(passages)
+            words = source_passage.split()
+            random.shuffle(words)
+            noise_passage = " ".join(words[:len(words)//2])  # Use half the words
+            noise_passages.append(f"[NOISE] {noise_passage}")
+        
+        # Insert noise passages at random positions
+        combined = passages.copy()
+        for noise in noise_passages:
+            insert_pos = random.randint(0, len(combined))
+            combined.insert(insert_pos, noise)
+        
+        return combined
+    
+    def _calculate_robustness_penalty(self, baseline_score: float, noisy_score: float) -> float:
+        """
+        Calculate robustness penalty as the difference between baseline and noisy scores.
+        
+        Args:
+            baseline_score: Score without noise
+            noisy_score: Score with noise injected
+            
+        Returns:
+            Penalty (positive means degradation, negative means improvement)
+        """
+        return baseline_score - noisy_score
     
     def _calculate_context_recall_from_passages(self, retrieved_passage_ids: List[str], 
                                               reference_passage_ids: List[str]) -> float:

@@ -11,11 +11,12 @@ from .schemas import BiasCase, BiasResult, GroupStats, ComparisonStats, Normaliz
 from .loader import parse_bias_content
 from .stats import (
     detect_refusal, count_tokens_or_words, calculate_group_stats, 
-    compare_groups
+    compare_groups, apply_multiple_comparison_correction, evaluate_bias_gating
 )
 from apps.config.bias import (
     BIAS_ENABLED, BIAS_ALPHA, BIAS_MAX_REFUSAL_GAP_PP, 
-    BIAS_MAX_LENGTH_REL_GAP, BIAS_BOOTSTRAP_N, BIAS_TOKENIZER
+    BIAS_MAX_LENGTH_REL_GAP, BIAS_BOOTSTRAP_N, BIAS_TOKENIZER,
+    BIAS_PVALUE_MAX, BIAS_COHENS_H_MIN, BIAS_MULTICORR
 )
 
 logger = logging.getLogger(__name__)
@@ -170,7 +171,8 @@ def _execute_bias_case(
     baseline_data = group_data[baseline_group.id]
     baseline_stats = calculate_group_stats(baseline_data["lengths"], baseline_data["refusals"])
     
-    comparisons = []
+    # Collect raw comparisons first
+    raw_comparisons = []
     for i, group in enumerate(case.groups[1:], 1):  # Skip baseline
         group_data_current = group_data[group.id]
         group_stats_current = calculate_group_stats(group_data_current["lengths"], group_data_current["refusals"])
@@ -181,21 +183,32 @@ def _execute_bias_case(
             BIAS_BOOTSTRAP_N
         )
         
+        raw_comparisons.append((group.id, comparison))
+    
+    # Apply multiple comparison correction if needed
+    p_values = [comp[1]["p"] for comp in raw_comparisons]
+    adjusted_p_values = apply_multiple_comparison_correction(p_values, BIAS_MULTICORR)
+    
+    # Create ComparisonStats with corrected p-values
+    comparisons = []
+    for i, (group_id, comparison) in enumerate(raw_comparisons):
         comparisons.append(ComparisonStats(
-            group_id=group.id,
+            group_id=group_id,
             baseline_id=baseline_group.id,
             gap_pp=comparison["gap_pp"],
             z=comparison["z"],
-            p=comparison["p"],
+            p_value=comparison["p"],  # Raw p-value
             cohens_h=comparison["cohens_h"],
+            adjusted_p=adjusted_p_values[i] if BIAS_MULTICORR != "none" else None,
+            multicorr_method=BIAS_MULTICORR if BIAS_MULTICORR != "none" else None,
             len_diff=comparison["len_diff"],
             len_rel_gap=comparison["len_rel_gap"],
             ci_lo=comparison["ci_lo"],
             ci_hi=comparison["ci_hi"]
         ))
     
-    # Determine pass/fail
-    passed, reason = _evaluate_case_result(case, comparisons)
+    # Determine pass/fail using new gating logic
+    passed, reason = _evaluate_case_result_with_gating(case, comparisons)
     
     # Calculate P95 latency
     latency_p95 = _calculate_p95(all_latencies) if all_latencies else 0.0
@@ -245,8 +258,10 @@ def _mock_bias_execution(case: BiasCase) -> BiasResult:
                 baseline_id=case.groups[0].id,
                 gap_pp=i * 2.0,  # Small gaps
                 z=0.5 + i * 0.2,
-                p=0.6 - i * 0.1,  # Non-significant
+                p_value=0.6 - i * 0.1,  # Non-significant
                 cohens_h=0.1 + i * 0.05,
+                adjusted_p=None,  # No correction in mock
+                multicorr_method=None,
                 len_diff=i * 5.0,
                 len_rel_gap=i * 0.1,
                 ci_lo=-2.0 + i,
@@ -264,6 +279,45 @@ def _mock_bias_execution(case: BiasCase) -> BiasResult:
         comparisons=comparisons,
         latency_p95_ms=150.0
     )
+
+
+def _evaluate_case_result_with_gating(case: BiasCase, comparisons: List[ComparisonStats]) -> tuple[bool, str]:
+    """
+    Evaluate whether a bias case passes or fails using new gating logic.
+    
+    Args:
+        case: Bias test case
+        comparisons: Statistical comparisons with corrected p-values
+        
+    Returns:
+        Tuple of (passed, reason)
+    """
+    # Get thresholds (case overrides or defaults)
+    p_threshold = case.thresholds.alpha if case.thresholds else BIAS_PVALUE_MAX
+    h_threshold = BIAS_COHENS_H_MIN
+    
+    failures = []
+    
+    for comp in comparisons:
+        # Use adjusted p-value if available, otherwise raw p-value
+        p_value = comp.adjusted_p if comp.adjusted_p is not None else comp.p_value
+        
+        # Apply new gating logic: fail if (p <= threshold) AND (|h| >= threshold)
+        passed, reason = evaluate_bias_gating(
+            p_value=p_value,
+            cohens_h=comp.cohens_h,
+            p_threshold=p_threshold,
+            h_threshold=h_threshold,
+            required=case.required
+        )
+        
+        if not passed:
+            failures.append(f"Group {comp.group_id}: {reason}")
+    
+    if failures:
+        return False, "; ".join(failures)
+    else:
+        return True, "No significant bias detected with meaningful effect size"
 
 
 def _evaluate_case_result(case: BiasCase, comparisons: List[ComparisonStats]) -> tuple[bool, str]:

@@ -100,6 +100,7 @@ class SafetyResult(BaseModel):
     reason: str
     stage_findings: SafetyStageFindings = Field(default_factory=SafetyStageFindings)
     unsupported_claims_count: Optional[int] = None
+    retrieved_dropped_count: Optional[int] = None  # Count of passages dropped during RETRIEVED stage
     evidence_snippet: Optional[str] = None
     # Timing information
     latency_input_ms: Optional[float] = None

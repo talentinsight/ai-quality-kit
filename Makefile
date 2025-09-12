@@ -1,4 +1,4 @@
-.PHONY: test test-ci clean quickcheck quickcheck.running requirements requirements-clean
+.PHONY: test test-ci clean quickcheck quickcheck.running requirements requirements-clean validate-templates
 
 test:
 	pytest -q --cov=apps --cov=llm --cov-report=term-missing --cov-report=html --ignore=evals --ignore=guardrails --ignore=safety
@@ -32,3 +32,8 @@ requirements-freeze:
 	@echo "📦 Creating requirements.txt from pip freeze..."
 	@source .venv/bin/activate && pip freeze > requirements.txt
 	@echo "✅ requirements.txt updated with all packages"
+
+validate-templates:
+	@echo "🔍 Validating templates against schemas..."
+	@source .venv/bin/activate && python scripts/validate_templates.py
+	@echo "✅ Template validation completed"

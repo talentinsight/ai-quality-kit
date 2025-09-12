@@ -18,13 +18,15 @@ class RequestResult:
                  timeout: bool = False,
                  tokens_out: Optional[int] = None,
                  cost: Optional[float] = None,
-                 phase: Optional[str] = None):
+                 phase: Optional[str] = None,
+                 observed_header_latency_ms: Optional[float] = None):
         self.latency_ms = latency_ms
         self.success = success
         self.timeout = timeout
         self.tokens_out = tokens_out or 0
         self.cost = cost or 0.0
         self.phase = phase  # "COLD" or "WARM"
+        self.observed_header_latency_ms = observed_header_latency_ms  # From X-Latency-MS header
 
 
 def calculate_percentiles(values: List[float]) -> LatencyMetrics:

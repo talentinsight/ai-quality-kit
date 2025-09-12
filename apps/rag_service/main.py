@@ -31,6 +31,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Install exception handlers for consistent error responses
+from apps.common.http_handlers import install_exception_handlers
+install_exception_handlers(app)
+
 # Add rate limiting middleware
 app.middleware("http")(rate_limit_middleware)
 

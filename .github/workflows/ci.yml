@@ -29,9 +29,13 @@ jobs:
         # Install additional security tools
         pip install bandit pip-audit detect-secrets
     
+    - name: Validate templates
+      run: |
+        python scripts/validate_templates.py
+    
     - name: Run tests with coverage
       run: |
-        pytest --maxfail=1 --cov=apps --cov=llm --cov-report=term-missing --cov-report=xml --cov-fail-under=65 -q --ignore=evals --ignore=guardrails --ignore=safety --ignore=tests/test_integration.py --ignore=tests/test_testdata_orchestrator.py
+        pytest --maxfail=1 --cov=apps --cov=llm --cov-report=term-missing --cov-report=xml --cov-fail-under=80 --cov-branch -q --ignore=evals --ignore=guardrails --ignore=safety --ignore=tests/test_integration.py --ignore=tests/test_testdata_orchestrator.py
       env:
         AUTH_MODE: none
         RL_ENABLED: false
