@@ -13,15 +13,15 @@ def create_qa_template() -> bytes:
     ws = wb.active
     ws.title = "QA Template"
     
-    # Headers - Match JSONL format exactly
-    headers = ["QID", "Question", "Expected Answer", "Contexts", "Meta Category", "Meta Difficulty"]
+    # Headers - Match JSONL format exactly (including new robustness fields)
+    headers = ["QID", "Question", "Expected Answer", "Contexts", "Meta Category", "Meta Difficulty", "Required", "Task Type", "Robustness Paraphrases", "Robustness Synonyms", "Prompt Robustness Enabled"]
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=header)
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
         cell.alignment = Alignment(horizontal="center")
     
-    # Sample data - Match JSONL format exactly
+    # Sample data - Match JSONL format exactly (including robustness examples)
     sample_data = [
         [
             "q1",  # QID
@@ -29,7 +29,12 @@ def create_qa_template() -> bytes:
             "Paris",  # Expected Answer
             "p1",  # Contexts (passage ID)
             "geography",  # Meta Category
-            "easy"  # Meta Difficulty
+            "easy",  # Meta Difficulty
+            "",  # Required (optional)
+            "rag_qa",  # Task Type
+            "",  # Robustness Paraphrases (optional)
+            "",  # Robustness Synonyms (optional)
+            ""  # Prompt Robustness Enabled (optional)
         ],
         [
             "q2",
@@ -37,7 +42,12 @@ def create_qa_template() -> bytes:
             "A = P(1 + r/n)^(nt)",
             "p2",
             "finance",
-            "medium"
+            "medium",
+            "",
+            "rag_qa",
+            "",
+            "",
+            ""
         ],
         [
             "q3",
@@ -45,7 +55,12 @@ def create_qa_template() -> bytes:
             "A subset of AI that enables computers to learn from data",
             "p3",
             "technology",
-            "easy"
+            "easy",
+            "TRUE",  # Required for gating
+            "rag_qa",  # Task Type
+            "Explain ML; What is AI learning?",  # Robustness Paraphrases (semicolon separated)
+            "ML; AI; artificial intelligence",  # Robustness Synonyms (semicolon separated)
+            "TRUE"  # Prompt Robustness Enabled
         ]
     ]
     
@@ -153,7 +168,7 @@ def create_passages_template() -> bytes:
 
 
 def create_qa_jsonl_template() -> str:
-    """Create JSONL template for QA set."""
+    """Create JSONL template for QA set with robustness fields."""
     sample_data = [
         {
             "qid": "q1",
@@ -174,7 +189,20 @@ def create_qa_jsonl_template() -> str:
             "question": "What is machine learning?", 
             "expected_answer": "A subset of AI that enables computers to learn from data",
             "contexts": ["p3"],
-            "meta": {"category": "technology", "difficulty": "easy"}
+            "meta": {"category": "technology", "difficulty": "easy"},
+            "required": True,
+            "task_type": "rag_qa",
+            "robustness": {
+                "paraphrases": ["Explain machine learning", "What is ML?"],
+                "synonyms": ["ML", "artificial intelligence"],
+                "require_hybrid": True,
+                "mmr_lambda": 0.4
+            },
+            "prompt_robustness": {
+                "enabled": True,
+                "modes": ["simple", "cot", "scaffold"],
+                "paraphrase_runs": 2
+            }
         }
     ]
     
@@ -186,6 +214,17 @@ def create_qa_jsonl_template() -> str:
     lines.append("// - expected_answer: The correct answer")
     lines.append("// - contexts: Array of passage IDs (optional)")
     lines.append("// - meta: Additional metadata (optional)")
+    lines.append("// - required: Boolean for gating (optional)")
+    lines.append("// - task_type: Type of task, usually 'rag_qa' (optional)")
+    lines.append("// - robustness: Embedding robustness config (optional)")
+    lines.append("//   - paraphrases: Array of paraphrase strings")
+    lines.append("//   - synonyms: Array of synonym strings")
+    lines.append("//   - require_hybrid: Boolean to force hybrid retrieval")
+    lines.append("//   - mmr_lambda: MMR lambda parameter (0.0-1.0)")
+    lines.append("// - prompt_robustness: Prompt robustness config (optional)")
+    lines.append("//   - enabled: Boolean to enable prompt robustness")
+    lines.append("//   - modes: Array of modes ['simple', 'cot', 'scaffold']")
+    lines.append("//   - paraphrase_runs: Number of paraphrase runs")
     lines.append("")
     
     for item in sample_data:

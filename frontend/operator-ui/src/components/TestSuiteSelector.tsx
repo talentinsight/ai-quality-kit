@@ -258,6 +258,13 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
           estimatedDuration: '3-6 min',
         },
         {
+          id: 'embedding_robustness',
+          name: 'Embedding Robustness',
+          description: 'Tests retrieval stability under synonym/paraphrase variation and biased embeddings',
+          enabled: false,  // Optional subtest, disabled by default
+          estimatedDuration: '5-10 min',
+        },
+        {
           id: 'prompt_robustness',
           name: 'Prompt Robustness (Structured Prompting)',
           description: 'Tests prompt robustness across simple, CoT, and scaffold modes',

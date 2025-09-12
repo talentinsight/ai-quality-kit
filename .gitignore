@@ -125,5 +125,7 @@ reports/
 tmp/
 *.xlsx
 report.xlsx
+# But allow template files
+!data/templates/*.xlsx
 quickcheck_*/
 temp_reports/

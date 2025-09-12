@@ -19,12 +19,23 @@ class PassageRecord(BaseModel):
     meta: Optional[Dict[str, Any]] = Field(None, description="Optional metadata")
 
 
+class RobustnessConfig(BaseModel):
+    """Optional robustness configuration for embedding robustness subtest."""
+    paraphrases: Optional[List[str]] = Field(None, description="Human-written or system-generated paraphrases")
+    synonyms: Optional[List[str]] = Field(None, description="Domain synonyms for lexical expansion (BM25 branch)")
+    require_hybrid: Optional[bool] = Field(None, description="Force dense+BM25 for this QID")
+    mmr_lambda: Optional[float] = Field(None, ge=0.0, le=1.0, description="MMR lambda parameter (0..1, default 0.4)")
+
+
 class QARecord(BaseModel):
     """Individual QA record validation."""
     qid: str = Field(..., description="Unique question identifier")
     question: str = Field(..., min_length=1, description="Question text")
     expected_answer: str = Field(..., min_length=1, description="Expected answer")
     contexts: Optional[List[str]] = Field(None, description="Optional context passages")
+    # Additive fields for embedding robustness subtest
+    required: Optional[bool] = Field(None, description="Gates only if true and subtest selected")
+    robustness: Optional[RobustnessConfig] = Field(None, description="Optional robustness configuration")
 
 
 class ValidationError(BaseModel):

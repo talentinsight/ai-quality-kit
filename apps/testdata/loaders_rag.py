@@ -118,7 +118,13 @@ def load_qaset(path: str) -> List[Dict[str, Any]]:
                         'qid': str(qa_data['qid']),
                         'question': qa_data['question'],
                         'expected_answer': qa_data['expected_answer'],
-                        'contexts': qa_data.get('contexts', [])
+                        'contexts': qa_data.get('contexts', []),
+                        # Embedding Robustness fields (optional, backward compatible)
+                        'required': qa_data.get('required'),
+                        'robustness': qa_data.get('robustness'),
+                        # Prompt Robustness fields (optional, backward compatible)
+                        'task_type': qa_data.get('task_type', 'rag_qa'),
+                        'prompt_robustness': qa_data.get('prompt_robustness')
                     })
                     
                 except json.JSONDecodeError as e:

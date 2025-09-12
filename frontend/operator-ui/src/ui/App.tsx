@@ -1059,106 +1059,81 @@ export default function App() {
               </p>
             </div>
 
-            {/* LLM Options - Appears after Target Mode selection */}
+            {/* LLM Options - Compact version */}
             {targetMode && (
               <div className="animate-slideDown">
-                <label className="label">LLM Options</label>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <label className="flex items-center gap-3 p-3 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <label className="label">LLM Type</label>
+                <div className="flex gap-2">
+                  <label className="flex items-center gap-2 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-md cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 text-sm">
                     <input 
                       type="radio" 
                       name="llmModelType" 
                       value="rag" 
-                      className="radio" 
+                      className="radio radio-sm" 
                       checked={llmModelType === "rag"}
                       onChange={e => setLlmModelType(e.target.value as any)}
                     />
-                    <div>
-                      <div className="text-sm font-medium">🔍 RAG System</div>
-                      <div className="text-xs text-slate-500">Retrieval-Augmented Generation</div>
-                    </div>
+                    🔍 RAG System
                   </label>
                   
-                  <label className="flex items-center gap-3 p-3 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                  <label className="flex items-center gap-2 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-md cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 text-sm">
                     <input 
                       type="radio" 
                       name="llmModelType" 
                       value="agent" 
-                      className="radio" 
+                      className="radio radio-sm" 
                       checked={llmModelType === "agent"}
                       onChange={e => setLlmModelType(e.target.value as any)}
                     />
-                    <div>
-                      <div className="text-sm font-medium">🤖 AI Agent</div>
-                      <div className="text-xs text-slate-500">Agent with Tools</div>
-                    </div>
+                    🤖 AI Agent
                   </label>
                   
-                  <label className="flex items-center gap-3 p-3 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                  <label className="flex items-center gap-2 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-md cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 text-sm">
                     <input 
                       type="radio" 
                       name="llmModelType" 
                       value="tool" 
-                      className="radio" 
+                      className="radio radio-sm" 
                       checked={llmModelType === "tool"}
                       onChange={e => setLlmModelType(e.target.value as any)}
                     />
-                    <div>
-                      <div className="text-sm font-medium">🛠️ Function/Tool</div>
-                      <div className="text-xs text-slate-500">Function Testing</div>
-                    </div>
+                    🛠️ Function/Tool
                   </label>
                 </div>
-                <p className="text-xs text-slate-500 mt-2">
-                  Choose the type of LLM system you want to test for optimized evaluation options.
-                </p>
               </div>
             )}
 
-            {/* Ground Truth Data Availability - Only for RAG */}
+            {/* Ground Truth Data - Compact for RAG */}
             {llmModelType === "rag" && (
               <div className="animate-slideDown">
-                <label className="label">Ground Truth Data</label>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2">
+                <label className="label">Ground Truth</label>
+                <div className="flex gap-2">
+                  <label className="flex items-center gap-2 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-md cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 text-sm">
                     <input 
                       type="radio" 
                       name="groundTruth" 
                       value="no" 
-                      className="radio" 
+                      className="radio radio-sm" 
                       checked={!hasGroundTruth}
                       onChange={() => setHasGroundTruth(false)}
                     />
-                    <span className="text-sm">No Ground Truth Available</span>
+                    📊 No Ground Truth
                   </label>
-                  <label className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-md cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 text-sm">
                     <input 
                       type="radio" 
                       name="groundTruth" 
                       value="yes" 
-                      className="radio" 
+                      className="radio radio-sm" 
                       checked={hasGroundTruth}
                       onChange={() => setHasGroundTruth(true)}
                     />
-                    <span className="text-sm">Ground Truth Available</span>
+                    🎯 Ground Truth Available
                   </label>
                 </div>
                 <p className="text-xs text-slate-500 mt-1">
-                  {hasGroundTruth 
-                    ? "🎯 With ground truth: 8 RAGas evaluation metrics available (3 required + 5 advanced: Faithfulness, Context Recall, Answer Relevancy, Context Precision, Answer Correctness, Answer Similarity, Context Entities Recall, Context Relevancy)"
-                    : "📊 Without ground truth: 3 required RAGas metrics (Faithfulness, Context Recall, Answer Relevancy)"
-                  }
+                  {hasGroundTruth ? "8 RAG metrics available" : "3 basic RAG metrics"}
                 </p>
-                
-                {hasGroundTruth && (
-                  <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                    <div className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">Ground Truth Data Required</div>
-                    <div className="text-xs text-slate-600 dark:text-slate-400">
-                      📋 Use the <strong>Test Data Intake</strong> panel below to download templates and upload your QA data.
-                      Templates include Excel and JSONL formats with proper column headers.
-                    </div>
-                  </div>
-                )}
                 
                 {/* RAG Advanced Options */}
                 <div className="mt-4 p-3 border border-slate-200 dark:border-slate-700 rounded-lg">

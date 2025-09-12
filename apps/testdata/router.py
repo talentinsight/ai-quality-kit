@@ -861,10 +861,13 @@ async def download_qa_excel_template(
 ):
     """Download Excel template for QA set."""
     try:
-        template_bytes = create_qa_template()
+        template_path = Path(__file__).parent.parent.parent / "data" / "templates" / "qaset.template.xlsx"
         
-        response.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        response.headers["Content-Disposition"] = "attachment; filename=qa_template.xlsx"
+        if not template_path.exists():
+            # Fallback to dynamic generation if file doesn't exist
+            template_bytes = create_qa_template()
+        else:
+            template_bytes = template_path.read_bytes()
         
         return Response(
             content=template_bytes,
@@ -874,7 +877,7 @@ async def download_qa_excel_template(
             }
         )
     except Exception as e:
-        logger.error(f"Error creating QA Excel template: {e}")
+        logger.error(f"Error serving QA Excel template: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate template")
 
 
@@ -885,7 +888,13 @@ async def download_passages_excel_template(
 ):
     """Download Excel template for passages."""
     try:
-        template_bytes = create_passages_template()
+        template_path = Path(__file__).parent.parent.parent / "data" / "templates" / "passages.template.xlsx"
+        
+        if not template_path.exists():
+            # Fallback to dynamic generation if file doesn't exist
+            template_bytes = create_passages_template()
+        else:
+            template_bytes = template_path.read_bytes()
         
         return Response(
             content=template_bytes,
@@ -895,7 +904,7 @@ async def download_passages_excel_template(
             }
         )
     except Exception as e:
-        logger.error(f"Error creating passages Excel template: {e}")
+        logger.error(f"Error serving passages Excel template: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate template")
 
 
@@ -1119,4 +1128,132 @@ async def download_safety_json_template(
         raise
     except Exception as e:
         logger.error(f"Error serving safety JSON template: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate template")
+
+
+@router.get("/templates/bias.yaml")
+async def download_bias_yaml_template(
+    response: Response,
+    principal: Optional[Principal] = Depends(require_user_or_admin())
+):
+    """Download YAML template for Bias Detection."""
+    try:
+        templates_enabled = os.getenv("TEMPLATES_ENDPOINTS_ENABLED", "true").lower() == "true"
+        if not templates_enabled:
+            raise HTTPException(status_code=404, detail="Templates endpoint disabled")
+        
+        template_path = Path(__file__).parent.parent.parent / "data" / "templates" / "bias.yaml"
+        
+        if not template_path.exists():
+            raise HTTPException(status_code=404, detail="Bias YAML template not found")
+        
+        template_content = template_path.read_text(encoding='utf-8')
+        
+        return Response(
+            content=template_content,
+            media_type="application/x-yaml",
+            headers={
+                "Content-Disposition": "attachment; filename=bias.yaml"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error serving bias YAML template: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate template")
+
+
+@router.get("/templates/bias.json")
+async def download_bias_json_template(
+    response: Response,
+    principal: Optional[Principal] = Depends(require_user_or_admin())
+):
+    """Download JSON template for Bias Detection."""
+    try:
+        templates_enabled = os.getenv("TEMPLATES_ENDPOINTS_ENABLED", "true").lower() == "true"
+        if not templates_enabled:
+            raise HTTPException(status_code=404, detail="Templates endpoint disabled")
+        
+        template_path = Path(__file__).parent.parent.parent / "data" / "templates" / "bias.json"
+        
+        if not template_path.exists():
+            raise HTTPException(status_code=404, detail="Bias JSON template not found")
+        
+        template_content = template_path.read_text(encoding='utf-8')
+        
+        return Response(
+            content=template_content,
+            media_type="application/json",
+            headers={
+                "Content-Disposition": "attachment; filename=bias.json"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error serving bias JSON template: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate template")
+
+
+@router.get("/templates/perf.yaml")
+async def download_perf_yaml_template(
+    response: Response,
+    principal: Optional[Principal] = Depends(require_user_or_admin())
+):
+    """Download YAML template for Performance Testing."""
+    try:
+        templates_enabled = os.getenv("TEMPLATES_ENDPOINTS_ENABLED", "true").lower() == "true"
+        if not templates_enabled:
+            raise HTTPException(status_code=404, detail="Templates endpoint disabled")
+        
+        template_path = Path(__file__).parent.parent.parent / "data" / "templates" / "perf.yaml"
+        
+        if not template_path.exists():
+            raise HTTPException(status_code=404, detail="Performance YAML template not found")
+        
+        template_content = template_path.read_text(encoding='utf-8')
+        
+        return Response(
+            content=template_content,
+            media_type="application/x-yaml",
+            headers={
+                "Content-Disposition": "attachment; filename=perf.yaml"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error serving performance YAML template: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate template")
+
+
+@router.get("/templates/perf.json")
+async def download_perf_json_template(
+    response: Response,
+    principal: Optional[Principal] = Depends(require_user_or_admin())
+):
+    """Download JSON template for Performance Testing."""
+    try:
+        templates_enabled = os.getenv("TEMPLATES_ENDPOINTS_ENABLED", "true").lower() == "true"
+        if not templates_enabled:
+            raise HTTPException(status_code=404, detail="Templates endpoint disabled")
+        
+        template_path = Path(__file__).parent.parent.parent / "data" / "templates" / "perf.json"
+        
+        if not template_path.exists():
+            raise HTTPException(status_code=404, detail="Performance JSON template not found")
+        
+        template_content = template_path.read_text(encoding='utf-8')
+        
+        return Response(
+            content=template_content,
+            media_type="application/json",
+            headers={
+                "Content-Disposition": "attachment; filename=perf.json"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error serving performance JSON template: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate template")

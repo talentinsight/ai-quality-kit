@@ -56,6 +56,17 @@ def to_jsonl_qaset(excel_file_path: str) -> Tuple[str, List[Dict[str, Any]]]:
                 column_map["meta_difficulty"] = i
             elif "metadata" in header or "meta" in header:
                 column_map["metadata"] = i
+            # New robustness fields
+            elif "required" in header:
+                column_map["required"] = i
+            elif "task" in header and "type" in header:
+                column_map["task_type"] = i
+            elif "robustness" in header and "paraphrase" in header:
+                column_map["robustness_paraphrases"] = i
+            elif "robustness" in header and "synonym" in header:
+                column_map["robustness_synonyms"] = i
+            elif "prompt" in header and "robustness" in header and "enabled" in header:
+                column_map["prompt_robustness_enabled"] = i
         
         # Validate required columns
         required_cols = ["question", "expected_answer"]
@@ -100,6 +111,48 @@ def to_jsonl_qaset(excel_file_path: str) -> Tuple[str, List[Dict[str, Any]]]:
                     # Handle both single ID and comma-separated IDs
                     context_ids = [c.strip() for c in str(contexts).split(",")]
                     record["contexts"] = context_ids
+            
+            # Add robustness fields if present
+            if "required" in column_map and column_map["required"] < len(row):
+                required_val = row[column_map["required"]]
+                if required_val and str(required_val).strip().upper() in ["TRUE", "1", "YES"]:
+                    record["required"] = True
+            
+            if "task_type" in column_map and column_map["task_type"] < len(row):
+                task_type = row[column_map["task_type"]]
+                if task_type:
+                    record["task_type"] = str(task_type).strip()
+            
+            # Build robustness config if any robustness fields are present
+            robustness_config = {}
+            if "robustness_paraphrases" in column_map and column_map["robustness_paraphrases"] < len(row):
+                paraphrases = row[column_map["robustness_paraphrases"]]
+                if paraphrases:
+                    # Split by semicolon and clean
+                    paraphrase_list = [p.strip() for p in str(paraphrases).split(";") if p.strip()]
+                    if paraphrase_list:
+                        robustness_config["paraphrases"] = paraphrase_list
+            
+            if "robustness_synonyms" in column_map and column_map["robustness_synonyms"] < len(row):
+                synonyms = row[column_map["robustness_synonyms"]]
+                if synonyms:
+                    # Split by semicolon and clean
+                    synonym_list = [s.strip() for s in str(synonyms).split(";") if s.strip()]
+                    if synonym_list:
+                        robustness_config["synonyms"] = synonym_list
+            
+            if robustness_config:
+                record["robustness"] = robustness_config
+            
+            # Build prompt robustness config if enabled
+            if "prompt_robustness_enabled" in column_map and column_map["prompt_robustness_enabled"] < len(row):
+                pr_enabled = row[column_map["prompt_robustness_enabled"]]
+                if pr_enabled and str(pr_enabled).strip().upper() in ["TRUE", "1", "YES"]:
+                    record["prompt_robustness"] = {
+                        "enabled": True,
+                        "modes": ["simple", "cot", "scaffold"],
+                        "paraphrase_runs": 2
+                    }
             
             # Build metadata object
             meta = {}

@@ -147,6 +147,16 @@ def _create_summary_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
             "prompt_robustness_stability_cot", "prompt_robustness_stability_scaffold",
             "prompt_robustness_contract_adherence"
         ])
+    
+    # Add Embedding Robustness headers if data exists
+    embedding_robustness_data = data.get("rag_reliability_robustness", {}).get("embedding_robustness")
+    if embedding_robustness_data:
+        headers.extend([
+            "embedding_robustness_recall_at_k", "embedding_robustness_overlap_at_k",
+            "embedding_robustness_answer_stability", "embedding_robustness_low_agreement_flag",
+            "embedding_robustness_fallback_triggered", "embedding_robustness_hybrid_gain_delta",
+            "embedding_robustness_paraphrase_count"
+        ])
     if mcp_summary:
         headers.extend([
             "mcp_security_tests", "mcp_security_passed", "mcp_p95_latency_ms", 
@@ -269,6 +279,19 @@ def _create_summary_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
             stability_by_mode.get("cot", 0.0),
             stability_by_mode.get("scaffold", 0.0),
             rag_reliability_summary.get("contract_adherence_pct", 0.0)
+        ])
+    
+    # Add Embedding Robustness data if available
+    embedding_robustness_data = data.get("rag_reliability_robustness", {}).get("embedding_robustness")
+    if embedding_robustness_data:
+        row_data.extend([
+            embedding_robustness_data.get("avg_recall_at_k", 0.0),
+            embedding_robustness_data.get("avg_overlap_at_k", 0.0),
+            embedding_robustness_data.get("avg_answer_stability", 0.0),
+            embedding_robustness_data.get("low_agreement_count", 0),
+            embedding_robustness_data.get("fallback_triggered_count", 0),
+            embedding_robustness_data.get("avg_hybrid_gain_delta", 0.0),
+            embedding_robustness_data.get("avg_paraphrase_count", 0.0)
         ])
     
     # Add MCP Security data if available
