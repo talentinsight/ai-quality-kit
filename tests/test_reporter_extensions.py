@@ -278,9 +278,11 @@ class TestReporterExtensions:
             # Check Detailed sheet structure is unchanged
             ws = wb["Detailed"]
             expected_detailed_headers = [
-                "suite", "test_id", "provider", "model", "query_masked",
-                "answer_masked", "context_ids", "metrics_json", "pass",
-                "latency_ms", "timestamp"
+                "suite", "case_id", "provider", "model", "question",
+                "predicted", "expected", "retrieved_count", "recall_at_k", "mrr_at_k", "ndcg_at_k",
+                "faithfulness", "context_recall", "answer_relevancy", "context_precision",
+                "answer_correctness", "answer_similarity", "perturbations_applied",
+                "pass_fail_reason", "latency_ms", "timestamp"
             ]
             actual_headers = [ws.cell(row=1, column=col).value for col in range(1, len(expected_detailed_headers) + 1)]
             assert actual_headers == expected_detailed_headers

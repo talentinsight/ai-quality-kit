@@ -72,6 +72,7 @@ def run_performance_suite(
         except Exception as e:
             logger.error(f"Failed to execute performance scenario {scenario.id}: {e}")
             # Create a failed result
+            driver = scenario.load.mode.value if scenario.load else "unknown"
             results.append(PerfResult(
                 id=scenario.id,
                 category=scenario.category.value,
@@ -79,7 +80,7 @@ def run_performance_suite(
                 required=scenario.required,
                 passed=False,
                 reason=f"Execution failed: {str(e)}",
-                driver="unknown",
+                driver=driver,
                 load={},
                 metrics={},
                 latency_p95_ms=0.0,
@@ -114,10 +115,15 @@ def _execute_perf_scenario(scenario: PerfCase, harness: LoadHarness) -> PerfResu
     
     # Prepare load parameters
     load_config = scenario.load
-    segmentation = scenario.segmentation or {}
-    cold_n = segmentation.cold_n or 1
-    warmup_exclude_n = segmentation.warmup_exclude_n or 0
-    phase_headers = segmentation.phase_headers if segmentation.phase_headers is not None else True
+    segmentation = scenario.segmentation
+    if segmentation:
+        cold_n = segmentation.cold_n or 1
+        warmup_exclude_n = segmentation.warmup_exclude_n or 0
+        phase_headers = segmentation.phase_headers if segmentation.phase_headers is not None else True
+    else:
+        cold_n = 1
+        warmup_exclude_n = 0
+        phase_headers = True
     
     # Execute based on load mode
     if load_config.mode.value == "closed_loop":
@@ -211,12 +217,18 @@ def _evaluate_scenario_result(scenario: PerfCase, metrics: Dict[str, Any]) -> tu
     """
     # Get thresholds (scenario overrides or defaults)
     thresholds = scenario.thresholds
-    p95_max = thresholds.p95_ms_max if thresholds else PERF_P95_MS_MAX
-    error_rate_max = thresholds.error_rate_max if thresholds else PERF_ERROR_RATE_MAX
-    timeout_rate_max = thresholds.timeout_rate_max if thresholds else PERF_TIMEOUT_RATE_MAX
-    throughput_min = thresholds.throughput_min_rps if thresholds else PERF_THROUGHPUT_MIN_RPS
-    tokens_per_sec_min = thresholds.tokens_per_sec_min if thresholds else PERF_TOKENS_PER_SEC_MIN
-    memory_max = thresholds.memory_peak_mb_max if thresholds else PERF_MEMORY_PEAK_MB_MAX
+    p95_max = (thresholds.p95_ms_max if thresholds and thresholds.p95_ms_max is not None 
+               else PERF_P95_MS_MAX)
+    error_rate_max = (thresholds.error_rate_max if thresholds and thresholds.error_rate_max is not None 
+                      else PERF_ERROR_RATE_MAX)
+    timeout_rate_max = (thresholds.timeout_rate_max if thresholds and thresholds.timeout_rate_max is not None 
+                        else PERF_TIMEOUT_RATE_MAX)
+    throughput_min = (thresholds.throughput_min_rps if thresholds and thresholds.throughput_min_rps is not None 
+                      else PERF_THROUGHPUT_MIN_RPS)
+    tokens_per_sec_min = (thresholds.tokens_per_sec_min if thresholds and thresholds.tokens_per_sec_min is not None 
+                          else PERF_TOKENS_PER_SEC_MIN)
+    memory_max = (thresholds.memory_peak_mb_max if thresholds and thresholds.memory_peak_mb_max is not None 
+                  else PERF_MEMORY_PEAK_MB_MAX)
     
     failures = []
     overall_metrics = metrics["overall"]

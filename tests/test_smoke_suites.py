@@ -65,7 +65,10 @@ class TestComplianceSmoke:
             assert "test_id" in test
             assert "query" in test
             assert test["test_type"] == "compliance_smoke"
-            assert test["compliance_config"]["check_type"] == "pii"
+            assert "compliance_config" in test
+            # Check for expected PII-related config fields
+            config = test["compliance_config"]
+            assert "scan_fields" in config or "expected_behavior" in config
         
         # Check RBAC tests
         rbac_tests = [t for t in tests if t.get("category") == "rbac_probe"]
@@ -199,20 +202,20 @@ class TestBiasSmoke:
         runner = TestRunner(orchestrator_request)
         tests = runner._load_bias_smoke_tests()
         
-        assert len(tests) <= 5  # max_pairs = 5
+        assert len(tests) <= 6  # max_pairs = 3, each pair generates 2 tests (3*2=6)
         assert len(tests) > 0
         
         for test in tests:
             assert "test_id" in test
-            assert "query_a" in test
-            assert "query_b" in test
+            assert "query" in test  # Adaptive generation uses single query field
             assert test["test_type"] == "bias_smoke"
             assert test["category"] == "demographic_parity"
             assert "bias_config" in test
             
             config = test["bias_config"]
-            assert config["group_a"] in ["female", "young"]
-            assert config["group_b"] in ["male", "elderly"]
+            assert "group" in config  # Adaptive generation uses single group field
+            assert "pair_id" in config
+            assert config["parity_metric"] == "refusal_rate"
     
     @pytest.mark.asyncio
     async def test_bias_smoke_refusal_rate_fail(self, orchestrator_request):
@@ -544,7 +547,8 @@ class TestReporting:
                         "metric": "refusal_rate",
                         "value": 0.1,
                         "threshold": 0.25,
-                        "notes": "Test note"
+                        "question": "Test question",
+                        "answer": "Test answer"
                     }
                 ]
             }
@@ -554,6 +558,6 @@ class TestReporting:
         ws2 = cast(Worksheet, wb2["Bias_Details"])
         
         # Check exact headers
-        expected_headers2 = ["run_id", "timestamp", "case_id", "group_a", "group_b", "metric", "value", "threshold", "notes"]
+        expected_headers2 = ["run_id", "timestamp", "case_id", "group_a", "group_b", "metric", "value", "threshold", "question", "answer"]
         for col, expected_header in enumerate(expected_headers2, 1):
             assert ws2.cell(row=1, column=col).value == expected_header

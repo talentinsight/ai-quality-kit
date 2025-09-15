@@ -102,7 +102,7 @@ class TestUploadEndpoint:
         response = client.post("/testdata/upload", headers=auth_headers)
         
         assert response.status_code == 400
-        assert "At least one file must be provided" in response.json()["detail"]
+        assert "At least one file must be provided" in response.json()["message"]
     
     def test_upload_invalid_file_extension(self, client, auth_headers):
         """Test uploading file with invalid extension."""
@@ -113,7 +113,7 @@ class TestUploadEndpoint:
         response = client.post("/testdata/upload", files=files, headers=auth_headers)
         
         assert response.status_code == 415
-        assert "Unsupported file extension" in response.json()["detail"]
+        assert "Unsupported file extension" in response.json()["message"]
     
     def test_upload_invalid_content_type(self, client, auth_headers, sample_passages_jsonl):
         """Test uploading file with invalid content type."""
@@ -124,7 +124,7 @@ class TestUploadEndpoint:
         response = client.post("/testdata/upload", files=files, headers=auth_headers)
         
         assert response.status_code == 415
-        assert "Unsupported content type" in response.json()["detail"]
+        assert "Unsupported content type" in response.json()["message"]
     
     def test_upload_file_too_large(self, client, auth_headers):
         """Test uploading file that's too large."""
@@ -137,7 +137,7 @@ class TestUploadEndpoint:
         response = client.post("/testdata/upload", files=files, headers=auth_headers)
         
         assert response.status_code == 413
-        assert "File too large" in response.json()["detail"]
+        assert "File too large" in response.json()["message"]
     
     def test_upload_invalid_jsonl(self, client, auth_headers):
         """Test uploading invalid JSONL content."""
@@ -248,7 +248,7 @@ class TestByUrlEndpoint:
             response = client.post("/testdata/by_url", json=request_data, headers=auth_headers)
             
             assert response.status_code == 408
-            assert "Timeout" in response.json()["detail"]
+            assert "Timeout" in response.json()["message"]
     
     @pytest.mark.asyncio
     async def test_ingest_by_url_http_error(self, client, auth_headers):
@@ -272,7 +272,7 @@ class TestByUrlEndpoint:
             response = client.post("/testdata/by_url", json=request_data, headers=auth_headers)
             
             assert response.status_code == 400
-            assert "HTTP error" in response.json()["detail"]
+            assert "HTTP error" in response.json()["message"]
 
 
 class TestPasteEndpoint:
@@ -325,7 +325,7 @@ class TestPasteEndpoint:
         response = client.post("/testdata/paste", json=request_data, headers=auth_headers)
         
         assert response.status_code == 413
-        assert "Content too large" in response.json()["detail"]
+        assert "Content too large" in response.json()["message"]
     
     def test_paste_invalid_jsonl(self, client, auth_headers):
         """Test pasting invalid JSONL content."""
@@ -384,7 +384,7 @@ class TestMetaEndpoint:
         response = client.get("/testdata/nonexistent-id/meta", headers=auth_headers)
         
         assert response.status_code == 404
-        assert "not found" in response.json()["detail"]
+        assert "not found" in response.json()["message"]
     
     def test_get_meta_expired(self, client, auth_headers, sample_passages_jsonl):
         """Test getting metadata for expired bundle."""
@@ -404,7 +404,7 @@ class TestMetaEndpoint:
         response = client.get(f"/testdata/{testdata_id}/meta", headers=auth_headers)
         
         assert response.status_code == 404  # Expired bundles are cleaned up, so they return 404
-        assert "expired" in response.json()["detail"]
+        assert "expired" in response.json()["message"]
 
 
 class TestMetricsEndpoint:

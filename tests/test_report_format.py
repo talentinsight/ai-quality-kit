@@ -197,9 +197,11 @@ class TestReportFormat:
             # Check column headers in Detailed sheet
             detailed_headers = [cell.value for cell in detailed_sheet[1]]  # type: ignore
             expected_headers = [
-                "suite", "test_id", "provider", "model", "query_masked",
-                "answer_masked", "context_ids", "metrics_json", "pass",
-                "latency_ms", "timestamp"
+                "suite", "case_id", "provider", "model", "question",
+                "predicted", "expected", "retrieved_count", "recall_at_k", "mrr_at_k", "ndcg_at_k",
+                "faithfulness", "context_recall", "answer_relevancy", "context_precision",
+                "answer_correctness", "answer_similarity", "perturbations_applied",
+                "pass_fail_reason", "latency_ms", "timestamp"
             ]
             for header in expected_headers:
                 assert header in detailed_headers, f"Missing header in Detailed sheet: {header}"

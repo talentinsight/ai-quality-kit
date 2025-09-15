@@ -21,8 +21,8 @@ def test_calculate_percentiles():
     
     assert metrics.p50 == 550.0  # Median
     assert metrics.p90 == 910.0  # 90th percentile
-    assert metrics.p95 == 955.0  # 95th percentile
-    assert metrics.p99 == 991.0  # 99th percentile
+    assert abs(metrics.p95 - 955.0) < 0.1  # 95th percentile (floating point tolerance)
+    assert abs(metrics.p99 - 991.0) < 0.1  # 99th percentile (floating point tolerance)
     assert metrics.max == 1000.0
     assert metrics.mean == 550.0
     assert metrics.std > 0  # Should have some standard deviation
@@ -94,8 +94,8 @@ def test_calculate_scenario_metrics():
     assert metrics.tokens_per_sec == 16.5
     
     # Check cost metrics
-    assert metrics.cost_total == 0.033  # 0.01+0.012+0.011
-    assert metrics.cost_per_request == 0.011  # 0.033/3
+    assert abs(metrics.cost_total - 0.033) < 0.001  # 0.01+0.012+0.011 (floating point tolerance)
+    assert abs(metrics.cost_per_request - 0.011) < 0.001  # 0.033/3 (floating point tolerance)
 
 
 def test_segment_results():

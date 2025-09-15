@@ -95,6 +95,22 @@ jobs:
         fi
         echo "All quality gates passed! ✅"
     
+    - name: Coverage gate
+      if: always()
+      run: |
+        python - <<'PY'
+        import json, os, sys
+        with open('coverage.json','r') as f:
+            data=json.load(f)
+        pct = float(data.get('totals',{}).get('percent_covered', 0))
+        min_req = float(os.getenv('COVERAGE_MIN_PERCENT', '0'))
+        print(f"Coverage: {pct:.2f}% (min required: {min_req:.2f}%)")
+        if pct < min_req:
+            sys.exit(1)
+        PY
+      env:
+        COVERAGE_MIN_PERCENT: "${{ vars.COVERAGE_MIN_PERCENT || '0' }}"
+    
     - name: Test Docker build (if Dockerfile changed)
       if: contains(github.event.head_commit.modified, 'infra/dockerfile') || github.event_name == 'pull_request'
       run: |

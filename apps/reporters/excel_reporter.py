@@ -46,6 +46,10 @@ def write_excel(path: str, data: Dict[str, Any]) -> None:
     if data.get("bias_smoke") and data["bias_smoke"].get("details"):
         _create_bias_details_sheet(wb, data)
     
+    # Optional sheet for guardrails results
+    if data.get("guardrails") and data["guardrails"].get("details"):
+        _create_guardrails_details_sheet(wb, data)
+    
     # Optional sheet for logs
     if data.get("logs") and data["logs"].get("entries"):
         _create_logs_sheet(wb, data)
@@ -116,6 +120,12 @@ def _create_summary_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     if data.get("bias_smoke") and data["bias_smoke"].get("summary"):
         headers.extend([
             "bias_pairs", "bias_metric", "bias_fails", "bias_fail_ratio", "bias_pass"
+        ])
+    
+    # Add guardrails headers if data exists
+    if data.get("guardrails") and data["guardrails"].get("summary"):
+        headers.extend([
+            "guardrails_total", "guardrails_pass", "guardrails_fail", "guardrails_warn", "guardrails_skip"
         ])
     
     # Add dataset metadata headers (additive)
@@ -248,6 +258,17 @@ def _create_summary_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
             bias_summary.get("pass", False)
         ])
     
+    # Add guardrails data if available
+    if data.get("guardrails") and data["guardrails"].get("summary"):
+        guardrails_summary = data["guardrails"]["summary"]
+        row_data.extend([
+            guardrails_summary.get("total", 0),
+            guardrails_summary.get("pass", 0),
+            guardrails_summary.get("fail", 0),
+            guardrails_summary.get("warn", 0),
+            guardrails_summary.get("skip", 0)
+        ])
+    
     # Add Ragas data if available
     rag_summary = summary.get("rag_quality", {})
     if rag_summary.get("ragas"):
@@ -358,14 +379,24 @@ def _create_detailed_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     for row_idx, row_data in enumerate(detailed_rows, 2):
         values = [
             row_data.get("suite", ""),
-            row_data.get("test_id", ""),
+            row_data.get("case_id", row_data.get("test_id", "")),  # Support both case_id and test_id
             row_data.get("provider", ""),
             row_data.get("model", ""),
-            row_data.get("query_masked", ""),
-            row_data.get("answer_masked", ""),
-            ",".join(row_data.get("context_ids", [])),
-            json.dumps(row_data.get("metrics_json", {})) if row_data.get("metrics_json") else "",
-            row_data.get("pass", False),
+            row_data.get("question", row_data.get("query_masked", "")),  # Support both question and query_masked
+            row_data.get("predicted", row_data.get("answer_masked", "")),  # Support both predicted and answer_masked
+            row_data.get("expected", ""),
+            row_data.get("retrieved_count", 0),
+            row_data.get("recall_at_k", 0.0),
+            row_data.get("mrr_at_k", 0.0),
+            row_data.get("ndcg_at_k", 0.0),
+            row_data.get("faithfulness", 0.0),
+            row_data.get("context_recall", 0.0),
+            row_data.get("answer_relevancy", 0.0),
+            row_data.get("context_precision", 0.0),
+            row_data.get("answer_correctness", 0.0),
+            row_data.get("answer_similarity", 0.0),
+            row_data.get("perturbations_applied", ""),
+            row_data.get("pass_fail_reason", ""),
             row_data.get("latency_ms", 0),
             row_data.get("timestamp", "")
         ]
@@ -551,7 +582,13 @@ def _create_coverage_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
             module_data.get("branch", 0),
             module_data.get("brpart", 0),
             module_data.get("cover_percent", 0.0),
-            module_data.get("total_lines", 0)
+            module_data.get("total_lines", 0),
+            module_data.get("total_cases", 0),
+            module_data.get("filtered_cases", 0),
+            module_data.get("invalid_cases", 0),
+            module_data.get("contexts_missing", 0),
+            module_data.get("perturbed_sampled", 0),
+            module_data.get("filter_reason", "")
         ]
         
         for col, value in enumerate(values, 1):
@@ -899,4 +936,52 @@ def _create_compare_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
         cell.alignment = Alignment(wrap_text=True)
     
     ws.freeze_panes = f"A{header_row + 1}"
+
+
+def _create_guardrails_details_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
+    """Create Guardrails_Details sheet with guardrails test results."""
+    ws = cast(Worksheet, wb.create_sheet("Guardrails_Details"))
+    
+    headers = [
+        "subtest", "suite", "test_id", "status", "reason", "thresholds", 
+        "links", "category", "description", "enabled", "latency_ms", "timestamp"
+    ]
+    
+    # Write headers with styling
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(wrap_text=True)
+        
+        # Set column widths
+        if header in ["reason", "description"]:
+            ws.column_dimensions[get_column_letter(col)].width = 40
+        elif header in ["links", "thresholds"]:
+            ws.column_dimensions[get_column_letter(col)].width = 30
+        else:
+            ws.column_dimensions[get_column_letter(col)].width = 16
+    
+    # Write data rows
+    guardrails_details = data.get("guardrails", {}).get("details", [])
+    for row_idx, detail in enumerate(guardrails_details, 2):
+        values = [
+            detail.get("subtest", ""),
+            detail.get("suite", ""),
+            detail.get("test_id", ""),
+            detail.get("status", ""),
+            detail.get("reason", ""),
+            detail.get("thresholds", ""),
+            detail.get("links", ""),
+            detail.get("category", ""),
+            detail.get("description", ""),
+            detail.get("enabled", ""),
+            detail.get("latency_ms", ""),
+            detail.get("timestamp", "")
+        ]
+        
+        for col, value in enumerate(values, 1):
+            ws.cell(row=row_idx, column=col, value=value)
+    
+    # Freeze panes
+    ws.freeze_panes = "A2"
 

@@ -85,6 +85,10 @@ class AdaptiveComplianceGenerator:
             )
             tests.extend(industry_tests)
         
+        # Generate RBAC tests
+        rbac_tests = cls._generate_rbac_tests(llm_profile)
+        tests.extend(rbac_tests)
+        
         # Add model-specific vulnerability tests
         vuln_tests = cls._generate_vulnerability_tests(llm_profile)
         tests.extend(vuln_tests[:max_tests - len(tests)])
@@ -193,6 +197,37 @@ class AdaptiveComplianceGenerator:
                     "test_type": "compliance_smoke", 
                     "category": "vulnerability_scan",
                     "vulnerability_type": vuln
+                })
+        
+        return tests
+    
+    @classmethod
+    def _generate_rbac_tests(cls, llm_profile: LLMProfile) -> List[Dict[str, Any]]:
+        """Generate RBAC (Role-Based Access Control) tests."""
+        tests = []
+        
+        # Default RBAC matrix
+        rbac_matrix = {
+            "user": ["/ask", "/orchestrator/*", "/testdata/*"],
+            "admin": ["*"]
+        }
+        
+        # RBAC test routes
+        rbac_routes = ["/ask", "/orchestrator/run_tests", "/testdata/upload", "/reports"]
+        
+        for i, route in enumerate(rbac_routes):
+            for role in ["user", "admin"]:
+                tests.append({
+                    "test_id": f"compliance_rbac_{i+1}_{role}",
+                    "query": f"RBAC probe for {route}",
+                    "test_type": "compliance_smoke",
+                    "category": "rbac_probe",
+                    "compliance_config": {
+                        "route": route,
+                        "role": role,
+                        "rbac_matrix": rbac_matrix,
+                        "check_type": "rbac"
+                    }
                 })
         
         return tests

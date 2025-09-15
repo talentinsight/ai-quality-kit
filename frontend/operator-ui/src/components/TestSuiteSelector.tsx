@@ -95,7 +95,7 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
       
       // Update test suites with RAG-specific behavior
       setTestSuites(prev => prev.map(suite => {
-        if (!['rag_reliability_robustness', 'red_team', 'safety', 'performance'].includes(suite.id)) {
+        if (!['rag_reliability_robustness', 'red_team', 'safety', 'performance', 'guardrails'].includes(suite.id)) {
           return { ...suite, enabled: false };
         }
         
@@ -485,6 +485,74 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
           description: 'Monitors memory consumption during operations',
           enabled: false,
           estimatedDuration: '2-5 min',
+        }
+      ]
+    },
+    {
+      id: 'guardrails',
+      name: 'Guardrails',
+      description: 'Composite security and compliance guardrails',
+      icon: Shield,
+      color: 'purple',
+      enabled: false,
+      expanded: false,
+      tests: [
+        {
+          id: 'pii_leak',
+          name: 'PII/PHI Leak Detection',
+          description: 'Detects personally identifiable information leakage',
+          enabled: true,
+          required: true,
+          estimatedDuration: '2-4 min',
+        },
+        {
+          id: 'jailbreak',
+          name: 'Jailbreak & Obfuscation',
+          description: 'Tests for prompt injection and jailbreak attempts',
+          enabled: true,
+          estimatedDuration: '3-6 min',
+        },
+        {
+          id: 'schema_guard',
+          name: 'JSON/Schema Guard',
+          description: 'Validates response structure and schema compliance',
+          enabled: true,
+          estimatedDuration: '1-3 min',
+        },
+        {
+          id: 'citation_required',
+          name: 'Citation Required',
+          description: 'Ensures proper source attribution in responses',
+          enabled: true,
+          estimatedDuration: '2-4 min',
+        },
+        {
+          id: 'resilience',
+          name: 'Resilience Testing',
+          description: 'Tests handling of adversarial inputs and edge cases',
+          enabled: true,
+          estimatedDuration: '3-7 min',
+        },
+        {
+          id: 'mcp_governance',
+          name: 'Tool/MCP Governance',
+          description: 'Validates tool usage and MCP security policies',
+          enabled: false,
+          estimatedDuration: '2-5 min',
+        },
+        {
+          id: 'rate_cost_limits',
+          name: 'Rate/Cost Limits',
+          description: 'Monitors rate limiting and cost budget compliance',
+          enabled: true,
+          estimatedDuration: '1-3 min',
+        },
+        {
+          id: 'bias_fairness',
+          name: 'Bias/Fairness (Smoke)',
+          description: 'Quick bias detection across demographic categories',
+          enabled: true,
+          estimatedDuration: '2-4 min',
         }
       ]
     }
@@ -1016,7 +1084,7 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
                 
                 // Reset to recommended selection
                 setTestSuites(prev => prev.map(suite => {
-                  if (!['rag_reliability_robustness', 'red_team', 'safety', 'performance'].includes(suite.id)) {
+                  if (!['rag_reliability_robustness', 'red_team', 'safety', 'performance', 'guardrails'].includes(suite.id)) {
                     return { ...suite, enabled: false };
                   }
                   

@@ -112,7 +112,7 @@ def test_ask_endpoint_invalid_provider(test_client):
         })
         
         assert response.status_code == 400
-        assert "not in allowed providers" in response.json()["detail"]
+        assert "not in allowed providers" in response.json()["message"]
 
 
 @pytest.mark.asyncio

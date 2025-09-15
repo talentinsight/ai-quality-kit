@@ -47,7 +47,7 @@ class TestAPIEndpoints:
                 else:
                     # Should return graceful error without stack traces
                     data = response.json()
-                    assert "error" in data or "detail" in data
+                    assert "error" in data or "details" in data
     
     def test_ask_endpoint_with_keys(self, client, set_env_defaults, mock_openai_client):
         """Test /ask endpoint when LLM keys are available."""
@@ -92,7 +92,7 @@ class TestAPIEndpoints:
         else:
             # Should return validation error
             data = response.json()
-            assert "detail" in data
+            assert "details" in data
     
     def test_ask_endpoint_missing_query(self, client):
         """Test /ask endpoint with missing query field."""
@@ -104,7 +104,7 @@ class TestAPIEndpoints:
         # Should return validation error
         assert response.status_code == 422
         data = response.json()
-        assert "detail" in data
+        assert "details" in data
     
     def test_ask_endpoint_large_query(self, client):
         """Test /ask endpoint with very large query."""
@@ -127,7 +127,7 @@ class TestAPIEndpoints:
         else:
             # Other validation error
             data = response.json()
-            assert "detail" in data
+            assert "details" in data
     
     def test_ask_endpoint_special_characters(self, client):
         """Test /ask endpoint with special characters in query."""
@@ -146,7 +146,7 @@ class TestAPIEndpoints:
             assert "answer" in data
         else:
             data = response.json()
-            assert "detail" in data
+            assert "details" in data
     
     def test_ask_endpoint_response_structure(self, client, set_env_defaults, mock_openai_client):
         """Test that /ask response has correct structure."""

@@ -102,7 +102,7 @@ attacks:
                     "category": "jailbreak",
                     "subtype": "role_play",
                     "description": "Test jailbreak",
-                    "required": true,
+                    "required": True,
                     "steps": [
                         {
                             "role": "user",
@@ -134,7 +134,7 @@ attacks:
                 "category": "data_extraction",
                 "subtype": "api_key",
                 "description": "Test extraction",
-                "required": false,
+                "required": False,
                 "steps": [
                     {
                         "role": "user",

@@ -176,7 +176,7 @@ def test_resolve_provider_and_model():
         # Test provider override only
         provider, model = resolve_provider_and_model("anthropic", None)
         assert provider == "anthropic"
-        assert model == "claude-3-5-sonnet"  # Updated to match env.example
+        assert model == "claude-3-sonnet-20240229"  # Updated to match env.example
         
         # Test disallowed provider
         with pytest.raises(ValueError) as exc_info:
@@ -209,7 +209,7 @@ def test_provider_model_defaults():
         assert model == "gpt-4o-mini"
         
         _, model = resolve_provider_and_model("anthropic", None)
-        assert model == "claude-3-5-sonnet"
+        assert model == "claude-3-sonnet-20240229"
         
         _, model = resolve_provider_and_model("gemini", None)
         assert model == "gemini-1.5-pro"

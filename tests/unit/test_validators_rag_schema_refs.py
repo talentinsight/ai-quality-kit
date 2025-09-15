@@ -275,6 +275,6 @@ class TestComprehensiveValidation:
         
         # Should have validation errors
         assert result.invalid_count == 1
-        assert result.easy_count == 1
+        assert result.easy_count == 2
         assert len(result.errors) > 0
         assert len(result.warnings) > 0

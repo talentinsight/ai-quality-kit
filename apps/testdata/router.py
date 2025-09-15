@@ -38,7 +38,7 @@ HTTP_TIMEOUT = int(os.getenv("INTAKE_HTTP_TIMEOUT", "15"))
 ALLOWED_EXTENSIONS = {
     "passages": [".jsonl", ".xlsx", ".xls"],
     "qaset": [".jsonl", ".xlsx", ".xls"],
-    "attacks": [".yaml", ".yml", ".json", ".jsonl"],
+    "attacks": [".yaml", ".yml", ".json", ".jsonl", ".txt"],
     "safety": [".yaml", ".yml", ".json", ".jsonl"],
     "bias": [".yaml", ".yml", ".json", ".jsonl"],
     "performance": [".yaml", ".yml", ".json", ".jsonl"],

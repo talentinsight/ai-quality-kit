@@ -82,7 +82,7 @@ class TestCompareRAGRunner:
         with patch.object(self.runner.baseline_resolver, 'resolve_baseline_model') as mock_resolve:
             mock_resolve.return_value = {
                 "preset": "anthropic",
-                "model": "claude-3-5-sonnet",
+                "model": "claude-3-sonnet-20240229",
                 "decoding": {"temperature": 0, "top_p": 1, "max_tokens": 1024},
                 "resolved_via": "same_model",
                 "source": "Test source"
@@ -90,7 +90,7 @@ class TestCompareRAGRunner:
             
             # Mock baseline client creation
             with patch.object(self.runner, '_create_baseline_client') as mock_create_client:
-                mock_baseline_client = MockClient("anthropic", "claude-3-5-sonnet")
+                mock_baseline_client = MockClient("anthropic", "claude-3-sonnet-20240229")
                 mock_create_client.return_value = mock_baseline_client
                 
                 # Run evaluation

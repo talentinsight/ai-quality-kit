@@ -165,33 +165,32 @@ class TestRateLimitConfig:
     def test_default_config(self):
         """Test default configuration values."""
         config = RateLimitConfig()
-        assert config.enabled is True
-        assert config.per_token_per_min == 60
-        assert config.per_token_burst == 10
-        assert config.per_ip_per_min == 120
-        assert config.per_ip_burst == 20
-        assert config.token_refill_rate == 1.0  # 60/60
-        assert config.ip_refill_rate == 2.0  # 120/60
+        assert config.enabled is False  # Default is disabled
+        assert config.redis_url is None  # No Redis URL by default
+        assert isinstance(config.rules, dict)
+        # Check default rules
+        assert "POST:/orchestrator/run_tests" in config.rules
+        assert "POST:/ask" in config.rules
+        assert "*" in config.rules
+        assert config.rules["POST:/orchestrator/run_tests"] == (10, 60)
+        assert config.rules["POST:/ask"] == (60, 60)
+        assert config.rules["*"] == (300, 60)
     
     @patch.dict('os.environ', {
-        'RL_ENABLED': 'false',
-        'RL_PER_TOKEN_PER_MIN': '30',
-        'RL_PER_TOKEN_BURST': '5',
-        'RL_PER_IP_PER_MIN': '60',
-        'RL_PER_IP_BURST': '10',
+        'RATE_LIMIT_ENABLED': 'true',
+        'RATE_LIMIT_RULES': 'POST:/test=5/min;GET:/api=100/hour',
         'REDIS_URL': 'redis://localhost:6379'
     })
     def test_custom_config(self):
         """Test custom configuration from environment."""
         config = RateLimitConfig()
-        assert config.enabled is False
-        assert config.per_token_per_min == 30
-        assert config.per_token_burst == 5
-        assert config.per_ip_per_min == 60
-        assert config.per_ip_burst == 10
-        assert config.token_refill_rate == 0.5  # 30/60
-        assert config.ip_refill_rate == 1.0  # 60/60
+        assert config.enabled is True
         assert config.redis_url == 'redis://localhost:6379'
+        # Check custom rules
+        assert "POST:/test" in config.rules
+        assert "GET:/api" in config.rules
+        assert config.rules["POST:/test"] == (5, 60)  # 5 per minute
+        assert config.rules["GET:/api"] == (100, 3600)  # 100 per hour
 
 class TestUtilityFunctions:
     """Test utility functions."""
@@ -249,11 +248,8 @@ class TestRateLimitMiddleware:
         assert counters["blocked_total"] == 0
     
     @patch.dict('os.environ', {
-        'RL_ENABLED': 'true',
-        'RL_PER_TOKEN_PER_MIN': '60',  # 1 per second
-        'RL_PER_TOKEN_BURST': '5',     # Allow 5 initial requests
-        'RL_PER_IP_PER_MIN': '120',
-        'RL_PER_IP_BURST': '10'
+        'RATE_LIMIT_ENABLED': 'true',
+        'RATE_LIMIT_RULES': 'POST:/ask=5/min'  # 5 requests per minute
     })
     def test_rate_limiting_enforcement(self):
         """Test rate limiting enforcement."""
@@ -339,9 +335,8 @@ class TestRateLimitMiddleware:
         assert counters["blocked_total"] == 0
     
     @patch.dict('os.environ', {
-        'RL_ENABLED': 'true',
-        'RL_PER_IP_PER_MIN': '5',  # Low limit for testing
-        'RL_PER_IP_BURST': '2'
+        'RATE_LIMIT_ENABLED': 'true',
+        'RATE_LIMIT_RULES': 'POST:/ask=2/min'  # 2 requests per minute
     })
     def test_ip_based_rate_limiting(self):
         """Test IP-based rate limiting for unauthenticated requests."""

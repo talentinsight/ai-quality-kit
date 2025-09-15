@@ -168,8 +168,10 @@ def answer_stability(answers: List[str], embed_fn: callable) -> float:
         try:
             emb = embed_fn(answer.strip())
             embeddings.append(emb)
-        except Exception:
-            # Skip problematic embeddings
+        except Exception as e:
+            logger = globals().get("logger", None)
+            if logger:
+                logger.warning("rag_embedding_robustness: helper raised; continuing.", exc_info=True)
             continue
     
     if len(embeddings) < 2:
@@ -223,8 +225,11 @@ def low_agreement_flag(paraphrase_embs: List[Any],
         
         return mean_std >= std_threshold
         
-    except Exception:
-        return False  # Default to no flag if computation fails
+    except Exception as e:
+        logger = globals().get("logger", None)
+        if logger:
+            logger.warning("rag_embedding_robustness: suppressed exception in helper (see stacktrace).", exc_info=True)
+    return False  # Default to no flag if computation fails
 
 
 def hybrid_gain_delta_recall(recall_dense: float, recall_hybrid: float) -> float:
@@ -292,7 +297,10 @@ async def run_embedding_robustness(case: Dict[str, Any],
         try:
             emb = embed_fn(query)
             query_embeddings.append(emb)
-        except Exception:
+        except Exception as e:
+            logger = globals().get("logger", None)
+            if logger:
+                logger.warning("rag_embedding_robustness: helper raised; continuing.", exc_info=True)
             continue
     
     # Check for low agreement
@@ -347,6 +355,9 @@ async def run_embedding_robustness(case: Dict[str, Any],
                 hybrid_results_list.append(hybrid_results)
                 
             except Exception as e:
+                logger = globals().get("logger", None)
+                if logger:
+                    logger.warning("rag_embedding_robustness: helper raised; continuing.", exc_info=True)
                 # Fallback to empty results for this query
                 dense_results_list.append([])
                 hybrid_results_list.append([])
@@ -392,7 +403,10 @@ async def run_embedding_robustness(case: Dict[str, Any],
                 answer = await _generate_answer(query, context_texts, providers)
                 if answer:
                     answers.append(answer)
-            except Exception:
+            except Exception as e:
+                logger = globals().get("logger", None)
+                if logger:
+                    logger.warning("rag_embedding_robustness: helper raised; continuing.", exc_info=True)
                 continue
     
     if answers:
@@ -473,8 +487,10 @@ async def _generate_paraphrases(question: str, count: int, providers: Dict[str, 
             
             return paraphrases[:count]
     
-    except Exception:
-        pass
+    except Exception as e:
+        logger = globals().get("logger", None)
+        if logger:
+            logger.warning("rag_embedding_robustness: suppressed exception in helper (see stacktrace).", exc_info=True)
     
     return []
 
@@ -500,8 +516,10 @@ Answer:"""
             answer = await llm_fn(prompt, temperature=0.0)
             return answer.strip() if answer else None
     
-    except Exception:
-        pass
+    except Exception as e:
+        logger = globals().get("logger", None)
+        if logger:
+            logger.warning("rag_embedding_robustness: suppressed exception in helper (see stacktrace).", exc_info=True)
     
     return None
 

@@ -181,6 +181,11 @@ def list_tests() -> Dict[str, Any]:
             "name": "regression",
             "description": "Regression testing against baselines",
             "test_count": 5
+        },
+        {
+            "name": "guardrails",
+            "description": "Composite security and compliance guardrails",
+            "test_count": 25
         }
     ]
     

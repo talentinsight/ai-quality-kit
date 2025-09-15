@@ -207,3 +207,84 @@ def validate_attacks_file_content(content: str) -> AttacksValidationResult:
         AttacksValidationResult with validation status and metadata
     """
     return validate_attacks_content(content)
+
+
+def load_single_file_dataset(file_path: str) -> Tuple[List[AttackCase], Dict[str, Any]]:
+    """
+    Load single-file dataset format.
+    
+    Args:
+        file_path: Path to the attacks file
+        
+    Returns:
+        Tuple of (attack_cases, metadata)
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        data = yaml.safe_load(content)
+        
+        if isinstance(data, dict) and 'attacks' in data:
+            # Single-file format
+            attacks = []
+            for attack_data in data['attacks']:
+                try:
+                    attack = AttackCase(**attack_data)
+                    attacks.append(attack)
+                except ValidationError as e:
+                    logger.warning(f"Skipping invalid attack case: {e}")
+                    continue
+            
+            metadata = {
+                'version': data.get('version', 'unknown'),
+                'suite': data.get('suite', 'red_team'),
+                'total_attacks': len(attacks)
+            }
+            
+            return attacks, metadata
+        else:
+            # Legacy format
+            attacks, _ = load_attacks_file(file_path)
+            metadata = {'format': 'legacy', 'total_attacks': len(attacks)}
+            return attacks, metadata
+            
+    except Exception as e:
+        logger.error(f"Error loading single-file dataset {file_path}: {e}")
+        return [], {}
+
+
+def validate_dataset_from_content(content: str) -> AttacksValidationResult:
+    """
+    Validate dataset content and return validation result.
+    
+    Args:
+        content: File content as string
+        
+    Returns:
+        AttacksValidationResult with validation details
+    """
+    return validate_attacks_file_content(content)
+
+
+def load_attacks_with_overrides(file_path: str) -> Tuple[List[AttackCase], Dict[str, Any]]:
+    """
+    Load attacks with override support.
+    
+    Args:
+        file_path: Path to the attacks file
+        
+    Returns:
+        Tuple of (attack_cases, overrides)
+    """
+    try:
+        attacks, metadata = load_single_file_dataset(file_path)
+        
+        # Extract overrides from metadata if available
+        overrides = metadata.get('overrides', {})
+        
+        return attacks, overrides
+        
+    except Exception as e:
+        logger.error(f"Error loading attacks with overrides {file_path}: {e}")
+        return [], {}

@@ -235,7 +235,7 @@ class TestCompareModeIntegration:
                         "qid": "q1",
                         "question": "Test question",
                         "primary_contexts_used_count": 2,
-                        "baseline_model_resolved": {"preset": "anthropic", "model": "claude-3-5-sonnet"},
+                        "baseline_model_resolved": {"preset": "anthropic", "model": "claude-3-sonnet-20240229"},
                         "primary_metrics": {"faithfulness": 0.85},
                         "baseline_metrics": {"faithfulness": 0.78},
                         "delta_metrics": {"faithfulness": -0.07},

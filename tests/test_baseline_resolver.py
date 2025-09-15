@@ -37,12 +37,12 @@ class TestBaselineResolver:
         
         result = self.resolver.resolve_baseline_model(
             compare_config,
-            primary_meta_model="claude-3-5-sonnet"
+            primary_meta_model="claude-3-sonnet-20240229"
         )
         
         assert result["resolved_via"] == "same_model"
         assert result["preset"] == "anthropic"
-        assert result["model"] == "claude-3-5-sonnet"
+        assert result["model"] == "claude-3-sonnet-20240229"
     
     def test_same_model_detection_gemini(self):
         """Test same model detection for Gemini models."""

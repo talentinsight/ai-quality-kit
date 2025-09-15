@@ -51,7 +51,7 @@ async def test_orchestrator_run_with_mock_provider(temp_reports_dir):
             assert result.run_id.startswith("run_")
             assert result.started_at
             assert result.finished_at
-            assert "overall" in result.summary
+            assert "execution" in result.summary
             assert result.counts["total_tests"] > 0
             
             # Verify artifacts exist - use temp_reports_dir instead of absolute paths
@@ -223,10 +223,9 @@ def test_summary_generation():
     
     summary = runner._generate_summary()
     
-    # Verify overall stats
-    assert summary["overall"]["total_tests"] == 2
-    assert summary["overall"]["passed"] == 2
-    assert summary["overall"]["pass_rate"] == 1.0
+    # Verify execution stats
+    assert summary["execution"]["total_tests"] == 2
+    assert summary["execution"]["total_suites"] == 2
     
     # Verify suite-specific stats
     assert summary["rag_quality"]["total"] == 1

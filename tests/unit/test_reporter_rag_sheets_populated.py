@@ -100,7 +100,7 @@ class TestRAGExcelReporter:
                     "question": "What is the capital of France?",
                     "predicted": "The capital of France is Paris.",
                     "expected": "Paris",
-                    "retrieved_k": 3,
+                    "retrieved_count": 3,
                     "faithfulness": 0.85,
                     "context_recall": 0.82,
                     "answer_relevancy": 0.78,
@@ -133,9 +133,10 @@ class TestRAGExcelReporter:
             # Verify RAG-specific headers are present
             expected_headers = [
                 "suite", "case_id", "provider", "model", "question", "predicted",
-                "expected", "retrieved_k", "faithfulness", "context_recall", 
-                "answer_relevancy", "context_precision", "answer_correctness", 
-                "answer_similarity", "pass_fail_reason", "latency_ms", "timestamp"
+                "expected", "retrieved_count", "recall_at_k", "mrr_at_k", "ndcg_at_k",
+                "faithfulness", "context_recall", "answer_relevancy", "context_precision",
+                "answer_correctness", "answer_similarity", "perturbations_applied",
+                "pass_fail_reason", "latency_ms", "timestamp"
             ]
             
             for header in expected_headers:
@@ -150,7 +151,7 @@ class TestRAGExcelReporter:
             assert data_dict["question"] == "What is the capital of France?"
             assert data_dict["predicted"] == "The capital of France is Paris."
             assert data_dict["expected"] == "Paris"
-            assert data_dict["retrieved_k"] == 3
+            assert data_dict["retrieved_count"] == 3
             assert data_dict["faithfulness"] == 0.85
             assert data_dict["context_recall"] == 0.82
             

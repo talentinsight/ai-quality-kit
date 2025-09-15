@@ -12,14 +12,14 @@ from typing import Any, Dict, Optional
 
 # Patterns for sensitive information that should be redacted
 REDACTION_PATTERNS = [
-    # API Keys and tokens
-    (re.compile(r'sk-[a-zA-Z0-9]{20,}', re.IGNORECASE), 'sk-***REDACTED***'),
-    (re.compile(r'xoxb-[a-zA-Z0-9-]{20,}', re.IGNORECASE), 'xoxb-***REDACTED***'),
+    # Specific API Keys and tokens (must come first to avoid generic pattern override)
+    (re.compile(r'sk-[a-zA-Z0-9]{8,}', re.IGNORECASE), 'sk-***REDACTED***'),
+    (re.compile(r'xoxb-[a-zA-Z0-9-]{11,}', re.IGNORECASE), 'xoxb-***REDACTED***'),
     (re.compile(r'ghp_[a-zA-Z0-9]{20,}', re.IGNORECASE), 'ghp_***REDACTED***'),
     (re.compile(r'AKIA[0-9A-Z]{16}', re.IGNORECASE), 'AKIA***REDACTED***'),
     
-    # Generic secrets (key=value patterns)
-    (re.compile(r'(api_?key|token|secret|password|pwd)\s*[=:]\s*["\']?([a-zA-Z0-9+/=]{8,})["\']?', re.IGNORECASE), 
+    # Generic secrets (key=value patterns) - comes after specific patterns
+    (re.compile(r'(api_?key|token|secret|password|pwd)\s*[=:]\s*["\']?([a-zA-Z0-9+/=_-]{8,})["\']?', re.IGNORECASE), 
      r'\1=***REDACTED***'),
     
     # Email addresses

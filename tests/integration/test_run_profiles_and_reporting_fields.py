@@ -441,5 +441,5 @@ class TestIntegrationWithOrchestrator:
             # Run RAG evaluation
             await runner._run_rag_quality_evaluation()
             
-            # Should have processed cases (limited by RAG runner to 10 for demo)
-            assert len(processed_cases) == 10
+        # Should have processed all cases (full profile has no limit)
+        assert len(processed_cases) == 50  # All test cases from fixture

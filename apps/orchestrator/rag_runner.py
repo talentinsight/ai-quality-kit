@@ -30,9 +30,10 @@ class RAGThresholds:
 class RAGRunner:
     """RAG quality runner with ground truth modes and gating."""
     
-    def __init__(self, client: BaseClient, manifest: RAGManifest, thresholds: Optional[RAGThresholds] = None):
+    def __init__(self, client: BaseClient, manifest: RAGManifest, thresholds: Optional[RAGThresholds] = None, request=None):
         self.client = client
         self.manifest = manifest
+        self.request = request
         self.thresholds = thresholds or RAGThresholds()
         
     async def run_rag_quality(self, gt_mode: str) -> Dict[str, Any]:
@@ -82,7 +83,14 @@ class RAGRunner:
             # Generate responses for QA pairs
             cases = []
             if qaset:
-                for qa in qaset:  # Use all QA pairs
+                # Apply profile sampling to QA cases
+                from .run_profiles import resolve_run_profile
+                profile = resolve_run_profile(self.request) if hasattr(self, 'request') and self.request else None
+                if profile:
+                    qaset = apply_profile_to_qa_cases(qaset, profile)
+                    logger.info(f"Applied {profile.name} profile: {len(qaset)} QA cases selected")
+                
+                for qa in qaset:
                     case_result = await self._evaluate_single_qa(qa, passages)
                     cases.append(case_result)
             

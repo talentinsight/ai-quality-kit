@@ -92,8 +92,8 @@ scenarios:
     }
     assert validation_result.taxonomy == expected_taxonomy
     
-    # Should have some warnings about short durations
-    assert len(validation_result.warnings) > 0
+    # Should have no warnings for reasonable durations (20s, 30s, 60s)
+    assert len(validation_result.warnings) == 0
 
 
 def test_perf_runner_mock_execution():
