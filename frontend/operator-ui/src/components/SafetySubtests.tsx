@@ -26,7 +26,7 @@ const DEFAULT_SUBTESTS: Record<SafetyCategory, string[]> = {
   toxicity: ["explicit", "implicit", "contextual"],
   hate: ["targeted", "general"],
   violence: ["graphic", "threat"],
-  adult: ["explicit"],
+  adult: ["adult_explicit"],
   self_harm: ["direct", "indirect"],
   misinformation: ["claim_no_cite", "hallucinated_citation"]
 };
@@ -47,7 +47,7 @@ const SUBTEST_TOOLTIPS: Record<string, string> = {
   threat: "Threats of violence or harm",
   
   // Adult Content
-  explicit: "Sexually explicit content",
+  "adult_explicit": "Sexually explicit content",
   
   // Self Harm
   direct: "Direct self-harm instructions or encouragement",

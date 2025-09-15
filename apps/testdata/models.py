@@ -33,6 +33,7 @@ class QARecord(BaseModel):
     question: str = Field(..., min_length=1, description="Question text")
     expected_answer: str = Field(..., min_length=1, description="Expected answer")
     contexts: Optional[List[str]] = Field(None, description="Optional context passages")
+    meta: Optional[Dict[str, Any]] = Field(None, description="Optional metadata")
     # Additive fields for embedding robustness subtest
     required: Optional[bool] = Field(None, description="Gates only if true and subtest selected")
     robustness: Optional[RobustnessConfig] = Field(None, description="Optional robustness configuration")
@@ -62,7 +63,7 @@ class TestDataBundle(BaseModel):
     qaset: Optional[List[QARecord]] = Field(None, description="QA records")
     attacks: Optional[List[str]] = Field(None, description="Attack patterns")
     safety: Optional[List[str]] = Field(None, description="Safety test cases")
-    bias: Optional[List[str]] = Field(None, description="Bias test cases")
+    bias: Optional[Any] = Field(None, description="Bias test cases (can be dict or list)")
     performance: Optional[List[str]] = Field(None, description="Performance scenarios")
     json_schema: Optional[Dict[str, Any]] = Field(None, description="JSON Schema")
     raw_payloads: Dict[str, str] = Field(default_factory=dict, description="Raw content for SHA256")
@@ -154,15 +155,29 @@ def validate_jsonl_content(content: str, record_class: type) -> tuple[List[Any],
     return records, errors
 
 
-def validate_bias_content(content: str) -> tuple[List[str], List[ValidationError]]:
+def validate_bias_content(content: str) -> tuple[Any, List[ValidationError]]:
     """Validate bias content (YAML, JSON, or JSONL format)."""
     errors = []
     
     if not content.strip():
-        return [], [ValidationError(field="content", message="Empty content provided", line_number=None)]
+        return None, [ValidationError(field="content", message="Empty content provided", line_number=None)]
     
     try:
-        # Use the bias loader for validation
+        # Parse the content as JSON/YAML to preserve original structure
+        import json
+        import yaml
+        
+        # Try JSON first
+        try:
+            parsed_data = json.loads(content)
+        except json.JSONDecodeError:
+            # Try YAML
+            try:
+                parsed_data = yaml.safe_load(content)
+            except yaml.YAMLError as e:
+                return None, [ValidationError(field="bias", message=f"Invalid JSON/YAML format: {str(e)}", line_number=None)]
+        
+        # Validate using bias loader
         from apps.orchestrator.suites.bias.loader import validate_bias_content as validate_bias_dataset
         
         validation_result = validate_bias_dataset(content)
@@ -170,22 +185,14 @@ def validate_bias_content(content: str) -> tuple[List[str], List[ValidationError
         if not validation_result.valid:
             for error in validation_result.errors:
                 errors.append(ValidationError(field="bias", message=error, line_number=None))
-            return [], errors
+            return None, errors
         
-        # Return case IDs as records for consistency
-        case_ids = []
-        try:
-            from apps.orchestrator.suites.bias.loader import parse_bias_content
-            normalized_bias = parse_bias_content(content)
-            case_ids = [case.id for case in normalized_bias.cases]
-        except Exception as e:
-            errors.append(ValidationError(field="bias", message=f"Failed to extract case IDs: {str(e)}", line_number=None))
-        
-        return case_ids, errors
+        # Return the parsed data (preserving original structure)
+        return parsed_data, errors
         
     except Exception as e:
         errors.append(ValidationError(field="bias", message=f"Bias validation failed: {str(e)}", line_number=None))
-        return [], errors
+        return None, errors
 
 
 def validate_perf_content(content: str) -> tuple[List[str], List[ValidationError]]:

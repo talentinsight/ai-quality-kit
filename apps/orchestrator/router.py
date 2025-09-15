@@ -287,7 +287,8 @@ async def get_json_report(
     return FileResponse(
         path=str(json_path),
         filename=f"{run_id}.json",
-        media_type="application/json"
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename={run_id}.json"}
     )
 
 

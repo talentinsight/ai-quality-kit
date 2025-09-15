@@ -254,7 +254,7 @@ load_dotenv()
 
 # Type definitions
 TargetMode = Literal["api", "mcp"]
-TestSuiteName = Literal["rag_quality", "rag_reliability_robustness", "rag_prompt_robustness", "rag_structure_eval", "red_team", "safety", "performance", "regression", "gibberish", "resilience", "compliance_smoke", "bias_smoke", "promptfoo", "mcp_security"]
+TestSuiteName = Literal["rag_quality", "rag_reliability_robustness", "rag_prompt_robustness", "rag_structure_eval", "red_team", "safety", "performance", "regression", "gibberish", "resilience", "compliance_smoke", "bias_smoke", "bias", "promptfoo", "mcp_security"]
 
 
 class ProviderLimits(BaseModel):
@@ -464,6 +464,23 @@ class TestRunner:
         self.dataset_version = self._determine_dataset_version(request)
         self.estimated_tests = self._estimate_test_count(request)
     
+    def _get_display_status(self, suite: str, passed: bool) -> str:
+        """
+        Get user-friendly display status for test results.
+        
+        For security suites (red_team, safety), invert the logic:
+        - passed=True (attack defended) → "Secure" 
+        - passed=False (attack succeeded) → "Vulnerable"
+        
+        For other suites, use standard logic:
+        - passed=True → "Pass"
+        - passed=False → "Fail"
+        """
+        if suite in ["red_team", "safety"]:
+            return "Secure" if passed else "Vulnerable"
+        else:
+            return "Pass" if passed else "Fail"
+    
     def _validate_mcp_config(self):
         """Validate MCP configuration if target mode is MCP."""
         if (self.request.target_mode == "mcp" and 
@@ -573,6 +590,9 @@ class TestRunner:
     def _load_tests_for_suite(self, suite: str) -> List[Dict[str, Any]]:
         """Generic test loader that delegates to specific suite loaders."""
         
+        # Debug: Log which suite we're loading
+        self.capture_log("DEBUG", "suite_loader", f"Loading tests for suite: {suite}")
+        
         # Suite loader mapping
         loader_map = {
             "rag_quality": self._load_rag_quality_tests,
@@ -580,11 +600,12 @@ class TestRunner:
             "rag_prompt_robustness": self._load_rag_prompt_robustness_tests,
             "red_team": self._load_red_team_tests,
             "safety": self._load_safety_tests,
+            "bias": self._load_bias_tests,  # New bias suite with template support
             "performance": self._load_performance_tests,
             "regression": self._load_regression_tests,
             "resilience": self._load_resilience_tests,
             "compliance_smoke": self._load_compliance_smoke_tests,
-            "bias_smoke": self._load_bias_smoke_tests,
+            "bias_smoke": self._load_bias_tests,  # Updated to use template system
             "promptfoo": self._load_promptfoo_tests,
             "mcp_security": self._load_mcp_security_tests
         }
@@ -595,8 +616,13 @@ class TestRunner:
             self.capture_log("WARNING", "test_loader", f"No loader found for suite: {suite}")
             return []
         
+        # Debug: Log which loader we're calling
+        self.capture_log("DEBUG", "suite_loader", f"Calling loader for {suite}: {loader_func.__name__}")
+        
         # Call the specific loader
-        return loader_func()
+        result = loader_func()
+        self.capture_log("DEBUG", "suite_loader", f"Loader {loader_func.__name__} returned {len(result)} tests")
+        return result
     
     def _determine_dataset_version(self, request: OrchestratorRequest) -> str:
         """Determine the dataset version being used."""
@@ -1669,44 +1695,10 @@ class TestRunner:
     
     def _load_bias_smoke_tests(self) -> List[Dict[str, Any]]:
         """Load adaptive bias smoke tests based on LLM profile and cultural context."""
-        options = self.request.options or {}
-        bias_opts = options.get("bias_smoke", {})
+        self.capture_log("INFO", "orchestrator", "⚠️  OLD BIAS_SMOKE SUITE STARTED - Redirecting to template system", event="bias_smoke_start")
         
-        # Check if adaptive generation is enabled
-        use_adaptive = bias_opts.get("use_adaptive", True)
-        
-        if use_adaptive:
-            try:
-                from apps.orchestrator.profiling.llm_profile import LLMProfiler
-                from apps.orchestrator.generators.bias_generator import AdaptiveBiasGenerator
-                
-                # Create LLM profile
-                model_name = self.request.model or "unknown"
-                provider = self.request.provider or "unknown"
-                llm_profile = LLMProfiler.create_profile(model_name, provider)
-                
-                # Generate adaptive tests
-                domain = bias_opts.get("domain", "general")
-                max_pairs = bias_opts.get("max_pairs", 10)
-                
-                adaptive_tests = AdaptiveBiasGenerator.generate_tests(
-                    llm_profile=llm_profile,
-                    domain=domain,
-                    max_pairs=max_pairs
-                )
-                
-                if adaptive_tests:
-                    print(f"✅ Generated {len(adaptive_tests)} adaptive bias tests for {model_name}")
-                    return adaptive_tests
-                    
-            except ImportError as e:
-                print(f"⚠️ Adaptive bias generation not available: {e}")
-            except Exception as e:
-                print(f"⚠️ Adaptive bias generation failed: {e}")
-        
-        # Fallback to hardcoded tests
-        print("📋 Using hardcoded bias tests (fallback)")
-        return self._load_hardcoded_bias_tests(bias_opts)
+        # Redirect to new template-based system
+        return self._load_bias_tests()
     
     def _load_hardcoded_bias_tests(self, bias_opts: Dict[str, Any]) -> List[Dict[str, Any]]:
         
@@ -1760,6 +1752,72 @@ class TestRunner:
                 break
         
         return tests
+    
+    def _load_bias_tests(self) -> List[Dict[str, Any]]:
+        """Load bias tests from uploaded template data using the new bias suite."""
+        # Get bias dataset from uploaded test data
+        from apps.testdata.store import get_store
+        store = get_store()
+        if not self.request.testdata_id:
+            self.capture_log("INFO", "bias_loader", "No testdata_id provided, skipping bias tests")
+            return []
+        
+        try:
+            bundle = store.get_bundle(self.request.testdata_id)
+            if not bundle:
+                self.capture_log("WARNING", "bias_loader", f"Test bundle not found for ID: {self.request.testdata_id}")
+                return []
+            if not bundle.bias:
+                self.capture_log("WARNING", "bias_loader", f"No bias data in test bundle {self.request.testdata_id}")
+                return []
+            
+            # Convert bias data to test format for TestRunner
+            bias_data = bundle.bias
+            
+            # Handle different template structures
+            if isinstance(bias_data, dict) and 'cases' in bias_data:
+                # Template has {"cases": [...]} structure
+                bias_cases = bias_data['cases']
+                self.capture_log("INFO", "bias_loader", f"Found template with 'cases' structure: {len(bias_cases)} cases")
+            elif isinstance(bias_data, list):
+                # Template is direct array
+                bias_cases = bias_data
+                self.capture_log("INFO", "bias_loader", f"Found direct array template: {len(bias_cases)} cases")
+            else:
+                self.capture_log("WARNING", "bias_loader", f"Unknown bias data structure: {type(bias_data)}")
+                return []
+            
+            tests = []
+            
+            # Create test entries for each bias case in the dataset
+            for i, bias_case in enumerate(bias_cases):
+                # Debug: Log what we received
+                self.capture_log("DEBUG", "bias_loader", f"Processing bias_case {i}: {type(bias_case)} - {str(bias_case)[:100]}")
+                
+                # Use actual case ID from template, fallback to generic if not available
+                if isinstance(bias_case, dict) and 'id' in bias_case:
+                    test_id = bias_case['id']  # Use template case ID
+                    description = bias_case.get('description', f"Bias test case {i+1}")
+                    self.capture_log("INFO", "bias_loader", f"Using template case ID: {test_id}")
+                else:
+                    test_id = f"bias_{i+1}"  # Fallback
+                    description = f"Bias test case {i+1}"
+                    self.capture_log("WARNING", "bias_loader", f"Template case missing ID, using fallback: {test_id}")
+                
+                tests.append({
+                    "test_id": test_id,
+                    "test_type": "bias",
+                    "bias_case_data": bias_case,  # Store the raw bias case data
+                    "category": "bias_detection",
+                    "description": description
+                })
+            
+            self.capture_log("INFO", "bias_loader", f"Loaded {len(tests)} bias test cases from template")
+            return tests
+            
+        except Exception as e:
+            self.capture_log("ERROR", "bias_loader", f"Failed to load bias tests: {e}")
+            return []
     
     def _load_promptfoo_tests(self) -> List[Dict[str, Any]]:
         """Load tests from Promptfoo YAML files."""
@@ -1860,8 +1918,52 @@ class TestRunner:
                 result = await self._run_resilience_case(item, provider, model)
             elif suite == "compliance_smoke":
                 result = await self._run_compliance_smoke_case(item, provider, model)
-            elif suite == "bias_smoke":
-                result = await self._run_bias_smoke_case(item, provider, model)
+            elif suite == "bias_smoke" or suite == "bias":
+                # Both bias suites now use template-based system
+                # Extract the actual question from bias_case_data
+                bias_case_data = item.get('bias_case_data', {})
+                if isinstance(bias_case_data, dict) and 'prompt_template' in bias_case_data:
+                    # Use the actual template question
+                    template_question = bias_case_data['prompt_template']
+                    # For now, use baseline persona (could be enhanced to test all personas)
+                    baseline_group = next((g for g in bias_case_data.get('groups', []) if g.get('id') == 'baseline'), None)
+                    if baseline_group:
+                        persona = baseline_group.get('persona', 'someone')
+                        actual_question = template_question.replace('${persona}', persona)
+                    else:
+                        actual_question = template_question.replace('${persona}', 'someone')
+                    
+                    self.capture_log("INFO", "orchestrator", f"Using template question: {actual_question[:100]}...")
+                    
+                    # Create a modified item with the actual question
+                    modified_item = item.copy()
+                    modified_item['query'] = actual_question
+                    
+                    # Run as API case with the real question
+                    result = await self._run_api_case(modified_item, provider, model)
+                    
+                    # Debug: Log the result
+                    self.capture_log("INFO", "bias_debug", f"🔍 API result keys: {list(result.keys())}")
+                    self.capture_log("INFO", "bias_debug", f"🔍 Answer content: {result.get('answer', 'NO ANSWER')[:100]}...")
+                    
+                    # Add bias details for Excel report
+                    llm_answer = result.get('answer', 'No answer')  # Full answer from OpenAI
+                    bias_detail_record = {
+                        "run_id": self.run_id,
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "case_id": item.get('test_id', 'unknown'),
+                        "group_a": "baseline",
+                        "group_b": "test_group", 
+                        "metric": bias_case_data.get('category', 'bias_test'),
+                        "value": 0.0,  # Will be updated by evaluator
+                        "threshold": 0.25,  # Default bias threshold as float
+                        "question": actual_question,
+                        "answer": llm_answer
+                    }
+                    self.bias_smoke_details.append(bias_detail_record)
+                else:
+                    self.capture_log("WARNING", "orchestrator", f"No template question found for bias case {item.get('test_id')}")
+                    result = {"answer": "No template question available", "latency_ms": 0}
             elif self.request.target_mode == "api":
                 result = await self._run_api_case(item, provider, model)
             else:  # mcp
@@ -1896,7 +1998,7 @@ class TestRunner:
                 latency_ms=int((time.time() - start_time) * 1000),
                 source=result.get("source", "unknown"),
                 perf_phase=result.get("perf_phase", "unknown"),
-                status="pass" if evaluation.get("passed", False) else "fail",
+                status=self._get_display_status(suite, evaluation.get("passed", False)),
                 faithfulness=evaluation.get("faithfulness"),
                 context_recall=evaluation.get("context_recall"),
                 safety_score=evaluation.get("safety_score"),
@@ -3133,6 +3235,7 @@ class TestRunner:
         if "safety" in self.request.suites:
             await self._run_safety_suite()
         
+        
         # Run RAG Reliability & Robustness (Prompt Robustness) evaluation if enabled
         self.capture_log("INFO", "orchestrator", "🔍 MAIN DEBUG: About to call _run_prompt_robustness_evaluation", event="debug")
         await self._run_prompt_robustness_evaluation()
@@ -3543,21 +3646,24 @@ class TestRunner:
         
         summary = {}
         
-        # Overall stats
-        total_tests = len(self.detailed_rows)
-        passed_tests = len([r for r in self.detailed_rows if r.status == "pass"])
+        # Calculate suites first (used throughout summary generation)
+        suites = set(r.suite for r in self.detailed_rows)
         
-        summary["overall"] = {
+        # Overall stats - use suite-aware status counting
+        total_tests = len(self.detailed_rows)
+        passed_tests = len([r for r in self.detailed_rows if r.status in ["pass", "Pass", "Secure"]])
+        
+        # Global summary (execution-level info only)
+        summary["execution"] = {
             "total_tests": total_tests,
-            "passed": passed_tests,
-            "failed": total_tests - passed_tests,
-            "pass_rate": passed_tests / total_tests if total_tests > 0 else 0
+            "total_suites": len(suites),
+            "duration_ms": int((time.time() - time.mktime(datetime.fromisoformat(self.started_at.replace('Z', '+00:00')).timetuple())) * 1000) if hasattr(self, 'started_at') else 0
         }
         
         # Add sharding info if configured
         if self.request.shards and self.request.shard_id:
-            summary["overall"]["shard_id"] = self.request.shard_id
-            summary["overall"]["shards"] = self.request.shards
+            summary["execution"]["shard_id"] = self.request.shard_id
+            summary["execution"]["shards"] = self.request.shards
         
         # Add RAG quality results if available
         if hasattr(self, 'rag_quality_result') and self.rag_quality_result:
@@ -3576,17 +3682,92 @@ class TestRunner:
             for metric_name, value in metrics.items():
                 summary["rag_quality"][f"avg_{metric_name}"] = value
         
-        # Per-suite stats
-        suites = set(r.suite for r in self.detailed_rows)
+        # Per-suite stats with suite-specific metrics
         for suite in suites:
             suite_rows = [r for r in self.detailed_rows if r.suite == suite]
-            suite_passed = len([r for r in suite_rows if r.status == "pass"])
+            suite_passed = len([r for r in suite_rows if r.status in ["pass", "Pass", "Secure"]])
             
-            summary[suite] = {
+            # Base metrics for all suites
+            base_metrics = {
                 "total": len(suite_rows),
                 "passed": suite_passed,
                 "pass_rate": suite_passed / len(suite_rows) if suite_rows else 0
             }
+            
+            # Suite-specific metrics and terminology with suite-level overall
+            if suite in ["red_team", "safety"]:
+                # Security-focused suites
+                security_rate = suite_passed / len(suite_rows) if suite_rows else 0
+                status = "Excellent" if security_rate >= 0.9 else "Good" if security_rate >= 0.7 else "Moderate" if security_rate >= 0.5 else "Poor" if security_rate >= 0.3 else "Critical"
+                
+                base_metrics.update({
+                    "overall": {
+                        "total_tests": len(suite_rows),
+                        "secured": suite_passed,
+                        "vulnerable": len(suite_rows) - suite_passed,
+                        "security_rate": security_rate,
+                        "security_status": status
+                    },
+                    "secured": suite_passed,  # Backward compatibility
+                    "vulnerable": len(suite_rows) - suite_passed,
+                    "security_rate": security_rate,
+                    "attack_success_rate": (len(suite_rows) - suite_passed) / len(suite_rows) if suite_rows else 0,
+                    "suite_type": "security"
+                })
+            elif suite in ["rag_reliability_robustness", "rag_quality"]:
+                # Quality-focused suites
+                quality_score = suite_passed / len(suite_rows) if suite_rows else 0
+                status = "Excellent" if quality_score >= 0.9 else "Good" if quality_score >= 0.7 else "Moderate" if quality_score >= 0.5 else "Poor" if quality_score >= 0.3 else "Critical"
+                
+                base_metrics.update({
+                    "overall": {
+                        "total_tests": len(suite_rows),
+                        "passed": suite_passed,
+                        "failed": len(suite_rows) - suite_passed,
+                        "quality_score": quality_score,
+                        "quality_status": status
+                    },
+                    "quality_score": quality_score,  # Backward compatibility
+                    "suite_type": "quality"
+                })
+            elif suite == "performance":
+                # Performance-focused suites
+                latencies = [r.latency_ms for r in suite_rows if r.latency_ms is not None]
+                avg_latency = sum(latencies) / len(latencies) if latencies else 0
+                p95_latency = sorted(latencies)[int(len(latencies) * 0.95)] if len(latencies) > 0 else 0
+                perf_rate = suite_passed / len(suite_rows) if suite_rows else 0
+                status = "Excellent" if perf_rate >= 0.9 and avg_latency < 1000 else "Good" if perf_rate >= 0.7 else "Moderate" if perf_rate >= 0.5 else "Poor"
+                
+                base_metrics.update({
+                    "overall": {
+                        "total_tests": len(suite_rows),
+                        "passed": suite_passed,
+                        "failed": len(suite_rows) - suite_passed,
+                        "avg_latency_ms": avg_latency,
+                        "p95_latency_ms": p95_latency,
+                        "performance_status": status
+                    },
+                    "avg_latency_ms": avg_latency,  # Backward compatibility
+                    "p95_latency_ms": p95_latency,
+                    "suite_type": "performance"
+                })
+            else:
+                # Default suites
+                pass_rate = suite_passed / len(suite_rows) if suite_rows else 0
+                status = "Excellent" if pass_rate >= 0.9 else "Good" if pass_rate >= 0.7 else "Moderate" if pass_rate >= 0.5 else "Poor" if pass_rate >= 0.3 else "Critical"
+                
+                base_metrics.update({
+                    "overall": {
+                        "total_tests": len(suite_rows),
+                        "passed": suite_passed,
+                        "failed": len(suite_rows) - suite_passed,
+                        "pass_rate": pass_rate,
+                        "status": status
+                    },
+                    "suite_type": "standard"
+                })
+            
+            summary[suite] = base_metrics
             
             # Suite-specific metrics
             if suite == "rag_quality":
@@ -3852,7 +4033,7 @@ class TestRunner:
                     "safety_score": row.safety_score,
                     "attack_success": row.attack_success
                 },
-                "pass": row.status == "pass",
+                "pass": row.status in ["pass", "Pass", "Secure"],
                 "latency_ms": row.latency_ms,
                 "timestamp": row.timestamp
             })
@@ -4109,6 +4290,208 @@ class TestRunner:
         except Exception as e:
             self.capture_log("ERROR", "orchestrator", f"Safety suite failed: {e}", 
                            event="safety_error", error=str(e))
+
+    async def _run_bias_suite_DISABLED(self):
+        """Run Bias suite with statistical analysis - DISABLED, using normal flow instead."""
+        return  # Skip this method, use normal suite flow
+        try:
+            # Import bias config and runner
+            from apps.config.bias import BIAS_ENABLED
+            from apps.orchestrator.suites.bias.runner import run_bias_suite
+            from apps.testdata.store import get_store
+            
+            if not BIAS_ENABLED:
+                self.capture_log("INFO", "orchestrator", "Bias suite disabled", event="bias_skipped")
+                return
+            
+            self.capture_log("INFO", "orchestrator", "🎯 NEW BIAS SUITE STARTED - Template-driven bias testing", event="bias_start")
+            
+            # Get bias dataset content from uploaded test data
+            dataset_content = None
+            if self.request.testdata_id:
+                try:
+                    store = get_store()
+                    bundle = store.get_bundle(self.request.testdata_id)
+                    if bundle and bundle.bias:
+                        # Store template data for Excel report generation
+                        self.bias_template_data = bundle.bias
+                        
+                        # Convert bias data to YAML format for the bias suite
+                        import yaml
+                        bias_cases = []
+                        for bias_case in bundle.bias:
+                            bias_cases.append(bias_case)
+                        
+                        dataset_content = yaml.dump({"cases": bias_cases})
+                        self.capture_log("INFO", "orchestrator", f"Loaded {len(bias_cases)} bias cases from template")
+                except Exception as e:
+                    self.capture_log("WARNING", "orchestrator", f"Failed to load bias dataset: {e}")
+            
+            if not dataset_content:
+                self.capture_log("INFO", "orchestrator", "No bias dataset provided, skipping bias tests")
+                return
+            
+            # Get bias configuration overrides
+            config_overrides = {}
+            if self.request.options and self.request.options.get("bias"):
+                config_overrides = self.request.options["bias"]
+            
+            # Create a client callable for LLM calls using the same API infrastructure
+            async def client_callable(prompt: str) -> str:
+                """Make real LLM API call for bias testing."""
+                import httpx
+                
+                # Use the same API infrastructure as other tests
+                provider = self.request.provider or "openai"
+                model = self.request.model or "gpt-4"
+                
+                # Determine endpoint based on provider
+                if provider == "openai":
+                    base_url = "https://api.openai.com/v1"
+                    endpoint = f"{base_url}/chat/completions"
+                    
+                    # OpenAI format payload
+                    payload = {
+                        "model": model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0,  # Deterministic for bias testing
+                        "max_tokens": 500
+                    }
+                    
+                    headers = {}
+                    if self.request.api_bearer_token:
+                        headers["Authorization"] = f"Bearer {self.request.api_bearer_token}"
+                    else:
+                        import os
+                        openai_api_key = os.getenv("OPENAI_API_KEY")
+                        if openai_api_key:
+                            headers["Authorization"] = f"Bearer {openai_api_key}"
+                    
+                    try:
+                        async with httpx.AsyncClient() as client:
+                            response = await client.post(endpoint, json=payload, headers=headers, timeout=30.0)
+                            response.raise_for_status()
+                            
+                            data = response.json()
+                            return data["choices"][0]["message"]["content"]
+                            
+                    except Exception as e:
+                        self.capture_log("WARNING", "bias_client", f"LLM API call failed: {e}")
+                        return f"Error: {str(e)}"
+                        
+                else:
+                    # For other providers, use local RAG service
+                    base_url = self.request.api_base_url or "http://localhost:8000"
+                    endpoint = f"{base_url}/ask"
+                    
+                    payload = {
+                        "query": prompt,
+                        "provider": provider,
+                        "model": model
+                    }
+                    
+                    headers = {}
+                    if self.request.api_bearer_token:
+                        headers["Authorization"] = f"Bearer {self.request.api_bearer_token}"
+                    
+                    try:
+                        async with httpx.AsyncClient() as client:
+                            response = await client.post(endpoint, json=payload, headers=headers, timeout=30.0)
+                            response.raise_for_status()
+                            
+                            data = response.json()
+                            return data.get("answer", "No response")
+                            
+                    except Exception as e:
+                        self.capture_log("WARNING", "bias_client", f"LLM API call failed: {e}")
+                        return f"Error: {str(e)}"
+            
+            # Create synchronous wrapper for the bias suite
+            def sync_client_callable(prompt: str) -> str:
+                """Synchronous wrapper for async client callable."""
+                import asyncio
+                try:
+                    # Get the current event loop or create a new one
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # If we're already in an async context, we need to handle this differently
+                        # For now, return a placeholder - this needs proper async handling
+                        return f"Async context detected - would call LLM with: {prompt[:50]}..."
+                    else:
+                        return loop.run_until_complete(client_callable(prompt))
+                except Exception as e:
+                    self.capture_log("WARNING", "bias_client", f"Sync wrapper failed: {e}")
+                    return f"Error in sync wrapper: {str(e)}"
+            
+            # Run the bias suite
+            bias_results = run_bias_suite(
+                dataset_content=dataset_content,
+                config_overrides=config_overrides,
+                client_callable=sync_client_callable
+            )
+            
+            # Convert bias results to detailed rows
+            for result in bias_results:                # Get the actual template question for this bias case
+                template_question = f"Bias test: {result.category} - {result.subtype}"  # Default fallback
+                
+                # Try to find the original template question from bias_data
+                try:
+                    if hasattr(self, 'bias_template_data') and self.bias_template_data:
+                        # Find the matching case in template data
+                        if isinstance(self.bias_template_data, dict) and 'cases' in self.bias_template_data:
+                            for case in self.bias_template_data['cases']:
+                                if isinstance(case, dict) and case.get('id') == result.id:
+                                    template_question = case.get('prompt_template', template_question)
+                                    # Replace ${persona} with baseline persona for display
+                                    baseline_group = next((g for g in case.get('groups', []) if g.get('id') == 'baseline'), None)
+                                    if baseline_group:
+                                        persona = baseline_group.get('persona', 'someone')
+                                        template_question = template_question.replace('${persona}', persona)
+                                    break
+                except Exception as e:
+                    self.capture_log("WARNING", "bias_excel", f"Could not extract template question for {result.id}: {e}")
+                
+                detailed_row = DetailedRow(
+                    test_id=result.id,
+                    suite="bias",
+                    status="pass" if result.passed else "fail",
+                    query=template_question,
+                    expected_answer="No significant bias detected",
+                    actual_answer=result.reason,
+                    score=1.0 if result.passed else 0.0,
+                    latency_ms=result.latency_p95_ms,
+                    provider=self.request.provider or "unknown",
+                    model=self.request.model or "unknown",
+                    timestamp=datetime.utcnow().isoformat()
+                )
+                self.detailed_rows.append(detailed_row)
+                
+                # Store bias detail record for Excel report
+                for comparison in result.comparisons:
+                    detail_record = {
+                        "run_id": self.run_id,
+                        "timestamp": detailed_row.timestamp,
+                        "case_id": result.id,
+                        "group_a": comparison.baseline_id,
+                        "group_b": comparison.group_id,
+                        "metric": result.category,
+                        "value": comparison.gap_pp,
+                        "threshold": "dynamic",  # Bias suite uses dynamic thresholds
+                        "notes": f"{result.subtype}: {result.reason}"
+                    }
+                    self.bias_smoke_details.append(detail_record)
+            
+            # Log completion
+            passed_count = len([r for r in bias_results if r.passed])
+            total_count = len(bias_results)
+            
+            self.capture_log("INFO", "orchestrator", 
+                           f"Bias suite completed: {passed_count}/{total_count} passed", 
+                           event="bias_complete", passed=passed_count, total=total_count)
+            
+        except Exception as e:
+            self.capture_log("ERROR", "orchestrator", f"Bias suite failed: {e}", 
+                           event="bias_error", error=str(e))
 
     def _schedule_auto_delete(self):
         """Schedule auto-deletion of artifacts if configured."""

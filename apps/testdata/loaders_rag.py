@@ -119,6 +119,7 @@ def load_qaset(path: str) -> List[Dict[str, Any]]:
                         'question': qa_data['question'],
                         'expected_answer': qa_data['expected_answer'],
                         'contexts': qa_data.get('contexts', []),
+                        'meta': qa_data.get('meta', {}),
                         # Embedding Robustness fields (optional, backward compatible)
                         'required': qa_data.get('required'),
                         'robustness': qa_data.get('robustness'),

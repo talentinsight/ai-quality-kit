@@ -673,7 +673,7 @@ def _create_bias_details_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     
     # Exact column headers as specified
     headers = [
-        "run_id", "timestamp", "case_id", "group_a", "group_b", "metric", "value", "threshold", "notes"
+        "run_id", "timestamp", "case_id", "group_a", "group_b", "metric", "value", "threshold", "question", "answer"
     ]
     
     # Write headers
@@ -682,9 +682,13 @@ def _create_bias_details_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
         cell.font = Font(bold=True)
         cell.alignment = Alignment(wrap_text=True)
     
-    # Auto-size columns
+    # Auto-size columns with special widths for question and answer
     for col in range(1, len(headers) + 1):
-        ws.column_dimensions[get_column_letter(col)].width = 16
+        header = headers[col-1]
+        if header in ["question", "answer"]:
+            ws.column_dimensions[get_column_letter(col)].width = 50
+        else:
+            ws.column_dimensions[get_column_letter(col)].width = 16
     
     # Write bias detail records
     bias_details = data.get("bias_smoke", {}).get("details", [])
@@ -699,11 +703,15 @@ def _create_bias_details_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
             detail.get("metric", ""),
             detail.get("value", ""),
             detail.get("threshold", ""),
-            detail.get("notes", "")
+            detail.get("question", ""),
+            detail.get("answer", "")
         ]
         
         for col, value in enumerate(values, 1):
             cell = ws.cell(row=row_idx, column=col, value=value)
+            # Apply text wrapping for long content fields
+            if headers[col-1] in ["question", "answer"]:
+                cell.alignment = Alignment(wrap_text=True)
     
     ws.freeze_panes = "A2"
 

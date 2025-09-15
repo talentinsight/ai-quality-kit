@@ -41,19 +41,24 @@ def validate_schema_and_refs(passages: List[Dict[str, Any]], qaset: List[Dict[st
         is_valid = True
         
         # Check if context IDs exist in passages
-        if qa.get('contexts'):
-            for context_id in qa['contexts']:
+        qa_contexts = qa.contexts if hasattr(qa, 'contexts') else qa.get('contexts') if hasattr(qa, 'get') else None
+        if qa_contexts:
+            for context_id in qa_contexts:
                 if context_id not in passage_ids:
-                    result.errors.append(f"QA {qa['qid']}: context_id '{context_id}' not found in passages")
+                    qa_qid = qa.qid if hasattr(qa, 'qid') else qa['qid']
+                    result.errors.append(f"QA {qa_qid}: context_id '{context_id}' not found in passages")
                     is_valid = False
         
         # Check for easy cases (question == answer in same passage)
-        question_lower = qa['question'].lower().strip()
-        answer_lower = qa['expected_answer'].lower().strip()
+        qa_question = qa.question if hasattr(qa, 'question') else qa['question']
+        qa_answer = qa.expected_answer if hasattr(qa, 'expected_answer') else qa['expected_answer']
+        question_lower = qa_question.lower().strip()
+        answer_lower = qa_answer.lower().strip()
         
         if question_lower == answer_lower:
             result.easy_count += 1
-            result.warnings.append(f"QA {qa['qid']}: question and answer are identical (easy case)")
+            qa_qid = qa.qid if hasattr(qa, 'qid') else qa['qid']
+            result.warnings.append(f"QA {qa_qid}: question and answer are identical (easy case)")
         
         # Check if answer appears verbatim in any passage
         for passage in passages:
@@ -61,7 +66,8 @@ def validate_schema_and_refs(passages: List[Dict[str, Any]], qaset: List[Dict[st
             passage_id = passage.id if hasattr(passage, 'id') else passage['id']
             if answer_lower in passage_text.lower():
                 result.easy_count += 1
-                result.warnings.append(f"QA {qa['qid']}: answer found verbatim in passage {passage_id} (easy case)")
+                qa_qid = qa.qid if hasattr(qa, 'qid') else qa['qid']
+                result.warnings.append(f"QA {qa_qid}: answer found verbatim in passage {passage_id} (easy case)")
                 break
         
         if is_valid:
@@ -87,9 +93,11 @@ def detect_duplicates(qaset: List[Dict[str, Any]]) -> Tuple[int, List[str]]:
     duplicates = []
     
     for qa in qaset:
-        question_normalized = qa['question'].lower().strip()
+        qa_question = qa.question if hasattr(qa, 'question') else qa['question']
+        qa_qid = qa.qid if hasattr(qa, 'qid') else qa['qid']
+        question_normalized = qa_question.lower().strip()
         question_counts[question_normalized] += 1
-        qid_counts[qa['qid']] += 1
+        qid_counts[qa_qid] += 1
     
     duplicate_count = 0
     
@@ -137,17 +145,20 @@ def compute_distribution_stats(qaset: List[Dict[str, Any]]) -> Dict[str, Any]:
     categories = []
     
     for qa in qaset:
-        question_lengths.append(len(qa['question']))
-        answer_lengths.append(len(qa['expected_answer']))
+        qa_question = qa.question if hasattr(qa, 'question') else qa['question']
+        qa_answer = qa.expected_answer if hasattr(qa, 'expected_answer') else qa['expected_answer']
+        question_lengths.append(len(qa_question))
+        answer_lengths.append(len(qa_answer))
         
-        if qa.get('contexts'):
+        qa_contexts = qa.contexts if hasattr(qa, 'contexts') else qa.get('contexts') if hasattr(qa, 'get') else None
+        if qa_contexts:
             stats['questions_with_contexts'] += 1
-            context_counts.append(len(qa['contexts']))
+            context_counts.append(len(qa_contexts))
         else:
             context_counts.append(0)
         
         # Extract difficulty if available in metadata
-        meta = qa.get('meta', {})
+        meta = qa.meta if hasattr(qa, 'meta') else qa.get('meta', {}) if hasattr(qa, 'get') else {}
         if 'difficulty' in meta:
             difficulties.append(meta['difficulty'])
         

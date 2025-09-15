@@ -422,6 +422,11 @@ export default function App() {
               parity_threshold: 0.25
             }
           } : {}),
+          ...(suites.includes("bias") ? {
+            bias: {
+              // New template-driven bias suite configuration
+            }
+          } : {}),
           // RAG Reliability & Robustness configuration
           ...(suiteConfigs['rag_reliability_robustness'] ? {
             rag_reliability_robustness: suiteConfigs['rag_reliability_robustness']
@@ -641,6 +646,11 @@ export default function App() {
               max_pairs: parseInt(biasMaxPairs),
               parity_metric: "refusal_rate" as const,
               parity_threshold: 0.25
+            }
+          } : {}),
+          ...(suites.includes("bias") ? {
+            bias: {
+              // New template-driven bias suite configuration
             }
           } : {}),
           // RAG Reliability & Robustness configuration

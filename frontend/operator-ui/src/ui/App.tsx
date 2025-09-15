@@ -1,10 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Download, Play, ShieldCheck, Settings2, MoonStar, Sun, Server, CheckCircle2, XCircle, Rocket, ChevronDown, ChevronRight, RefreshCw, X, Info, Upload } from "lucide-react";
+import { Download, Play, ShieldCheck, Settings2, MoonStar, Sun, Server, CheckCircle2, XCircle, Rocket, ChevronDown, ChevronRight, RefreshCw, Upload } from "lucide-react";
 import clsx from "clsx";
 import type { Provider, TestSuite, OrchestratorRequest, OrchestratorResult, RedTeamSubtests, SafetySubtests, BiasSubtests } from "../types";
 import TestDataPanel from "../features/testdata/TestDataPanel";
 import { getTestdataMeta, ApiError } from "../lib/api";
-import RequirementsMatrix from "../components/RequirementsMatrix";
 import GroundTruthEvaluationPanel from "../components/GroundTruthEvaluationPanel";
 import RagQualitySuite from "../components/suites/RagQualitySuite";
 import RedTeamSuite from "../components/suites/RedTeamSuite";
@@ -12,7 +11,7 @@ import SafetySuite from "../components/suites/SafetySuite";
 import PerformanceSuite from "../components/suites/PerformanceSuite";
 import CompactGroundTruthPanel from "../components/CompactGroundTruthPanel";
 import TestSuiteSelector from "../components/TestSuiteSelector";
-import { computeRequirementMatrix, ProvidedIntake } from "../lib/requirementStatus";
+import { ProvidedIntake } from "../lib/requirementStatus";
 
 const DEFAULT_SUITES: TestSuite[] = ["rag_reliability_robustness"]; // Only RAG by default
 const REQUIRED_SHEETS = ["Summary","Detailed","API_Details","Inputs_And_Expected"];
@@ -284,8 +283,6 @@ export default function App() {
   const [validatingTestdata, setValidatingTestdata] = useState(false);
 
 
-  // Requirements matrix state
-  const [showRequirementsModal, setShowRequirementsModal] = useState(false);
 
   // Ground Truth evaluation state
   const [useGroundTruth, setUseGroundTruth] = useState(false);
@@ -439,7 +436,6 @@ export default function App() {
 
   // Compute requirements matrix for classic form
   const providedIntake = getProvidedIntake();
-  const requirementRows = computeRequirementMatrix(suites, providedIntake, true); // Default to allowing defaults in classic form
 
   function toggleSuite(s: TestSuite) {
     setSuites(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
@@ -1843,25 +1839,6 @@ export default function App() {
                 </span>
               </div>
               
-              {/* Requirements Banner */}
-              {suites.length > 0 && (
-                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <Info size={16} className="text-blue-600" />
-                      <span className="text-sm text-blue-800">
-                        View which data are required by your selected suites.
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => setShowRequirementsModal(true)}
-                      className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
-                    >
-                      Show Requirements
-                    </button>
-                  </div>
-                </div>
-              )}
               <TestDataPanel 
                 token={token} 
                 onTestDataUploaded={(testdataId, artifacts) => {
@@ -2229,35 +2206,6 @@ export default function App() {
         )}
       </div>
 
-      {/* Requirements Matrix Modal */}
-      {showRequirementsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white rounded-2xl shadow-xl max-w-4xl max-h-[80vh] overflow-hidden">
-            <div className="p-6 border-b">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-gray-900">Test Data Requirements Matrix</h2>
-                <button
-                  onClick={() => setShowRequirementsModal(false)}
-                  className="p-2 hover:bg-gray-100 rounded-full"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-            </div>
-            <div className="p-6 overflow-y-auto max-h-[60vh]">
-              <RequirementsMatrix 
-                rows={requirementRows}
-                onUploadClick={(kind) => {
-                  setShowRequirementsModal(false);
-                  // Focus the test data section
-                  setTestDataExpanded(true);
-                  // TODO: Highlight specific data kind for upload
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
       
       {/* Sticky Footer CTA */}
       <div>

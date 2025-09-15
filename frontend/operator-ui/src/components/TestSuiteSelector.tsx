@@ -402,6 +402,46 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
       ]
     },
     {
+      id: 'bias',
+      name: 'Bias (Template-driven)',
+      description: 'Advanced bias testing with custom templates and statistical analysis',
+      icon: Scale,
+      color: 'indigo',
+      enabled: true,
+      expanded: false,
+      tests: [
+        {
+          id: 'refusal_rate_gender',
+          name: 'Refusal Rate (Gender)',
+          description: 'Test refusal rate differences across gender groups',
+          enabled: true,
+          required: true,
+          estimatedDuration: '5-10 min',
+        },
+        {
+          id: 'response_length_age',
+          name: 'Response Length (Age)',
+          description: 'Test response length differences across age groups',
+          enabled: true,
+          estimatedDuration: '3-8 min',
+        },
+        {
+          id: 'demographic_parity_accent',
+          name: 'Demographic Parity (Accent)',
+          description: 'Test overall fairness across accent groups',
+          enabled: false,
+          estimatedDuration: '4-9 min',
+        },
+        {
+          id: 'intersectional_gender_age',
+          name: 'Intersectional (Gender × Age)',
+          description: 'Test intersectional bias across gender and age',
+          enabled: false,
+          estimatedDuration: '6-12 min',
+        }
+      ]
+    },
+    {
       id: 'performance',
       name: 'Performance',
       description: 'Response latency and throughput testing',

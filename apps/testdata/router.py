@@ -19,9 +19,11 @@ from apps.utils.pii_redaction import mask_text
 from .models import (
     UploadResponse, URLRequest, PasteRequest, TestDataMeta,
     PassageRecord, QARecord, ValidationError,
-    validate_jsonl_content, validate_attacks_content, validate_bias_content, validate_perf_content, validate_schema_content,
+    validate_jsonl_content, validate_bias_content, validate_perf_content, validate_schema_content,
     MAX_FILE_SIZE
 )
+from apps.orchestrator.suites.safety.loader import validate_safety_content
+from apps.orchestrator.suites.red_team.attacks_schemas import validate_attacks_content
 from .store import get_store, create_bundle
 from .excel_convert import convert_excel_file
 from .templates.qa_template import (
@@ -135,9 +137,29 @@ async def _read_and_validate_file(file: UploadFile, artifact_type: str) -> tuple
         _increment_metrics(0, len(records))
         return content, records, errors
     elif artifact_type == "attacks":
-        attacks, errors = validate_attacks_content(content)
-        _increment_metrics(0, len(attacks))
-        return content, attacks, errors
+        attacks_result = validate_attacks_content(content)
+        # Convert AttacksValidationResult to format expected by upload system
+        if attacks_result.valid:
+            # Convert to list of attack case strings (not integers)
+            attacks_cases = [f"attack_{i}" for i in range(sum(attacks_result.counts_by_category.values()))]
+            errors = []
+        else:
+            attacks_cases = []
+            errors = [ValidationError(field="attacks", message=error) for error in attacks_result.errors]
+        _increment_metrics(0, len(attacks_cases))
+        return content, attacks_cases, errors
+    elif artifact_type == "safety":
+        safety_result = validate_safety_content(content)
+        # Convert SafetyValidationResult to format expected by upload system
+        if safety_result.valid:
+            # Convert to list of safety case strings (not integers)
+            safety_cases = [f"safety_{i}" for i in range(sum(safety_result.counts_by_category.values()))]
+            errors = []
+        else:
+            safety_cases = []
+            errors = [ValidationError(field="safety", message=error) for error in safety_result.errors]
+        _increment_metrics(0, len(safety_cases))
+        return content, safety_cases, errors
     elif artifact_type == "bias":
         bias_cases, errors = validate_bias_content(content)
         _increment_metrics(0, len(bias_cases))
@@ -232,9 +254,29 @@ def _validate_paste_content(content: str, artifact_type: str) -> tuple[Any, List
         _increment_metrics(0, len(records))
         return records, errors
     elif artifact_type == "attacks":
-        attacks, errors = validate_attacks_content(content)
-        _increment_metrics(0, len(attacks))
-        return attacks, errors
+        attacks_result = validate_attacks_content(content)
+        # Convert AttacksValidationResult to format expected by upload system
+        if attacks_result.valid:
+            # Convert to list of attack case strings (not integers)
+            attacks_cases = [f"attack_{i}" for i in range(sum(attacks_result.counts_by_category.values()))]
+            errors = []
+        else:
+            attacks_cases = []
+            errors = [ValidationError(field="attacks", message=error) for error in attacks_result.errors]
+        _increment_metrics(0, len(attacks_cases))
+        return attacks_cases, errors
+    elif artifact_type == "safety":
+        safety_result = validate_safety_content(content)
+        # Convert SafetyValidationResult to format expected by upload system
+        if safety_result.valid:
+            # Convert to list of safety case strings (not integers)
+            safety_cases = [f"safety_{i}" for i in range(sum(safety_result.counts_by_category.values()))]
+            errors = []
+        else:
+            safety_cases = []
+            errors = [ValidationError(field="safety", message=error) for error in safety_result.errors]
+        _increment_metrics(0, len(safety_cases))
+        return safety_cases, errors
     elif artifact_type == "bias":
         bias_cases, errors = validate_bias_content(content)
         _increment_metrics(0, len(bias_cases))
@@ -257,6 +299,7 @@ async def upload_testdata(
     passages: Optional[UploadFile] = File(None),
     qaset: Optional[UploadFile] = File(None),
     attacks: Optional[UploadFile] = File(None),
+    safety: Optional[UploadFile] = File(None),
     bias: Optional[UploadFile] = File(None),
     performance: Optional[UploadFile] = File(None),
     json_schema: Optional[UploadFile] = File(None),
@@ -267,7 +310,7 @@ async def upload_testdata(
     
     try:
         # Check that at least one file is provided
-        files = {"passages": passages, "qaset": qaset, "attacks": attacks, "bias": bias, "performance": performance, "schema": json_schema}
+        files = {"passages": passages, "qaset": qaset, "attacks": attacks, "safety": safety, "bias": bias, "performance": performance, "schema": json_schema}
         provided_files = {k: v for k, v in files.items() if v is not None}
         
         if not provided_files:
@@ -361,6 +404,7 @@ async def upload_testdata_enhanced(
     passages: Optional[UploadFile] = File(None),
     qaset: Optional[UploadFile] = File(None),
     attacks: Optional[UploadFile] = File(None),
+    safety: Optional[UploadFile] = File(None),
     bias: Optional[UploadFile] = File(None),
     performance: Optional[UploadFile] = File(None),
     json_schema: Optional[UploadFile] = File(None),
@@ -378,7 +422,7 @@ async def upload_testdata_enhanced(
     
     try:
         # Determine which approach is being used
-        named_files = {"passages": passages, "qaset": qaset, "attacks": attacks, "bias": bias, "performance": performance, "schema": json_schema}
+        named_files = {"passages": passages, "qaset": qaset, "attacks": attacks, "safety": safety, "bias": bias, "performance": performance, "schema": json_schema}
         provided_named = {k: v for k, v in named_files.items() if v is not None}
         
         # Process files based on approach
@@ -395,10 +439,10 @@ async def upload_testdata_enhanced(
             
             file_map = {}
             for file, kind in zip(files, kinds):
-                if kind not in ["passages", "qaset", "attacks", "bias", "performance", "schema"]:
+                if kind not in ["passages", "qaset", "attacks", "safety", "bias", "performance", "schema"]:
                     raise HTTPException(
                         status_code=400,
-                        detail=f"Invalid kind '{kind}'. Must be one of: passages, qaset, attacks, bias, performance, schema"
+                        detail=f"Invalid kind '{kind}'. Must be one of: passages, qaset, attacks, safety, bias, performance, schema"
                     )
                 file_map[kind] = file
         else:

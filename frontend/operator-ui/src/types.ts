@@ -11,7 +11,8 @@ export type TestSuite =
   | "regression"
   | "resilience"
   | "compliance_smoke"
-  | "bias_smoke";
+  | "bias_smoke"
+  | "bias";
 
 export interface ProviderLimits {
   requests_per_minute?: number;
