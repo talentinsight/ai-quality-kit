@@ -277,3 +277,15 @@ xxhash==3.5.0
 yarl==1.20.1
 zope.interface==7.2
 zstandard==0.23.0
+
+# Phase 3.1 Dependencies - Guardrails Preflight Backend
+presidio-analyzer==2.2.355
+# Note: detoxify requires torch which has Python 3.13 compatibility issues
+# Using alternative toxicity detection or will be installed separately
+# detoxify==0.5.2
+
+# Production Readiness Dependencies - Additional Guardrails Providers
+confusable-homoglyphs==3.2.0
+transformers==4.36.2
+torch==2.1.2
+jsonschema==4.20.0

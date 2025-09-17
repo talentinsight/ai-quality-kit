@@ -391,9 +391,24 @@ def setup_routers():
     except Exception as e:
         logger.warning(f"Failed to mount orchestrator static files: {e}")
     
-    # Always include test data intake
-    from apps.testdata.router import router as testdata_router
-    app.include_router(testdata_router)
+    # Include guardrails router and new testdata intake first (Phase 3.1)
+    try:
+        from apps.api.routes.guardrails import router as guardrails_router
+        app.include_router(guardrails_router)
+        logger.info("Guardrails router included successfully")
+        
+        # Include testdata intake router (Phase 3.1) - FIRST to take precedence
+        from apps.api.routes.testdata_intake import router as testdata_intake_router
+        app.include_router(testdata_intake_router)
+        logger.info("Testdata intake router included successfully")
+    except Exception as e:
+        logger.warning(f"Failed to include guardrails router: {e}")
+    
+    # Include legacy test data intake (with different prefix to avoid conflicts)
+    from apps.testdata.router import router as legacy_testdata_router
+    # Change prefix to avoid conflict with new testdata intake
+    legacy_testdata_router.prefix = "/legacy-testdata"
+    app.include_router(legacy_testdata_router)
     
     # Include datasets router for validation endpoints
     from apps.datasets.router import router as datasets_router

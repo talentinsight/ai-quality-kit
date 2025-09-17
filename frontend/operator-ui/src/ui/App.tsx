@@ -12,6 +12,7 @@ import PerformanceSuite from "../components/suites/PerformanceSuite";
 import CompactGroundTruthPanel from "../components/CompactGroundTruthPanel";
 import TestSuiteSelector from "../components/TestSuiteSelector";
 import { ProvidedIntake } from "../lib/requirementStatus";
+import Preflight from "../components/preflight/Preflight";
 
 const DEFAULT_SUITES: TestSuite[] = ["rag_reliability_robustness"]; // Only RAG by default
 const REQUIRED_SHEETS = ["Summary","Detailed","API_Details","Inputs_And_Expected"];
@@ -22,6 +23,11 @@ export default function App() {
 
   // Theme
   const [dark, setDark] = useState<boolean>(false);
+  
+  // Feature flags for UI behavior
+  const [guardrailsFirst, setGuardrailsFirst] = useState<boolean>(true);
+  const [hideClassicUI, setHideClassicUI] = useState<boolean>(false);
+  const [activeTab, setActiveTab] = useState<'preflight' | 'classic'>(guardrailsFirst ? 'preflight' : 'classic');
   useEffect(() => {
     const root = document.documentElement;
     if (dark) root.classList.add("dark"); else root.classList.remove("dark");
@@ -1010,23 +1016,46 @@ export default function App() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="border-b border-slate-200/80 dark:border-slate-700/70 bg-white/70 dark:bg-slate-900/60">
-        <div className="mx-auto max-w-6xl px-4">
-          <nav className="flex space-x-8">
-            <button
-              className="py-3 px-2 text-sm transition-colors text-slate-900 dark:text-slate-100 font-medium"
-            >
-              <div className="flex items-center space-x-2">
-                <Settings2 size={16} />
-                <span>Classic Form</span>
-              </div>
-            </button>
-
-          </nav>
+      {guardrailsFirst && !hideClassicUI && (
+        <div className="border-b border-slate-200/80 dark:border-slate-700/70 bg-white/70 dark:bg-slate-900/60">
+          <div className="mx-auto max-w-6xl px-4">
+            <nav className="flex space-x-8">
+              <button
+                onClick={() => setActiveTab('preflight')}
+                className={`py-3 px-2 text-sm transition-colors font-medium border-b-2 ${
+                  activeTab === 'preflight'
+                    ? 'text-purple-600 dark:text-purple-400 border-purple-600 dark:border-purple-400'
+                    : 'text-slate-600 dark:text-slate-400 border-transparent hover:text-slate-900 dark:hover:text-slate-100'
+                }`}
+              >
+                <div className="flex items-center space-x-2">
+                  <ShieldCheck size={16} />
+                  <span>Preflight</span>
+                </div>
+              </button>
+              
+              <button
+                onClick={() => setActiveTab('classic')}
+                className={`py-3 px-2 text-sm transition-colors font-medium border-b-2 ${
+                  activeTab === 'classic'
+                    ? 'text-purple-600 dark:text-purple-400 border-purple-600 dark:border-purple-400'
+                    : 'text-slate-600 dark:text-slate-400 border-transparent hover:text-slate-900 dark:hover:text-slate-100'
+                }`}
+              >
+                <div className="flex items-center space-x-2">
+                  <Settings2 size={16} />
+                  <span>Classic Form</span>
+                </div>
+              </button>
+            </nav>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Content */}
+      {(guardrailsFirst && activeTab === 'preflight') || hideClassicUI ? (
+        <Preflight onRunTests={runTests} />
+      ) : (
         <div className="mx-auto max-w-6xl px-4 py-6 space-y-6">
           {/* Main Layout: Control Panel + Test Data side by side */}
           <div className="main-grid grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -2204,11 +2233,9 @@ export default function App() {
             )}
           </div>
         )}
-      </div>
 
-      
-      {/* Sticky Footer CTA */}
-      <div>
+        {/* Sticky Footer CTA */}
+        <div>
         <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 shadow-lg z-40">
           <div className="max-w-7xl mx-auto px-4 py-3">
             <div className="flex items-center justify-between">
@@ -2317,10 +2344,12 @@ export default function App() {
             </div>
           </div>
         </div>
-      </div>
-      
-      {/* Add bottom padding to prevent content from being hidden behind sticky footer */}
-      <div className="h-16" />
+        </div>
+        
+        {/* Add bottom padding to prevent content from being hidden behind sticky footer */}
+        <div className="h-16" />
+        </div>
+      )}
     </div>
   );
 }

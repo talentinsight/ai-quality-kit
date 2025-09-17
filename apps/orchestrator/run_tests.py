@@ -419,6 +419,11 @@ class OrchestratorRequest(BaseModel):
     
     # Guardrails composite suite extension (additive, non-breaking)
     guardrails: Optional[GuardrailsOptions] = None  # structured target configuration with MCP support
+    
+    # Production Readiness - Guardrails Integration (additive, non-breaking)
+    guardrails_config: Optional[Dict[str, Any]] = None  # New guardrails preflight config
+    respect_guardrails: Optional[bool] = None  # Whether to enforce guardrails gate
+    ephemeral_testdata: Optional[Dict[str, Dict[str, str]]] = None  # Ephemeral testdata IDs from Phase 3.1
 
 
 class OrchestratorResult(BaseModel):
@@ -481,6 +486,11 @@ class TestRunner:
         # Initialize evaluator factory for professional evaluators
         from apps.orchestrator.evaluators.evaluator_factory import EvaluatorFactory
         self.evaluator_factory = EvaluatorFactory(request.options)
+        
+        # Initialize performance metrics collection
+        from apps.observability.performance_metrics import get_performance_collector, EstimatorEngine
+        self.performance_collector = get_performance_collector()
+        self.estimator_engine = EstimatorEngine()
         # Use provided run_id or generate one
         self.run_id = request.run_id or f"run_{int(time.time())}_{str(uuid.uuid4())[:8]}"
         self.started_at = datetime.utcnow().isoformat()
@@ -2246,6 +2256,10 @@ class TestRunner:
         """Run a single test case."""
         start_time = time.time()
         
+        # Record test execution for performance metrics
+        is_cached = item.get("cached", False) or item.get("guardrails", {}).get("cached", False)
+        self.performance_collector.record_test_execution(cached=is_cached)
+        
         # Log test case start
         self.capture_log("INFO", "orchestrator", f"Starting test case: {item.get('test_id', 'unknown')}", 
                         event="test_case_start", test_id=item.get("test_id", "unknown"),
@@ -2327,6 +2341,16 @@ class TestRunner:
                             event="evaluation_complete", test_id=item.get("test_id", "unknown"),
                             suite=suite, status=eval_status, score=evaluation.get("safety_score") or evaluation.get("faithfulness"))
             
+            # Calculate latency and record performance metrics
+            latency_ms = int((time.time() - start_time) * 1000)
+            self.performance_collector.record_response_time(latency_ms)
+            self.performance_collector.record_memory_sample()
+            
+            # Record cold start if this is the first test
+            if not hasattr(self, '_first_test_recorded'):
+                self.performance_collector.record_cold_start(latency_ms)
+                self._first_test_recorded = True
+            
             # Create detailed row
             row = DetailedRow(
                 run_id=self.run_id,
@@ -2338,7 +2362,7 @@ class TestRunner:
                 context=result.get("context", []),
                 provider=provider,  # Use request provider, not response provider
                 model=model,        # Use request model, not response model
-                latency_ms=int((time.time() - start_time) * 1000),
+                latency_ms=latency_ms,
                 source=result.get("source", "unknown"),
                 perf_phase=result.get("perf_phase", "unknown"),
                 status=self._get_display_status(suite, evaluation.get("passed", False)),
@@ -3517,12 +3541,51 @@ class TestRunner:
         """Run all test suites and generate results."""
         from apps.orchestrator.router import _running_tests
         
+        # Start performance metrics collection
+        self.performance_collector.start_collection()
+        start_time = time.time()
+        
         # Capture test start log
         self.capture_log("INFO", "orchestrator", f"Starting test run {self.run_id}", 
                         provider=self.request.provider, model=self.request.model, 
                         suites=list(self.request.suites))
         
+        # Run guardrails preflight check if configured
+        preflight_result = None
+        if self.request.guardrails_config and self.request.respect_guardrails:
+            preflight_result = await self._run_guardrails_preflight()
+            if not preflight_result.get("pass", True):
+                # Guardrails gate failed - handle based on mode
+                mode = self.request.guardrails_config.get("mode", "advisory")
+                if mode == "hard_gate":
+                    # Block all tests
+                    return self._create_blocked_result(preflight_result)
+                elif mode == "mixed":
+                    # Block critical tests only
+                    self._mark_critical_tests_blocked(preflight_result)
+                # Advisory mode continues normally
+        
         suite_data = self.load_suites()
+        
+        # Generate estimates with dedupe savings
+        selected_tests = self.request.selected_tests or {}
+        if not selected_tests:
+            # Build selected_tests from suite_data
+            selected_tests = {suite: [item.get("test_id", f"test_{i}") for i, item in enumerate(items)] 
+                            for suite, items in suite_data.items()}
+        
+        # Get existing fingerprints for dedupe estimation
+        existing_fingerprints = list(getattr(self, '_preflight_signals', {}).keys())
+        
+        estimates = self.estimator_engine.estimate_test_run(
+            selected_tests=selected_tests,
+            dedupe_fingerprints=existing_fingerprints
+        )
+        
+        self.performance_collector.set_estimator_data(
+            estimates["estimated_duration_ms"],
+            estimates["estimated_cost_usd"]
+        )
         
         # Run all test cases
         for suite, items in suite_data.items():
@@ -3640,6 +3703,17 @@ class TestRunner:
                 counts=counts,
                 artifacts=artifacts
             )
+        
+        # Finalize performance metrics
+        end_time = time.time()
+        actual_duration_ms = (end_time - start_time) * 1000
+        actual_cost_usd = self._calculate_actual_cost(counts)  # Implement cost calculation
+        
+        self.performance_collector.finalize_actuals(actual_duration_ms, actual_cost_usd)
+        performance_metrics = self.performance_collector.generate_metrics()
+        
+        # Add performance metrics to summary
+        summary["performance_metrics"] = performance_metrics.__dict__
         
         # Write artifacts
         artifacts = self._write_artifacts(summary, counts)
@@ -5287,3 +5361,109 @@ class TestRunner:
         except Exception as e:
             print(f"⚠️  Failed to publish run {self.run_id} to Power BI: {e}")
             # Do not raise - Power BI failures should not break the test run
+    
+    async def _run_guardrails_preflight(self) -> Dict[str, Any]:
+        """Run guardrails preflight check."""
+        try:
+            from apps.server.guardrails.interfaces import PreflightRequest, GuardrailsConfig
+            from apps.server.guardrails.aggregator import GuardrailsAggregator
+            from apps.server.sut import create_sut_adapter
+            
+            # Convert guardrails_config to proper format
+            guardrails_config = GuardrailsConfig(**self.request.guardrails_config)
+            
+            # Create target config from request
+            target_config = {
+                "mode": self.request.target_mode.value if self.request.target_mode else "api",
+                "provider": self.request.provider,
+                "endpoint": self.request.api_base_url or "",
+                "headers": {"Authorization": f"Bearer {self.request.api_bearer_token}"} if self.request.api_bearer_token else {},
+                "model": self.request.model,
+                "timeoutMs": 30000
+            }
+            
+            # Create SUT adapter
+            sut_adapter = create_sut_adapter(target_config)
+            
+            # Create aggregator
+            aggregator = GuardrailsAggregator(
+                config=guardrails_config,
+                sut_adapter=sut_adapter,
+                language="en"  # TODO: Extract from request if available
+            )
+            
+            # Run preflight
+            result = await aggregator.run_preflight()
+            
+            # Store preflight signals for dedupe
+            self._store_preflight_signals(result.signals)
+            
+            return {
+                "pass": result.pass_,
+                "reasons": result.reasons,
+                "signals": [signal.dict() for signal in result.signals],
+                "metrics": result.metrics
+            }
+            
+        except Exception as e:
+            logger.error(f"Guardrails preflight failed: {e}")
+            return {"pass": False, "reasons": [f"Preflight error: {str(e)}"], "signals": [], "metrics": {}}
+    
+    def _store_preflight_signals(self, signals):
+        """Store preflight signals for dedupe in specialist suites."""
+        if not hasattr(self, '_preflight_signals'):
+            self._preflight_signals = {}
+        
+        for signal in signals:
+            fingerprint = signal.details.get("fingerprint")
+            if fingerprint:
+                self._preflight_signals[fingerprint] = signal
+    
+    def _create_blocked_result(self, preflight_result: Dict[str, Any]) -> OrchestratorResult:
+        """Create result when all tests are blocked by guardrails."""
+        return OrchestratorResult(
+            run_id=self.run_id,
+            started_at=self.started_at,
+            finished_at=datetime.utcnow().isoformat(),
+            summary={
+                "execution": {
+                    "total_tests": 0,
+                    "passed_tests": 0,
+                    "failed_tests": 0,
+                    "pass_rate": 0.0
+                },
+                "guardrails_blocked": True,
+                "preflight_result": preflight_result
+            },
+            detailed=[]
+        )
+    
+    def _mark_critical_tests_blocked(self, preflight_result: Dict[str, Any]):
+        """Mark critical tests as blocked based on preflight result."""
+        # This would be implemented to selectively block tests
+        # For now, just log the action
+        logger.warning(f"Mixed mode: Some tests may be blocked based on preflight result")
+        if not hasattr(self, '_blocked_test_patterns'):
+            self._blocked_test_patterns = []
+        
+        # Extract failing categories from preflight
+        failing_categories = []
+        for signal_dict in preflight_result.get("signals", []):
+            if signal_dict.get("label") in ["violation", "hit"]:
+                failing_categories.append(signal_dict.get("category"))
+        
+        # Block tests related to failing categories
+        self._blocked_test_patterns.extend(failing_categories)
+    
+    def _calculate_actual_cost(self, counts: Dict[str, int]) -> float:
+        """Calculate actual cost based on test execution."""
+        # Simple cost calculation based on test counts and provider
+        base_cost_per_test = {
+            "openai": 0.002,
+            "anthropic": 0.003,
+            "custom_rest": 0.001,
+            "mock": 0.0
+        }.get(self.request.provider, 0.002)
+        
+        total_tests = counts.get("total_tests", 0)
+        return total_tests * base_cost_per_test

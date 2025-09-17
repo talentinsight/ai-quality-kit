@@ -46,9 +46,13 @@ def write_excel(path: str, data: Dict[str, Any]) -> None:
     if data.get("bias_smoke") and data["bias_smoke"].get("details"):
         _create_bias_details_sheet(wb, data)
     
-    # Optional sheet for guardrails results
-    if data.get("guardrails") and data["guardrails"].get("details"):
+    # Optional sheet for guardrails results (Reports v2)
+    if data.get("guardrails"):
         _create_guardrails_details_sheet(wb, data)
+    
+    # Optional sheet for performance metrics (Reports v2)
+    if data.get("performance"):
+        _create_performance_metrics_sheet(wb, data)
     
     # Optional sheet for logs
     if data.get("logs") and data["logs"].get("entries"):
@@ -122,10 +126,18 @@ def _create_summary_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
             "bias_pairs", "bias_metric", "bias_fails", "bias_fail_ratio", "bias_pass"
         ])
     
-    # Add guardrails headers if data exists
-    if data.get("guardrails") and data["guardrails"].get("summary"):
+    # Add guardrails headers if data exists (Reports v2)
+    if data.get("guardrails"):
         headers.extend([
-            "guardrails_total", "guardrails_pass", "guardrails_fail", "guardrails_warn", "guardrails_skip"
+            "guardrails_mode", "guardrails_decision", "guardrails_signals", 
+            "guardrails_cached", "guardrails_providers", "guardrails_failing_categories"
+        ])
+    
+    # Add performance metrics headers if data exists (Reports v2)
+    if data.get("performance"):
+        headers.extend([
+            "cold_start_ms", "warm_p95_ms", "throughput_rps", "memory_usage_mb", 
+            "dedupe_savings_pct", "dedupe_tests_saved"
         ])
     
     # Add dataset metadata headers (additive)
@@ -258,15 +270,36 @@ def _create_summary_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
             bias_summary.get("pass", False)
         ])
     
-    # Add guardrails data if available
-    if data.get("guardrails") and data["guardrails"].get("summary"):
-        guardrails_summary = data["guardrails"]["summary"]
+    # Add guardrails data if available (Reports v2)
+    if data.get("guardrails"):
+        guardrails_data = data["guardrails"]
+        signals = guardrails_data.get("signals", [])
+        cached_count = len([s for s in signals if s.get("details", {}).get("cached", False)])
+        provider_availability = guardrails_data.get("provider_availability", {})
+        available_providers = len([p for p, status in provider_availability.items() if status == "available"])
+        failing_categories = guardrails_data.get("failing_categories", [])
+        
         row_data.extend([
-            guardrails_summary.get("total", 0),
-            guardrails_summary.get("pass", 0),
-            guardrails_summary.get("fail", 0),
-            guardrails_summary.get("warn", 0),
-            guardrails_summary.get("skip", 0)
+            guardrails_data.get("mode", "advisory"),
+            guardrails_data.get("decision", "pass"),
+            len(signals),
+            cached_count,
+            available_providers,
+            ",".join(failing_categories)
+        ])
+    
+    # Add performance metrics data if available (Reports v2)
+    if data.get("performance"):
+        performance_data = data["performance"]
+        dedupe_savings = performance_data.get("dedupe_savings", {})
+        
+        row_data.extend([
+            performance_data.get("cold_start_ms", 0),
+            performance_data.get("warm_p95_ms", 0),
+            performance_data.get("throughput_rps", 0),
+            performance_data.get("memory_usage_mb", 0),
+            dedupe_savings.get("percentage", 0),
+            dedupe_savings.get("tests_saved", 0)
         ])
     
     # Add Ragas data if available
@@ -939,12 +972,12 @@ def _create_compare_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
 
 
 def _create_guardrails_details_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
-    """Create Guardrails_Details sheet with guardrails test results."""
+    """Create Guardrails_Details sheet with guardrails results (Reports v2)."""
     ws = cast(Worksheet, wb.create_sheet("Guardrails_Details"))
     
     headers = [
-        "subtest", "suite", "test_id", "status", "reason", "thresholds", 
-        "links", "category", "description", "enabled", "latency_ms", "timestamp"
+        "provider_id", "category", "score", "label", "confidence", 
+        "cached", "fingerprint", "details", "mode", "decision", "threshold"
     ]
     
     # Write headers with styling
@@ -954,31 +987,143 @@ def _create_guardrails_details_sheet(wb: Workbook, data: Dict[str, Any]) -> None
         cell.alignment = Alignment(wrap_text=True)
         
         # Set column widths
-        if header in ["reason", "description"]:
+        if header in ["details", "fingerprint"]:
             ws.column_dimensions[get_column_letter(col)].width = 40
-        elif header in ["links", "thresholds"]:
-            ws.column_dimensions[get_column_letter(col)].width = 30
+        elif header in ["provider_id", "category"]:
+            ws.column_dimensions[get_column_letter(col)].width = 20
         else:
             ws.column_dimensions[get_column_letter(col)].width = 16
     
-    # Write data rows
-    guardrails_details = data.get("guardrails", {}).get("details", [])
-    for row_idx, detail in enumerate(guardrails_details, 2):
+    # Write data rows from signals
+    guardrails_data = data.get("guardrails", {})
+    signals = guardrails_data.get("signals", [])
+    mode = guardrails_data.get("mode", "advisory")
+    decision = guardrails_data.get("decision", "pass")
+    
+    for row_idx, signal in enumerate(signals, 2):
+        # Get threshold for this category
+        category = signal.get("category", "")
+        threshold = guardrails_data.get("run_manifest", {}).get("thresholds", {}).get(category, "N/A")
+        
         values = [
-            detail.get("subtest", ""),
-            detail.get("suite", ""),
-            detail.get("test_id", ""),
-            detail.get("status", ""),
-            detail.get("reason", ""),
-            detail.get("thresholds", ""),
-            detail.get("links", ""),
-            detail.get("category", ""),
-            detail.get("description", ""),
-            detail.get("enabled", ""),
-            detail.get("latency_ms", ""),
-            detail.get("timestamp", "")
+            signal.get("id", ""),
+            signal.get("category", ""),
+            signal.get("score", 0.0),
+            signal.get("label", ""),
+            signal.get("confidence", 0.0),
+            signal.get("details", {}).get("cached", False),
+            signal.get("details", {}).get("fingerprint", ""),
+            str(signal.get("details", {})),
+            mode,
+            decision,
+            threshold
         ]
         
+        for col, value in enumerate(values, 1):
+            ws.cell(row=row_idx, column=col, value=value)
+    
+    # Freeze panes
+    ws.freeze_panes = "A2"
+
+
+def _create_performance_metrics_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
+    """Create Performance_Metrics sheet with performance data (Reports v2)."""
+    ws = cast(Worksheet, wb.create_sheet("Performance_Metrics"))
+    
+    headers = [
+        "metric", "value", "unit", "threshold", "status", "category", "description"
+    ]
+    
+    # Write headers with styling
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(wrap_text=True)
+        
+        # Set column widths
+        if header in ["description"]:
+            ws.column_dimensions[get_column_letter(col)].width = 50
+        elif header in ["metric"]:
+            ws.column_dimensions[get_column_letter(col)].width = 25
+        else:
+            ws.column_dimensions[get_column_letter(col)].width = 16
+    
+    # Write performance metrics data
+    performance_data = data.get("performance", {})
+    row_idx = 2
+    
+    # Cold start metrics
+    if "cold_start_ms" in performance_data:
+        values = [
+            "Cold Start Latency",
+            performance_data["cold_start_ms"],
+            "ms",
+            "< 5000",
+            "PASS" if performance_data["cold_start_ms"] < 5000 else "FAIL",
+            "latency",
+            "Time to first response from cold start"
+        ]
+        for col, value in enumerate(values, 1):
+            ws.cell(row=row_idx, column=col, value=value)
+        row_idx += 1
+    
+    # Warm performance metrics
+    if "warm_p95_ms" in performance_data:
+        values = [
+            "Warm P95 Latency",
+            performance_data["warm_p95_ms"],
+            "ms",
+            "< 3000",
+            "PASS" if performance_data["warm_p95_ms"] < 3000 else "FAIL",
+            "latency",
+            "95th percentile response time for warm requests"
+        ]
+        for col, value in enumerate(values, 1):
+            ws.cell(row=row_idx, column=col, value=value)
+        row_idx += 1
+    
+    # Throughput metrics
+    if "throughput_rps" in performance_data:
+        values = [
+            "Throughput",
+            performance_data["throughput_rps"],
+            "RPS",
+            "> 10",
+            "PASS" if performance_data["throughput_rps"] > 10 else "FAIL",
+            "throughput",
+            "Requests per second sustained throughput"
+        ]
+        for col, value in enumerate(values, 1):
+            ws.cell(row=row_idx, column=col, value=value)
+        row_idx += 1
+    
+    # Memory usage metrics
+    if "memory_usage_mb" in performance_data:
+        values = [
+            "Memory Usage",
+            performance_data["memory_usage_mb"],
+            "MB",
+            "< 1000",
+            "PASS" if performance_data["memory_usage_mb"] < 1000 else "FAIL",
+            "resource",
+            "Peak memory usage during test execution"
+        ]
+        for col, value in enumerate(values, 1):
+            ws.cell(row=row_idx, column=col, value=value)
+        row_idx += 1
+    
+    # Dedupe savings
+    dedupe_savings = performance_data.get("dedupe_savings", {})
+    if dedupe_savings:
+        values = [
+            "Dedupe Savings",
+            f"{dedupe_savings.get('percentage', 0):.1f}%",
+            "%",
+            "> 0%",
+            "PASS" if dedupe_savings.get('percentage', 0) > 0 else "INFO",
+            "efficiency",
+            f"Tests saved: {dedupe_savings.get('tests_saved', 0)}, Time saved: {dedupe_savings.get('time_saved_ms', 0)}ms"
+        ]
         for col, value in enumerate(values, 1):
             ws.cell(row=row_idx, column=col, value=value)
     

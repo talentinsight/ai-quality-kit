@@ -19,6 +19,8 @@ def build_json(
     logs: Optional[List[Dict[str, Any]]] = None,
     rag_reliability_robustness: Optional[Dict[str, Any]] = None,
     compare_data: Optional[Dict[str, Any]] = None,
+    guardrails_data: Optional[Dict[str, Any]] = None,
+    performance_metrics: Optional[Dict[str, Any]] = None,
     anonymize: bool = True
 ) -> Dict[str, Any]:
     """Build comprehensive JSON report from orchestrator data.
@@ -110,12 +112,70 @@ def build_json(
     
     # Add Compare Mode section if present
     if compare_data:
-        # Apply PII masking to compare data if requested
-        if anonymize:
-            compare_data = _mask_compare_data(compare_data)
         report["compare"] = compare_data
     
+    # Add Guardrails section if present (Reports v2)
+    if guardrails_data:
+        report["guardrails"] = {
+            "mode": guardrails_data.get("mode", "advisory"),
+            "decision": guardrails_data.get("decision", "pass"),
+            "failing_categories": guardrails_data.get("failing_categories", []),
+            "reused_fingerprints": guardrails_data.get("reused_fingerprints", []),
+            "provider_availability": guardrails_data.get("provider_availability", {}),
+            "signals": guardrails_data.get("signals", []),
+            "run_manifest": guardrails_data.get("run_manifest", {})
+        }
+    
+    # Add Performance Metrics section if present (Reports v2)
+    if performance_metrics:
+        report["performance"] = {
+            "cold_start_ms": performance_metrics.get("cold_start_ms", 0),
+            "warm_p95_ms": performance_metrics.get("warm_p95_ms", 0),
+            "throughput_rps": performance_metrics.get("throughput_rps", 0),
+            "memory_usage_mb": performance_metrics.get("memory_usage_mb", 0),
+            "estimator_vs_actuals": performance_metrics.get("estimator_vs_actuals", {}),
+            "dedupe_savings": performance_metrics.get("dedupe_savings", {})
+        }
+    
     return report
+
+
+def _mask_detailed_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Apply PII masking to detailed rows."""
+    masked_rows = []
+    for row in rows:
+        masked_row = row.copy()
+        # Mask text fields that might contain PII
+        for field in ["query", "answer", "context", "prompt", "response", "notes"]:
+            if field in masked_row and masked_row[field]:
+                masked_row[field] = mask_text(str(masked_row[field]))
+        masked_rows.append(masked_row)
+    return masked_rows
+
+
+def _mask_adversarial_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Apply PII masking to adversarial rows."""
+    masked_rows = []
+    for row in rows:
+        masked_row = row.copy()
+        # Mask attack prompts and responses
+        for field in ["attack_prompt", "response", "original_prompt", "modified_prompt"]:
+            if field in masked_row and masked_row[field]:
+                masked_row[field] = mask_text(str(masked_row[field]))
+        masked_rows.append(masked_row)
+    return masked_rows
+
+
+def _mask_compare_data(compare_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Apply PII masking to compare data."""
+    masked_data = compare_data.copy()
+    # Mask any text fields in compare data
+    for key, value in masked_data.items():
+        if isinstance(value, str):
+            masked_data[key] = mask_text(value)
+        elif isinstance(value, list):
+            masked_data[key] = [mask_text(str(item)) if isinstance(item, str) else item for item in value]
+    return masked_data
 
 
 def _mask_detailed_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
