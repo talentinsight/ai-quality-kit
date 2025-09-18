@@ -37,6 +37,31 @@ class DetoxifyToxicityProvider(GuardrailProvider):
         
         return self._available
     
+    def check_dependencies(self) -> list[str]:
+        """Check for missing dependencies."""
+        missing = []
+        
+        try:
+            from detoxify import Detoxify
+        except ImportError:
+            missing.append("detoxify")
+        
+        try:
+            import torch
+        except ImportError:
+            missing.append("torch")
+        
+        return missing
+    
+    @property
+    def version(self) -> Optional[str]:
+        """Get provider version."""
+        try:
+            import detoxify
+            return getattr(detoxify, '__version__', 'unknown')
+        except ImportError:
+            return None
+    
     async def check(self, input_text: str, output_text: Optional[str] = None) -> SignalResult:
         """Check for toxicity in output text (primarily)."""
         if not self.is_available():

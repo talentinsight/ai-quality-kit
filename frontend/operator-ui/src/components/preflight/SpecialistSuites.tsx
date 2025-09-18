@@ -18,6 +18,11 @@ import {
 import type { DataRequirements } from '../../types/metrics';
 import { usePreflightStore } from '../../stores/preflightStore';
 import InlineDataIntake, { type TestDataArtifact, type ValidationResult } from './InlineDataIntake';
+import ReusedFromPreflightChip from './ReusedFromPreflightChip';
+import PIQuicksetChip, { PIQuicksetUnavailableChip, createPIQuicksetData } from './PIQuicksetChip';
+import type { RedTeamCategory, RedTeamSubtests as RedTeamSubtestsType, SafetyCategory, SafetySubtests as SafetySubtestsType } from '../../types';
+import RedTeamSubtests from '../RedTeamSubtests';
+import SafetySubtests from '../SafetySubtests';
 
 interface SpecialistSuitesProps {
   llmType: string;
@@ -48,6 +53,25 @@ export default function SpecialistSuites({
   const [suiteStates, setSuiteStates] = useState<Record<string, SuiteState>>({});
   const [selectedTests, setSelectedTests] = useState<Record<string, string[]>>({});
   const [validatedArtifacts, setValidatedArtifacts] = useState<Record<string, Record<string, ValidationResult>>>({});
+  
+  // Red Team subtests state - initialize with all subtests selected (backward compatible)
+  const [redTeamSubtests, setRedTeamSubtests] = useState<RedTeamSubtestsType>({
+    prompt_injection: ["direct", "indirect", "passage_embedded", "metadata_embedded"],
+    jailbreak: ["role_play", "system_override"],
+    data_extraction: ["system_prompt", "api_key", "base64"],
+    context_poisoning: ["ignore_citations", "contradict_retrieval", "spoof_citations"],
+    social_engineering: ["authority", "urgency", "scarcity", "reciprocity", "sympathy"]
+  });
+
+  // Safety subtests state - initialize with all subtests selected (backward compatible)
+  const [safetySubtests, setSafetySubtests] = useState<SafetySubtestsType>({
+    toxicity: ["explicit", "implicit", "contextual"],
+    hate: ["targeted", "general"],
+    violence: ["graphic", "threat"],
+    adult: ["explicit"],
+    self_harm: ["direct", "indirect"],
+    misinformation: ["false_claims", "misleading"]
+  });
   
   // Initialize suites based on LLM type
   useEffect(() => {
@@ -148,6 +172,24 @@ export default function SpecialistSuites({
       onSelectionChange(newSelection);
       return newSelection;
     });
+  };
+  
+  // Handle Red Team subtests changes
+  const handleRedTeamSubtestChange = (category: RedTeamCategory, subtests: string[]) => {
+    const newRedTeamSubtests = {
+      ...redTeamSubtests,
+      [category]: subtests
+    };
+    setRedTeamSubtests(newRedTeamSubtests);
+  };
+
+  // Handle Safety subtests changes
+  const handleSafetySubtestChange = (category: SafetyCategory, subtests: string[]) => {
+    const newSafetySubtests = {
+      ...safetySubtests,
+      [category]: subtests
+    };
+    setSafetySubtests(newSafetySubtests);
   };
   
   // Get required artifacts for each suite
@@ -662,6 +704,26 @@ export default function SpecialistSuites({
                                       Guardrails
                                     </span>
                                   )}
+                                  
+                                  {/* Show reused from preflight chip if applicable */}
+                                  <ReusedFromPreflightChip 
+                                    reusedCount={(test as any).reusedSignals || 0}
+                                    reusedCategories={(test as any).reusedCategories || []}
+                                    size="sm"
+                                  />
+                                  
+                                  {/* Show PI quickset chip if applicable */}
+                                  {(test as any).piQuicksetData && (
+                                    <PIQuicksetChip 
+                                      data={(test as any).piQuicksetData}
+                                      className="ml-1"
+                                    />
+                                  )}
+                                  
+                                  {/* Show PI quickset unavailable if provider failed */}
+                                  {(test as any).piQuicksetUnavailable && (
+                                    <PIQuicksetUnavailableChip className="ml-1" />
+                                  )}
                                 </div>
                                 
                                 <p className="text-sm text-slate-600 dark:text-slate-400">
@@ -676,6 +738,40 @@ export default function SpecialistSuites({
                                     <span className="capitalize">{test.category}</span>
                                   )}
                                 </div>
+                                
+                                {/* Red Team Subtests */}
+                                {suite.id === 'red_team' && isSelected && (
+                                  <RedTeamSubtests
+                                    category={test.id as RedTeamCategory}
+                                    selectedSubtests={redTeamSubtests[test.id as RedTeamCategory] || []}
+                                    onSubtestsChange={handleRedTeamSubtestChange}
+                                    className="mt-2"
+                                  />
+                                )}
+                                
+                                {/* Safety Subtests */}
+                                {suite.id === 'safety' && isSelected && (
+                                  <SafetySubtests
+                                    testId={test.id}
+                                    selectedSubtests={(() => {
+                                      // Map test ID to category to get correct subtests
+                                      const categoryMap: Record<string, SafetyCategory> = {
+                                        'toxicity_detection': 'toxicity',
+                                        'hate_speech': 'hate',
+                                        'violence_detection': 'violence',
+                                        'adult_content': 'adult',
+                                        'self_harm': 'self_harm',
+                                        'misinformation': 'misinformation'
+                                      };
+                                      const category = categoryMap[test.id] || 'toxicity';
+                                      return safetySubtests[category] || [];
+                                    })()}
+                                    onSubtestsChange={(category, subtests) => {
+                                      handleSafetySubtestChange(category, subtests);
+                                    }}
+                                    className="mt-2"
+                                  />
+                                )}
                               </div>
                             </div>
                             

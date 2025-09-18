@@ -471,6 +471,10 @@ class DetailedRow(BaseModel):
     context_recall: Optional[float]
     safety_score: Optional[float]
     attack_success: Optional[bool]
+    # Cross-suite deduplication fields
+    reused_from_preflight: Optional[bool] = None
+    reused_signals: Optional[int] = None
+    reused_categories: Optional[List[str]] = None
     timestamp: str
 
 
@@ -527,6 +531,10 @@ class TestRunner:
             self.metamorphic_checker = None
             self.test_evaluator = None
             self.pii_scanner = None
+        
+        # Initialize cross-suite deduplication service
+        from apps.orchestrator.deduplication import CrossSuiteDeduplicationService
+        self.dedup_service = CrossSuiteDeduplicationService(self.run_id)
         
         # Load test data bundle if testdata_id is provided
         self.testdata_bundle = None
@@ -1372,7 +1380,10 @@ class TestRunner:
                         "attack_type": f"variant_{mutator_idx}"
                     })
         
-        return tests[:20]  # Limit for performance
+        tests = tests[:20]  # Limit for performance
+        
+        # Apply cross-suite deduplication
+        return self._apply_red_team_deduplication(tests)
     
     def _load_safety_tests(self) -> List[Dict[str, Any]]:
         """Load safety tests from JSONL file or filtered from red team tests."""
@@ -1396,7 +1407,7 @@ class TestRunner:
                     "expected_behavior": "refuse_harmful_request",
                     "category": "safety"
                 })
-            return safety_tests
+            return self._apply_safety_deduplication(safety_tests)
         elif self.request.use_expanded and not self.request.testdata_id:
             # Try to load from expanded dataset JSONL
             safety_path = Path("data/expanded") / self.dataset_version / "safety.jsonl"
@@ -1421,7 +1432,7 @@ class TestRunner:
                 if self.request.options and "attack_mutators" in self.request.options:
                     attack_mutators = self.request.options["attack_mutators"]
                     limit = min(50, max(5, attack_mutators * 5))  # 5-50 range
-                return tests[:limit]
+                return self._apply_safety_deduplication(tests[:limit])
         
         # Load from golden dataset (default fallback)
         golden_safety_path = Path("data/golden/safety.jsonl")
@@ -1443,7 +1454,7 @@ class TestRunner:
                             except json.JSONDecodeError:
                                 continue
                 print(f"🔍 SAFETY: Loaded {len(tests)} tests from golden dataset")
-                return tests[:10]  # Limit to 10 tests
+                return self._apply_safety_deduplication(tests[:10])  # Limit to 10 tests
             except Exception as e:
                 print(f"⚠️ SAFETY: Error loading golden dataset: {e}")
         
@@ -1456,7 +1467,147 @@ class TestRunner:
                 safety_tests.append(test)
         
         print(f"🔍 SAFETY: Fallback to {len(safety_tests)} filtered red team tests")
-        return safety_tests[:10]  # Smaller subset
+        safety_tests = safety_tests[:10]  # Smaller subset
+        
+        # Apply cross-suite deduplication
+        return self._apply_safety_deduplication(safety_tests)
+    
+    def _apply_safety_deduplication(self, tests: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Apply cross-suite deduplication for safety tests."""
+        if not hasattr(self, 'dedup_service') or not tests:
+            return tests
+        
+        from apps.orchestrator.deduplication import SuiteDeduplicationHelper
+        dedup_helper = SuiteDeduplicationHelper(self.dedup_service)
+        
+        model = self.request.model
+        rules_hash = self._get_rules_hash()
+        
+        deduplicated_tests = []
+        reused_count = 0
+        
+        for test in tests:
+            test_id = test.get("test_id", "unknown")
+            
+            # Check for reusable signals based on safety categories
+            safety_categories = ["pii", "toxicity", "jailbreak", "adult", "self_harm"]
+            reused_signals = []
+            
+            for category in safety_categories:
+                provider_id = f"{category}.guard"  # Common provider pattern
+                reusable_signal = dedup_helper.check_safety_signal_reusable(
+                    provider_id=provider_id,
+                    category=category,
+                    model=model,
+                    rules_hash=rules_hash
+                )
+                
+                if reusable_signal:
+                    enhanced_signal = self.dedup_service.create_enhanced_signal_for_reuse(
+                        reusable_signal, "safety", test_id
+                    )
+                    reused_signals.append(enhanced_signal)
+                    self.dedup_service.mark_signal_reused(enhanced_signal, "safety", test_id)
+            
+            if reused_signals:
+                # Mark test as having reused components
+                test["reused_from_preflight"] = True
+                test["reused_signals"] = len(reused_signals)
+                test["reused_categories"] = [s.category.value for s in reused_signals]
+                reused_count += 1
+                logger.info(f"Safety test {test_id} reusing {len(reused_signals)} signals from preflight")
+            
+            deduplicated_tests.append(test)
+        
+        if reused_count > 0:
+            logger.info(f"Safety suite: {reused_count}/{len(tests)} tests reusing preflight signals")
+        
+        return deduplicated_tests
+    
+    def _apply_red_team_deduplication(self, tests: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Apply cross-suite deduplication for red team tests."""
+        if not hasattr(self, 'dedup_service') or not tests:
+            return tests
+        
+        from apps.orchestrator.deduplication import SuiteDeduplicationHelper
+        dedup_helper = SuiteDeduplicationHelper(self.dedup_service)
+        
+        model = self.request.model
+        rules_hash = self._get_rules_hash()
+        
+        deduplicated_tests = []
+        reused_count = 0
+        
+        for test in tests:
+            test_id = test.get("test_id", "unknown")
+            attack_type = test.get("attack_type", "jailbreak")
+            
+            # Check for reusable signals based on red team attack types
+            red_team_categories = ["jailbreak", "pii", "toxicity"]
+            reused_signals = []
+            
+            for category in red_team_categories:
+                provider_id = f"{category}.hybrid" if category == "jailbreak" else f"{category}.guard"
+                reusable_signal = dedup_helper.check_red_team_signal_reusable(
+                    provider_id=provider_id,
+                    attack_type=category,
+                    model=model,
+                    rules_hash=rules_hash
+                )
+                
+                if reusable_signal:
+                    enhanced_signal = self.dedup_service.create_enhanced_signal_for_reuse(
+                        reusable_signal, "red_team", test_id
+                    )
+                    reused_signals.append(enhanced_signal)
+                    self.dedup_service.mark_signal_reused(enhanced_signal, "red_team", test_id)
+            
+            # Check for reusable PI quickset signals
+            for provider_id in ["pi.quickset", "pi.quickset_guard"]:
+                pi_quickset_signal = dedup_helper.check_pi_quickset_asr_reusable(
+                    provider_id=provider_id,
+                    model=model,
+                    rules_hash=rules_hash
+                )
+                
+                if pi_quickset_signal:
+                    # Check if this test matches any quickset items
+                    test_prompt = test.get("query", test.get("prompt", ""))
+                    quickset_items = pi_quickset_signal.details.get("quickset_items", {})
+                    
+                    # Simple matching based on attack family/type
+                    test_family = test.get("family", test.get("attack_type", ""))
+                    matching_items = [
+                        item_id for item_id, item_data in quickset_items.items()
+                        if item_data.get("family") == test_family
+                    ]
+                    
+                    if matching_items:
+                        enhanced_signal = self.dedup_service.create_enhanced_signal_for_reuse(
+                            pi_quickset_signal, "red_team", test_id
+                        )
+                        enhanced_signal.details["reused_quickset_items"] = matching_items
+                        enhanced_signal.details["reused_from_preflight"] = True
+                        reused_signals.append(enhanced_signal)
+                        self.dedup_service.mark_signal_reused(enhanced_signal, "red_team", test_id)
+                        logger.debug(f"Red team test {test_id} reusing PI quickset items from {provider_id}: {matching_items}")
+                        break  # Use first available provider
+                    logger.debug(f"Red team test {test_id} reusing PI quickset items: {matching_items}")
+            
+            if reused_signals:
+                # Mark test as having reused components
+                test["reused_from_preflight"] = True
+                test["reused_signals"] = len(reused_signals)
+                test["reused_categories"] = [s.category.value for s in reused_signals]
+                reused_count += 1
+                logger.info(f"Red team test {test_id} reusing {len(reused_signals)} signals from preflight")
+            
+            deduplicated_tests.append(test)
+        
+        if reused_count > 0:
+            logger.info(f"Red team suite: {reused_count}/{len(tests)} tests reusing preflight signals")
+        
+        return deduplicated_tests
     
     def _load_guardrails_jailbreak_tests(self, red_team_opts) -> List[Dict[str, Any]]:
         """Load guardrails-specific jailbreak/obfuscation tests."""
@@ -2301,6 +2452,10 @@ class TestRunner:
                 context_recall=evaluation.get("context_recall"),
                 safety_score=evaluation.get("safety_score"),
                 attack_success=evaluation.get("attack_success"),
+                # Cross-suite deduplication fields
+                reused_from_preflight=item.get("reused_from_preflight"),
+                reused_signals=item.get("reused_signals"),
+                reused_categories=item.get("reused_categories"),
                 timestamp=datetime.utcnow().isoformat()
             )
             
@@ -3490,11 +3645,13 @@ class TestRunner:
                 mode = self.request.guardrails_config.get("mode", "advisory")
                 if mode == "hard_gate":
                     # Block all tests
-                    return self._create_blocked_result(preflight_result)
+                    return self._create_blocked_result_legacy(preflight_result)
                 elif mode == "mixed":
-                    # Block critical tests only
-                    self._mark_critical_tests_blocked(preflight_result)
-                # Advisory mode continues normally
+                    # Check if critical categories failed
+                    blocking_result = self._evaluate_guardrails_blocking(preflight_result)
+                    if blocking_result.get("blocked", False):
+                        return self._create_blocked_result(preflight_result, blocking_result)
+                # Advisory mode continues normally with tags
         
         suite_data = self.load_suites()
         
@@ -4391,6 +4548,18 @@ class TestRunner:
         
         # Build comprehensive JSON report
         anonymize = os.getenv("ANONYMIZE_REPORTS", "true").lower() == "true"
+        
+        # Collect deduplication statistics
+        dedup_stats = self.dedup_service.get_reuse_statistics() if hasattr(self, 'dedup_service') else {}
+        performance_metrics = {
+            "dedupe_savings": {
+                "total_cached_signals": dedup_stats.get("total_cached_signals", 0),
+                "total_reused_signals": dedup_stats.get("total_reused_signals", 0),
+                "reuse_by_suite": dedup_stats.get("reuse_by_suite", {}),
+                "reuse_rate": dedup_stats.get("reuse_rate", 0.0)
+            }
+        }
+        
         json_data = build_json(
             run_meta=run_meta,
             summary=summary,
@@ -4405,6 +4574,7 @@ class TestRunner:
             logs=self.captured_logs if self.captured_logs else None,
             rag_reliability_robustness=self.rag_reliability_robustness_data if self.rag_reliability_robustness_data else None,
             compare_data=self.compare_data if self.compare_data else None,
+            performance_metrics=performance_metrics,
             anonymize=anonymize
         )
         
@@ -5293,6 +5463,125 @@ class TestRunner:
             print(f"⚠️  Failed to publish run {self.run_id} to Power BI: {e}")
             # Do not raise - Power BI failures should not break the test run
     
+    def _evaluate_guardrails_blocking(self, preflight_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Evaluate if guardrails should block execution based on mode and critical categories."""
+        from apps.server.guardrails.interfaces import GuardrailCategory
+        
+        # Critical categories for mixed mode (high-risk categories)
+        CRITICAL_CATEGORIES = {
+            GuardrailCategory.PII, 
+            GuardrailCategory.JAILBREAK, 
+            GuardrailCategory.SELF_HARM,
+            GuardrailCategory.ADULT
+        }
+        
+        mode = self.request.guardrails_config.get("mode", "advisory")
+        signals = preflight_result.get("signals", [])
+        
+        blocking_result = {
+            "blocked": False,
+            "mode": mode,
+            "blocking_categories": [],
+            "blocking_reasons": [],
+            "advisory_categories": []
+        }
+        
+        if mode == "hard_gate":
+            # Hard gate blocks on any failure
+            if not preflight_result.get("pass", True):
+                blocking_result["blocked"] = True
+                blocking_result["blocking_reasons"] = preflight_result.get("reasons", [])
+                blocking_result["blocking_categories"] = [
+                    signal.category.value for signal in signals 
+                    if signal.label.value in ["hit", "violation"]
+                ]
+        elif mode == "mixed":
+            # Mixed mode blocks only on critical category failures
+            critical_failures = []
+            advisory_failures = []
+            
+            for signal in signals:
+                if signal.label.value in ["hit", "violation"]:
+                    if signal.category in CRITICAL_CATEGORIES:
+                        critical_failures.append(signal.category.value)
+                    else:
+                        advisory_failures.append(signal.category.value)
+            
+            if critical_failures:
+                blocking_result["blocked"] = True
+                blocking_result["blocking_categories"] = critical_failures
+                blocking_result["blocking_reasons"] = [
+                    f"Critical category {cat} failed guardrails check" 
+                    for cat in critical_failures
+                ]
+            
+            blocking_result["advisory_categories"] = advisory_failures
+        else:  # advisory mode
+            # Advisory mode never blocks, just tags
+            blocking_result["advisory_categories"] = [
+                signal.category.value for signal in signals 
+                if signal.label.value in ["hit", "violation"]
+            ]
+        
+        return blocking_result
+    
+    def _create_blocked_result(self, preflight_result: Dict[str, Any], blocking_result: Dict[str, Any] = None) -> OrchestratorResult:
+        """Create a blocked result when guardrails prevent execution."""
+        if blocking_result is None:
+            # Hard gate mode - create basic blocking result
+            blocking_result = {
+                "blocked": True,
+                "mode": "hard_gate",
+                "blocking_categories": [
+                    signal.category.value for signal in preflight_result.get("signals", [])
+                    if signal.label.value in ["hit", "violation"]
+                ],
+                "blocking_reasons": preflight_result.get("reasons", []),
+                "advisory_categories": []
+            }
+        
+        # Create summary with blocking information
+        summary = {
+            "run_id": self.run_id,
+            "status": "blocked_by_guardrails",
+            "total_tests": 0,
+            "passed": 0,
+            "failed": 0,
+            "blocked": True,
+            "guardrails_blocking": blocking_result,
+            "preflight_result": preflight_result,
+            "started_at": self.started_at,
+            "completed_at": datetime.utcnow().isoformat(),
+            "duration_ms": 0,
+            "suites": list(self.request.suites),
+            "provider": self.request.provider,
+            "model": self.request.model
+        }
+        
+        # Create empty counts
+        counts = {
+            "total": 0,
+            "passed": 0,
+            "failed": 0,
+            "skipped": 0,
+            "blocked": len(self.request.suites)  # All suites blocked
+        }
+        
+        # Create artifacts with blocking information
+        artifacts = {
+            "guardrails_blocking": json.dumps(blocking_result),
+            "preflight_result": json.dumps(preflight_result, default=str)
+        }
+        
+        return OrchestratorResult(
+            run_id=self.run_id,
+            started_at=self.started_at,
+            finished_at=datetime.utcnow().isoformat(),
+            summary=summary,
+            counts=counts,
+            artifacts=artifacts
+        )
+
     async def _run_guardrails_preflight(self) -> Dict[str, Any]:
         """Run guardrails preflight check."""
         try:
@@ -5337,6 +5626,8 @@ class TestRunner:
             }
             
         except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
             logger.error(f"Guardrails preflight failed: {e}")
             return {"pass": False, "reasons": [f"Preflight error: {str(e)}"], "signals": [], "metrics": {}}
     
@@ -5345,28 +5636,67 @@ class TestRunner:
         if not hasattr(self, '_preflight_signals'):
             self._preflight_signals = {}
         
+        # Extract model and rules hash for fingerprinting
+        model = self.request.model
+        rules_hash = self._get_rules_hash()
+        
         for signal in signals:
+            # Legacy storage for backward compatibility
             fingerprint = signal.details.get("fingerprint")
             if fingerprint:
                 self._preflight_signals[fingerprint] = signal
+            
+            # New cross-suite deduplication storage
+            self.dedup_service.store_preflight_signal(signal, model, rules_hash)
     
-    def _create_blocked_result(self, preflight_result: Dict[str, Any]) -> OrchestratorResult:
-        """Create result when all tests are blocked by guardrails."""
+    def _get_rules_hash(self) -> str:
+        """Get rules hash from guardrails config."""
+        if self.request.guardrails_config:
+            from apps.orchestrator.deduplication import create_rules_hash
+            return create_rules_hash(self.request.guardrails_config)
+        return "default"
+    
+    def _create_blocked_result_legacy(self, preflight_result: Dict[str, Any]) -> OrchestratorResult:
+        """Create result when all tests are blocked by guardrails (legacy method)."""
+        # Create blocking result for hard gate mode
+        blocking_result = {
+            "blocked": True,
+            "mode": "hard_gate",
+            "blocking_categories": [
+                signal.category.value for signal in preflight_result.get("signals", [])
+                if signal.label.value in ["hit", "violation"]
+            ],
+            "blocking_reasons": preflight_result.get("reasons", []),
+            "advisory_categories": []
+        }
+        
         return OrchestratorResult(
             run_id=self.run_id,
             started_at=self.started_at,
             finished_at=datetime.utcnow().isoformat(),
             summary={
-                "execution": {
-                    "total_tests": 0,
-                    "passed_tests": 0,
-                    "failed_tests": 0,
-                    "pass_rate": 0.0
-                },
-                "guardrails_blocked": True,
-                "preflight_result": preflight_result
+                "status": "blocked_by_guardrails",
+                "total_tests": 0,
+                "passed": 0,
+                "failed": 0,
+                "blocked": True,
+                "guardrails_blocking": blocking_result,
+                "preflight_result": preflight_result,
+                "suites": list(self.request.suites),
+                "provider": self.request.provider,
+                "model": self.request.model
             },
-            detailed=[]
+            counts={
+                "total": 0,
+                "passed": 0,
+                "failed": 0,
+                "skipped": 0,
+                "blocked": len(self.request.suites)
+            },
+            artifacts={
+                "guardrails_blocking": json.dumps(blocking_result),
+                "preflight_result": json.dumps(preflight_result, default=str)
+            }
         )
     
     def _mark_critical_tests_blocked(self, preflight_result: Dict[str, Any]):

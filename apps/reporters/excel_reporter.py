@@ -534,7 +534,7 @@ def _create_adversarial_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     # Required column order as specified
     headers = [
         "run_id", "timestamp", "suite", "provider", "model", "request_id", 
-        "attack_id", "attack_text", "response_snippet", "safety_flags", "blocked", "notes"
+        "attack_id", "attack_text", "response_snippet", "safety_flags", "blocked", "reused", "notes"
     ]
     
     # Write headers with styling
@@ -555,6 +555,15 @@ def _create_adversarial_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
     # Write data rows
     adv_rows = data.get("adversarial_details", [])
     for row_idx, row_data in enumerate(adv_rows, 2):
+        # Check if this attack was reused from preflight
+        reused_info = ""
+        if row_data.get("reused_from_preflight"):
+            reused_quickset_items = row_data.get("reused_quickset_items", [])
+            if reused_quickset_items:
+                reused_info = f"PI Quickset: {', '.join(reused_quickset_items)}"
+            else:
+                reused_info = "Reused from Preflight"
+        
         values = [
             row_data.get("run_id", ""),
             row_data.get("timestamp", ""),
@@ -567,6 +576,7 @@ def _create_adversarial_sheet(wb: Workbook, data: Dict[str, Any]) -> None:
             row_data.get("response_snippet", ""),
             json.dumps(row_data.get("safety_flags", [])) if row_data.get("safety_flags") else "",
             row_data.get("blocked", False),
+            reused_info,
             row_data.get("notes", "")
         ]
         
@@ -1021,6 +1031,34 @@ def _create_guardrails_details_sheet(wb: Workbook, data: Dict[str, Any]) -> None
         
         for col, value in enumerate(values, 1):
             ws.cell(row=row_idx, column=col, value=value)
+    
+    # Add PI quickset summary section if present
+    pi_quickset_data = guardrails_data.get("pi_quickset")
+    if pi_quickset_data:
+        # Add separator row
+        row_idx = len(signals) + 4
+        ws.cell(row=row_idx, column=1, value="PI Quickset Summary").font = Font(bold=True)
+        
+        # Add PI quickset data
+        pi_headers = ["Metric", "Value"]
+        for col, header in enumerate(pi_headers, 1):
+            cell = ws.cell(row=row_idx + 1, column=col, value=header)
+            cell.font = Font(bold=True)
+        
+        pi_metrics = [
+            ("ASR", f"{pi_quickset_data.get('asr', 0.0):.1%}"),
+            ("Total Tests", pi_quickset_data.get('total', 0)),
+            ("Successful Attacks", pi_quickset_data.get('success', 0)),
+            ("Ambiguous Results", pi_quickset_data.get('ambiguous', 0)),
+            ("Families Used", ", ".join(pi_quickset_data.get('families_used', []))),
+            ("Version", pi_quickset_data.get('version', 'unknown')),
+            ("Threshold", f"{pi_quickset_data.get('threshold', 0.05):.1%}"),
+            ("Quickset Items", ", ".join(pi_quickset_data.get('quickset_subset_ids', [])))
+        ]
+        
+        for i, (metric, value) in enumerate(pi_metrics):
+            ws.cell(row=row_idx + 2 + i, column=1, value=metric)
+            ws.cell(row=row_idx + 2 + i, column=2, value=value)
     
     # Freeze panes
     ws.freeze_panes = "A2"

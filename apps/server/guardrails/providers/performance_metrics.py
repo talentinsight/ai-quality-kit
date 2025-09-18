@@ -22,6 +22,15 @@ class PerformanceMetricsProvider(GuardrailProvider):
         """Always available (uses orchestrator metrics)."""
         return self._available
     
+    def check_dependencies(self) -> list[str]:
+        """No external dependencies."""
+        return []
+    
+    @property
+    def version(self) -> Optional[str]:
+        """Get provider version."""
+        return "1.0.0"
+    
     async def check(self, input_text: str, output_text: Optional[str] = None, 
                    metrics: Optional[Dict[str, Any]] = None) -> SignalResult:
         """Check performance metrics against thresholds."""
@@ -48,36 +57,33 @@ class PerformanceMetricsProvider(GuardrailProvider):
         
         # Extract performance data
         latency_ms = metrics.get("latency_ms", 0)
+        p95_latency_ms = metrics.get("p95_latency_ms", latency_ms)  # Use p95 if available
         token_count = metrics.get("token_count", 0)
-        cost_usd = metrics.get("cost_usd", 0.0)
+        cost_per_test = metrics.get("cost_per_test", 0.0)
         
-        # Default thresholds (can be overridden by config)
-        latency_threshold_ms = metrics.get("latency_threshold_ms", 30000)  # 30s
-        cost_threshold_usd = metrics.get("cost_threshold_usd", 1.0)  # $1
-        token_threshold = metrics.get("token_threshold", 10000)  # 10k tokens
+        # Default thresholds from requirements
+        latency_p95_threshold_ms = metrics.get("latency_p95_ms", 3000)  # 3000ms default
+        cost_per_test_threshold = metrics.get("cost_per_test_threshold", 0.01)  # $0.01 default
         
-        # Calculate scores for each metric
-        latency_score = min(1.0, latency_ms / latency_threshold_ms) if latency_threshold_ms > 0 else 0.0
-        cost_score = min(1.0, cost_usd / cost_threshold_usd) if cost_threshold_usd > 0 else 0.0
-        token_score = min(1.0, token_count / token_threshold) if token_threshold > 0 else 0.0
+        # Calculate violation scores (1.0 if exceeds threshold, 0.0 if within)
+        latency_violation = 1.0 if p95_latency_ms > latency_p95_threshold_ms else 0.0
+        cost_violation = 1.0 if cost_per_test > cost_per_test_threshold else 0.0
         
-        # Overall score (max of individual scores)
-        score = max(latency_score, cost_score, token_score)
+        # Overall score (max of violations - any violation is a problem)
+        score = max(latency_violation, cost_violation)
         confidence = 0.9  # High confidence in metrics
         
         # Determine violations
         violations = []
-        if latency_score > 0.8:
-            violations.append("high_latency")
-        if cost_score > 0.8:
-            violations.append("high_cost")
-        if token_score > 0.8:
-            violations.append("high_tokens")
+        if latency_violation > 0:
+            violations.append("latency_p95_exceeded")
+        if cost_violation > 0:
+            violations.append("cost_per_test_exceeded")
         
-        # Determine label
-        if score > 0.8:
+        # Determine label based on violations
+        if score >= 1.0:
             label = SignalLabel.VIOLATION
-        elif score > 0.5:
+        elif score > 0.0:
             label = SignalLabel.HIT
         else:
             label = SignalLabel.CLEAN
@@ -90,19 +96,18 @@ class PerformanceMetricsProvider(GuardrailProvider):
             confidence=confidence,
             details={
                 "latency_ms": latency_ms,
+                "p95_latency_ms": p95_latency_ms,
                 "token_count": token_count,
-                "cost_usd": cost_usd,
+                "cost_per_test": cost_per_test,
                 "thresholds": {
-                    "latency_ms": latency_threshold_ms,
-                    "cost_usd": cost_threshold_usd,
-                    "tokens": token_threshold
+                    "latency_p95_ms": latency_p95_threshold_ms,
+                    "cost_per_test": cost_per_test_threshold
                 },
-                "scores": {
-                    "latency": latency_score,
-                    "cost": cost_score,
-                    "tokens": token_score
+                "violations": {
+                    "latency": latency_violation > 0,
+                    "cost": cost_violation > 0
                 },
-                "violations": violations
+                "violation_details": violations
             }
         )
 
@@ -119,6 +124,15 @@ class RateCostLimitsProvider(GuardrailProvider):
     def is_available(self) -> bool:
         """Always available."""
         return self._available
+    
+    def check_dependencies(self) -> list[str]:
+        """No external dependencies."""
+        return []
+    
+    @property
+    def version(self) -> Optional[str]:
+        """Get provider version."""
+        return "1.0.0"
     
     async def check(self, input_text: str, output_text: Optional[str] = None,
                    metrics: Optional[Dict[str, Any]] = None) -> SignalResult:

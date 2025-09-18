@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { ChevronDown, ChevronRight, BarChart3, Shield, ShieldCheck, Zap, TrendingUp, Layers, CheckSquare, Square, AlertTriangle, Clock, Database, Scale, LucideIcon, Upload, Lock, Info } from 'lucide-react';
 import { DataRequirements, SUITE_DATA_REQUIREMENTS } from '../types/metrics';
 import { getDefaultRagSelection, isTestDisabledByBundle, getUniqueTestCount, normalizeSelectedTests } from '../utils/test-selection';
-import type { RedTeamCategory, RedTeamSubtests, SafetyCategory, SafetySubtests } from '../types';
+import type { RedTeamCategory, RedTeamSubtests as RedTeamSubtestsType, SafetyCategory, SafetySubtests as SafetySubtestsType } from '../types';
 import RedTeamSubtests from './RedTeamSubtests';
 import SafetySubtests from './SafetySubtests';
+import ReusedFromPreflightChip from './preflight/ReusedFromPreflightChip';
 
 interface TestDefinition {
   id: string;
@@ -14,7 +15,9 @@ interface TestDefinition {
   required?: boolean; // Some tests might be mandatory
   estimatedDuration?: string;
   dependencies?: string[]; // Other test IDs this test depends on
-
+  // Cross-suite deduplication fields
+  reusedSignals?: number;
+  reusedCategories?: string[];
 }
 
 interface TestSuite {
@@ -34,8 +37,8 @@ interface TestSuiteSelectorProps {
   hasGroundTruth: boolean;
   onSelectionChange: (selectedTests: Record<string, string[]>) => void;
   onSuiteConfigChange: (suiteId: string, config: any) => void;
-  onRedTeamSubtestsChange?: (subtests: RedTeamSubtests) => void;
-  onSafetySubtestsChange?: (subtests: SafetySubtests) => void;
+  onRedTeamSubtestsChange?: (subtests: RedTeamSubtestsType) => void;
+  onSafetySubtestsChange?: (subtests: SafetySubtestsType) => void;
   onSuitesChange?: (suites: string[]) => void; // Notify parent of suite enable/disable
   dataStatus?: Partial<DataRequirements>; // Current data availability status
   onShowRequirements?: () => void; // Callback to scroll to data requirements section
@@ -56,7 +59,7 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
   const prevGtState = React.useRef(hasGroundTruth);
   
   // Red Team subtests state - initialize with all subtests selected (backward compatible)
-  const [redTeamSubtests, setRedTeamSubtests] = useState<RedTeamSubtests>({
+  const [redTeamSubtests, setRedTeamSubtests] = useState<RedTeamSubtestsType>({
     prompt_injection: ["direct", "indirect", "passage_embedded", "metadata_embedded"],
     jailbreak: ["role_play", "system_override"],
     data_extraction: ["system_prompt", "api_key", "base64"],
@@ -65,7 +68,7 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
   });
 
   // Safety subtests state - initialize with all subtests selected (backward compatible)
-  const [safetySubtests, setSafetySubtests] = useState<SafetySubtests>({
+  const [safetySubtests, setSafetySubtests] = useState<SafetySubtestsType>({
     toxicity: ["explicit", "implicit", "contextual"],
     hate: ["targeted", "general"],
     violence: ["graphic", "threat"],
@@ -1004,6 +1007,13 @@ const TestSuiteSelector: React.FC<TestSuiteSelectorProps> = ({
                               <span>{test.estimatedDuration}</span>
                             </span>
                           )}
+                          
+                          {/* Show reused from preflight chip if applicable */}
+                          <ReusedFromPreflightChip 
+                            reusedCount={(test as any).reusedSignals || 0}
+                            reusedCategories={(test as any).reusedCategories || []}
+                            size="sm"
+                          />
                         </div>
                         <p className={`text-sm ${
                           test.enabled 

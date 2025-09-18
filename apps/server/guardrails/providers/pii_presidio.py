@@ -37,6 +37,31 @@ class PresidioPIIProvider(GuardrailProvider):
         
         return self._available
     
+    def check_dependencies(self) -> list[str]:
+        """Check for missing dependencies."""
+        missing = []
+        
+        try:
+            from presidio_analyzer import AnalyzerEngine
+        except ImportError:
+            missing.append("presidio-analyzer")
+        
+        try:
+            import spacy
+        except ImportError:
+            missing.append("spacy")
+        
+        return missing
+    
+    @property
+    def version(self) -> Optional[str]:
+        """Get provider version."""
+        try:
+            import presidio_analyzer
+            return getattr(presidio_analyzer, '__version__', 'unknown')
+        except ImportError:
+            return None
+    
     async def check(self, input_text: str, output_text: Optional[str] = None) -> SignalResult:
         """Check for PII in input and output text."""
         if not self.is_available():

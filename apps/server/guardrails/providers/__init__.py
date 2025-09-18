@@ -11,6 +11,8 @@ from . import schema_guard
 from . import topics_nli
 from . import performance_metrics
 from . import adult_selfharm
+from . import pi_quickset
+from . import pi_quickset_guard
 
 __all__ = [
     "pii_presidio",
@@ -22,5 +24,7 @@ __all__ = [
     "schema_guard",
     "topics_nli",
     "performance_metrics",
-    "adult_selfharm"
+    "adult_selfharm",
+    "pi_quickset",
+    "pi_quickset_guard"
 ]

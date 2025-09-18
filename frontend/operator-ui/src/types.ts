@@ -280,10 +280,22 @@ export interface OrchestratorRequest {
   compare_with?: CompareWithConfig;
 }
 
+export interface GuardrailsBlockingInfo {
+  blocked: boolean;
+  mode: 'hard_gate' | 'mixed' | 'advisory';
+  blocking_categories: string[];
+  blocking_reasons: string[];
+  advisory_categories: string[];
+}
+
 export interface OrchestratorResult {
   run_id: string;
   artifacts: { json_path: string; xlsx_path: string; html_path?: string };
-  summary?: Record<string, unknown>;
+  summary?: Record<string, unknown> & {
+    status?: string;
+    blocked?: boolean;
+    guardrails_blocking?: GuardrailsBlockingInfo;
+  };
   counts?: Record<string, unknown>;
 }
 

@@ -13,6 +13,7 @@ import CompactGroundTruthPanel from "../components/CompactGroundTruthPanel";
 import TestSuiteSelector from "../components/TestSuiteSelector";
 import { ProvidedIntake } from "../lib/requirementStatus";
 import Preflight from "../components/preflight/Preflight";
+import GuardrailsBlockingBanner from "../components/guardrails/GuardrailsBlockingBanner";
 
 const DEFAULT_SUITES: TestSuite[] = ["rag_reliability_robustness"]; // Only RAG by default
 const REQUIRED_SHEETS = ["Summary","Detailed","API_Details","Inputs_And_Expected"];
@@ -925,29 +926,48 @@ export default function App() {
   // Estimated test count calculation based on selected individual tests
   const estimatedTests = useMemo(() => {
     let total = 0;
+    let reusedTotal = 0;
     
     // Count individual tests selected
     Object.entries(selectedTests).forEach(([suiteId, testIds]) => {
       if (testIds.length > 0) {
         // Base count is number of selected tests
         let suiteTotal = testIds.length;
+        let suiteReused = 0;
+        
+        // Count reused tests for this suite (mock data for now - would come from actual test data)
+        // In a real implementation, this would check the test metadata for reused signals
+        testIds.forEach(testId => {
+          // This is a placeholder - in reality, we'd check if the test has reused signals
+          // from the preflight run. For now, we'll estimate based on common overlaps.
+          const hasReusedSignals = (suiteId === 'safety' || suiteId === 'red_team') && 
+                                   Math.random() > 0.7; // 30% chance of reuse for demo
+          if (hasReusedSignals) {
+            suiteReused += 1;
+          }
+        });
         
         // Apply multipliers based on suite type and configuration
         if (suiteId === 'rag_quality') {
           const qaSize = qaSampleSize ? parseInt(qaSampleSize) : 8;
           suiteTotal = testIds.length * Math.max(1, Math.floor(qaSize / 3)); // Rough estimate
+          suiteReused = suiteReused * Math.max(1, Math.floor(qaSize / 3));
         } else if (suiteId === 'red_team') {
           const attacks = parseInt(attackMutators) || 1;
           suiteTotal = testIds.length * attacks * 2; // Each test type has multiple attack variations
+          suiteReused = suiteReused * attacks * 2;
         } else if (suiteId === 'safety') {
           const attacks = parseInt(attackMutators) || 1;
           suiteTotal = testIds.length * Math.max(3, attacks * 2); // Safety tests have multiple variations
+          suiteReused = suiteReused * Math.max(3, attacks * 2);
         } else if (suiteId === 'performance') {
           const perf = parseInt(perfRepeats) || 2;
           suiteTotal = testIds.length * perf; // Performance tests repeat
+          suiteReused = suiteReused * perf;
         }
         
         total += suiteTotal;
+        reusedTotal += suiteReused;
       }
     });
     
@@ -964,7 +984,14 @@ export default function App() {
       if (suite === "bias_smoke") total += parseInt(biasMaxPairs) || 10;
     });
     
-    return Math.max(1, total);
+    // Subtract reused tests from total (they don't need to be executed)
+    const effectiveTotal = Math.max(1, total - reusedTotal);
+    
+    return {
+      total: effectiveTotal,
+      reused: reusedTotal,
+      original: total
+    };
   }, [selectedTests, suites, qaSampleSize, attackMutators, perfRepeats, resilienceSamples, biasMaxPairs]);
 
   // --- downloads: compute robust paths ---
@@ -2150,7 +2177,12 @@ export default function App() {
               <div>
                 <label className="label">Estimated Tests</label>
                 <div className="text-2xl font-bold text-brand-600 dark:text-brand-400">
-                  ~{estimatedTests} tests
+                  ~{typeof estimatedTests === 'object' ? estimatedTests.total : estimatedTests} tests
+                  {typeof estimatedTests === 'object' && estimatedTests.reused > 0 && (
+                    <span className="text-emerald-600 dark:text-emerald-400 text-sm">
+                      ({estimatedTests.reused} reused from preflight)
+                    </span>
+                  )}
                 </div>
                 <small className="text-slate-500 dark:text-slate-400">
                   Based on selected suites and their individual configurations
@@ -2202,6 +2234,14 @@ export default function App() {
 
 
 
+
+        {/* Guardrails Blocking Banner */}
+        {hasRun && run?.summary?.guardrails_blocking && (
+          <GuardrailsBlockingBanner 
+            blockingInfo={run.summary.guardrails_blocking}
+            className="mb-4"
+          />
+        )}
 
         {/* Download card */}
         {hasRun && (

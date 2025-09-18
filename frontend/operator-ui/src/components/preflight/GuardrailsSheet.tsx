@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { GuardrailCategory, GuardrailRule } from '../../types/preflight';
 import { usePreflightStore } from '../../stores/preflightStore';
+import { useProviderHealth } from '../../hooks/useProviderHealth';
+import ProviderAvailabilityChip, { CategoryAvailabilityChip, ProviderUnavailableWarning } from '../guardrails/ProviderAvailabilityChip';
 
 interface CategoryConfig {
   icon: React.ComponentType<any>;
@@ -133,6 +135,8 @@ export default function GuardrailsSheet({ isOpen, onClose, onRunPreflight }: Gua
     profile, setProfile, rules, updateRule, toggleRule, 
     estimated, llmType, resetToProfile, addCustomRule 
   } = usePreflightStore();
+  
+  const { categoryHealth, isLoading: healthLoading, error: healthError } = useProviderHealth();
   
   const [preflightResult, setPreflightResult] = useState<{
     status: 'PASS' | 'FAIL';
@@ -372,6 +376,16 @@ export default function GuardrailsSheet({ isOpen, onClose, onRunPreflight }: Gua
                                     {rule.applicability === 'requiresRag' ? 'RAG' : 'Tools'}
                                   </span>
                                 )}
+                                
+                                {/* Provider availability */}
+                                {categoryHealth[rule.category] && (
+                                  <CategoryAvailabilityChip
+                                    category={rule.category}
+                                    available={categoryHealth[rule.category].available}
+                                    totalProviders={categoryHealth[rule.category].total_providers}
+                                    availableProviders={categoryHealth[rule.category].available_providers}
+                                  />
+                                )}
                               </div>
                             </div>
                           </div>
@@ -487,6 +501,37 @@ export default function GuardrailsSheet({ isOpen, onClose, onRunPreflight }: Gua
                         PII({preflightResult.details.pii}) • ASR({preflightResult.details.asr}) • 
                         p95={preflightResult.details.p95} • ${preflightResult.details.costPerTest}/test
                       </div>
+                      {preflightResult.details.pi_quickset && (
+                        <div className="text-gray-400 mt-1">
+                          <span className="inline-flex items-center gap-1">
+                            🎯 PI Quickset: {(preflightResult.details.pi_quickset.asr * 100).toFixed(1)}% ASR 
+                            ({preflightResult.details.pi_quickset.success}/{preflightResult.details.pi_quickset.total})
+                            {preflightResult.details.pi_quickset.families_used?.length > 0 && (
+                              <span className="text-xs">
+                                • {preflightResult.details.pi_quickset.families_used.join(', ')}
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {/* Provider availability summary */}
+                      {!healthLoading && Object.keys(categoryHealth).length > 0 && (
+                        <div className="text-gray-400 mt-2">
+                          <div className="text-xs mb-1">Provider Status:</div>
+                          <div className="flex flex-wrap gap-1">
+                            {Object.values(categoryHealth).map(category => (
+                              <CategoryAvailabilityChip
+                                key={category.category}
+                                category={category.category}
+                                available={category.available}
+                                totalProviders={category.total_providers}
+                                availableProviders={category.available_providers}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                     
                     <button className="text-xs text-purple-300 hover:text-purple-200 mt-2">

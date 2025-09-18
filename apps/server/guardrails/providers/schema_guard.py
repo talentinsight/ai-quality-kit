@@ -45,8 +45,8 @@ class SchemaGuardProvider(GuardrailProvider):
             # JSON code blocks
             r'```json\s*(\{.*?\})\s*```',
             r'```\s*(\{.*?\})\s*```',
-            # Direct JSON (simple heuristic)
-            r'(\{[^{}]*\})',
+            # Direct JSON (match balanced braces)
+            r'(\{(?:[^{}]|(?:\{[^{}]*\}))*\})',
         ]
         
         import re
@@ -64,7 +64,27 @@ class SchemaGuardProvider(GuardrailProvider):
         except json.JSONDecodeError:
             return None
     
-    async def check(self, input_text: str, output_text: Optional[str] = None) -> SignalResult:
+    def check_dependencies(self) -> list[str]:
+        """Check for missing dependencies."""
+        missing = []
+        
+        try:
+            import jsonschema
+        except ImportError:
+            missing.append("jsonschema")
+        
+        return missing
+    
+    @property
+    def version(self) -> Optional[str]:
+        """Get provider version."""
+        try:
+            import jsonschema
+            return getattr(jsonschema, '__version__', 'unknown')
+        except ImportError:
+            return None
+    
+    async def check(self, input_text: str, output_text: Optional[str] = None, schema: Optional[Dict[str, Any]] = None, threshold: float = 1.0) -> SignalResult:
         """Validate JSON output against schema."""
         if not self.is_available():
             return SignalResult(
@@ -90,38 +110,49 @@ class SchemaGuardProvider(GuardrailProvider):
         # Extract JSON from output
         json_data = self._extract_json_from_output(output_text)
         if json_data is None:
+            # If expecting JSON (threshold = 1.0) but none found, this is a violation
+            score = 1.0 if threshold >= 1.0 else 0.3
+            label = SignalLabel.VIOLATION if threshold >= 1.0 else SignalLabel.HIT
             return SignalResult(
                 id=self.provider_id,
                 category=self.category,
-                score=0.3,  # Mild concern if expecting JSON but none found
-                label=SignalLabel.HIT,
-                confidence=0.7,
-                details={"no_json_found": True, "output_length": len(output_text)}
+                score=score,
+                label=label,
+                confidence=0.9,
+                details={
+                    "no_json_found": True, 
+                    "output_length": len(output_text),
+                    "threshold": threshold,
+                    "expected_json": threshold >= 1.0
+                }
             )
         
-        # For now, perform basic JSON structure validation
-        # In a real implementation, this would validate against a provided schema
-        validation_results = self._basic_json_validation(json_data)
-        
-        # Calculate score based on validation results
+        # Perform schema validation if schema provided
+        validation_results = {}
         score = 0.0
-        if not validation_results["valid_structure"]:
-            score += 0.4
-        if validation_results["missing_common_fields"]:
-            score += 0.3
-        if validation_results["suspicious_content"]:
-            score += 0.5
         
-        score = min(1.0, score)
-        confidence = 0.8
+        if schema:
+            validation_results = self._validate_against_schema(json_data, schema)
+            # If schema validation fails and threshold is 1.0, it's a violation
+            if not validation_results["valid"] and threshold >= 1.0:
+                score = 1.0
+            elif not validation_results["valid"]:
+                score = 0.7  # Schema mismatch but not strict requirement
+        else:
+            # Basic structural validation
+            validation_results = self._basic_json_validation(json_data)
+            if not validation_results["valid_structure"]:
+                score = 0.4 if threshold >= 1.0 else 0.2
         
-        # Determine label
-        if score > 0.6:
+        # Determine label based on score and threshold
+        if score >= threshold:
             label = SignalLabel.VIOLATION
-        elif score > 0.2:
+        elif score > 0.0:
             label = SignalLabel.HIT
         else:
             label = SignalLabel.CLEAN
+        
+        confidence = 0.9  # High confidence in JSON parsing and validation
         
         return SignalResult(
             id=self.provider_id,
@@ -132,7 +163,9 @@ class SchemaGuardProvider(GuardrailProvider):
             details={
                 "json_found": True,
                 "json_keys": list(json_data.keys()) if isinstance(json_data, dict) else [],
-                "validation": validation_results
+                "validation": validation_results,
+                "threshold": threshold,
+                "schema_provided": schema is not None
             }
         )
     
@@ -167,3 +200,31 @@ class SchemaGuardProvider(GuardrailProvider):
             "field_count": len(json_data),
             "has_common_field": has_common_field
         }
+    
+    def _validate_against_schema(self, json_data: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate JSON data against provided schema."""
+        try:
+            import jsonschema
+            
+            # Validate against schema
+            jsonschema.validate(json_data, schema)
+            
+            return {
+                "valid": True,
+                "errors": [],
+                "schema_type": schema.get("type", "unknown")
+            }
+            
+        except jsonschema.ValidationError as e:
+            return {
+                "valid": False,
+                "errors": [str(e)],
+                "schema_type": schema.get("type", "unknown"),
+                "error_path": list(e.path) if hasattr(e, 'path') else []
+            }
+        except Exception as e:
+            return {
+                "valid": False,
+                "errors": [f"Schema validation error: {str(e)}"],
+                "schema_type": schema.get("type", "unknown")
+            }

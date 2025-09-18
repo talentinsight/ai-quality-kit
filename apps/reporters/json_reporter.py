@@ -116,7 +116,7 @@ def build_json(
     
     # Add Guardrails section if present (Reports v2)
     if guardrails_data:
-        report["guardrails"] = {
+        guardrails_section = {
             "mode": guardrails_data.get("mode", "advisory"),
             "decision": guardrails_data.get("decision", "pass"),
             "failing_categories": guardrails_data.get("failing_categories", []),
@@ -125,6 +125,30 @@ def build_json(
             "signals": guardrails_data.get("signals", []),
             "run_manifest": guardrails_data.get("run_manifest", {})
         }
+        
+        # Add PI quickset data if present
+        # Check for PI quickset data from either provider
+        pi_quickset_data = None
+        for provider_id in ["pi.quickset", "pi.quickset_guard"]:
+            if provider_id in guardrails_data:
+                pi_quickset_data = guardrails_data[provider_id]
+                break
+        
+        if pi_quickset_data:
+            guardrails_section["pi_quickset"] = {
+                "asr": pi_quickset_data.get("asr", 0.0),
+                "total": pi_quickset_data.get("total", 0),
+                "success": pi_quickset_data.get("success", 0),
+                "ambiguous": pi_quickset_data.get("ambiguous", 0),
+                "families_used": pi_quickset_data.get("families_used", []),
+                "version": pi_quickset_data.get("version", "unknown"),
+                "hash": pi_quickset_data.get("hash", "unknown"),
+                "threshold": pi_quickset_data.get("threshold", 0.05),
+                "quickset_items": pi_quickset_data.get("quickset_items", {}),
+                "heuristic_risk": pi_quickset_data.get("heuristic_risk", 0.0)
+            }
+        
+        report["guardrails"] = guardrails_section
     
     # Add Performance Metrics section if present (Reports v2)
     if performance_metrics:
