@@ -22,7 +22,7 @@ class Config:
         self.rag_top_k: int = int(os.getenv("RAG_TOP_K", "4"))
         self.allowed_providers: Set[str] = set(
             provider.strip() for provider in 
-            os.getenv("ALLOWED_PROVIDERS", "openai,anthropic,gemini,custom_rest,mock,mcp").split(",")
+            os.getenv("ALLOWED_PROVIDERS", "openai,anthropic,gemini,custom_rest,mock,mcp,test").split(",")
         )
         
         # MCP Configuration

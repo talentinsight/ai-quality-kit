@@ -1,4 +1,4 @@
-.PHONY: test test-ci clean quickcheck quickcheck.running requirements requirements-clean validate-templates
+.PHONY: test test-ci test-coverage clean quickcheck quickcheck.running requirements requirements-clean validate-templates go-no-go
 
 test:
 	pytest -q --cov=apps --cov=llm --cov-report=term-missing --cov-report=html --ignore=evals --ignore=guardrails --ignore=safety
@@ -37,3 +37,23 @@ validate-templates:
 	@echo "🔍 Validating templates against schemas..."
 	@source .venv/bin/activate && python scripts/validate_templates.py
 	@echo "✅ Template validation completed"
+
+# Coverage testing with enforcement gate
+test-coverage:
+	@echo "🧪 Running tests with coverage enforcement..."
+	@if [ "$(COVERAGE_ENFORCE)" = "1" ]; then \
+		echo "⚠️  Coverage enforcement enabled (80% minimum)"; \
+		source .venv/bin/activate && pytest --cov=apps/server/guardrails --cov=apps/orchestrator --cov=apps/reporters --cov-report=term-missing --cov-report=html:htmlcov --cov-fail-under=80 tests/; \
+	else \
+		echo "ℹ️  Coverage enforcement disabled (set COVERAGE_ENFORCE=1 to enable)"; \
+		source .venv/bin/activate && pytest --cov=apps/server/guardrails --cov=apps/orchestrator --cov=apps/reporters --cov-report=term-missing --cov-report=html:htmlcov tests/; \
+	fi
+	@echo "✅ Coverage report generated in htmlcov/"
+
+# Go/No-Go validation harness
+go-no-go:
+	@echo "🚀 Running Go/No-Go validation harness..."
+	@echo "📋 This will test the complete AI Quality Kit flow end-to-end"
+	@source .venv/bin/activate && python scripts/go_no_go_validation_simple.py --verbose --output-dir go_no_go_results
+	@echo "📊 Results and artifacts saved to go_no_go_results/"
+	@echo "✅ Go/No-Go validation completed"
