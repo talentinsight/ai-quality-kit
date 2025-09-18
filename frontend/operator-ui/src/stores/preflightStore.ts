@@ -175,6 +175,8 @@ interface PreflightStore extends UiPreflightState {
   updateRagOptions: (updates: Partial<PreflightStore['ragOptions']>) => void;
   updateSuiteConfig: (suiteId: string, updates: any) => void;
   updateThreshold: (key: string, value: number | string | boolean) => void;
+  addCustomRule: (rule: GuardrailRule) => void;
+  removeRule: (ruleId: string) => void;
 }
 
 export const usePreflightStore = create<PreflightStore>((set, get) => ({
@@ -369,5 +371,24 @@ export const usePreflightStore = create<PreflightStore>((set, get) => ({
         [key]: value
       }
     });
+  },
+  
+  addCustomRule: (rule) => {
+    const state = get();
+    set({
+      rules: {
+        ...state.rules,
+        [rule.id]: rule
+      }
+    });
+    get().updateEstimate();
+  },
+  
+  removeRule: (ruleId) => {
+    const state = get();
+    const newRules = { ...state.rules };
+    delete newRules[ruleId];
+    set({ rules: newRules });
+    get().updateEstimate();
   }
 }));

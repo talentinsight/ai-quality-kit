@@ -12,6 +12,7 @@ interface CategoryConfig {
   icon: React.ComponentType<any>;
   title: string;
   description: string;
+  detailedDescription?: string;
   color: string;
   thresholdType: 'select' | 'number';
   thresholdOptions?: string[];
@@ -23,6 +24,7 @@ const CATEGORY_CONFIG: Record<GuardrailCategory, CategoryConfig> = {
     icon: Lock,
     title: 'PII Detection',
     description: 'Detect and prevent sensitive data leaks',
+    detailedDescription: 'Uses Microsoft Presidio to detect personally identifiable information (PII) such as names, emails, phone numbers, SSNs, and credit card numbers in both input prompts and LLM outputs. Helps ensure GDPR, HIPAA, and other privacy compliance.',
     color: 'from-red-500 to-pink-500',
     thresholdType: 'select',
     thresholdOptions: ['strict', 'medium', 'lenient']
@@ -31,6 +33,7 @@ const CATEGORY_CONFIG: Record<GuardrailCategory, CategoryConfig> = {
     icon: Shield,
     title: 'Jailbreak Guard',
     description: 'Prevent prompt injection and jailbreak attempts',
+    detailedDescription: 'Uses heuristic pattern matching inspired by Rebuff to detect prompt injection attacks like DAN-style jailbreaks, instruction overrides, system prompt extraction, role-playing attacks, and encoding attempts. Analyzes input prompts for malicious patterns.',
     color: 'from-purple-500 to-indigo-500',
     thresholdType: 'number',
     thresholdRange: [0, 1]
@@ -39,6 +42,7 @@ const CATEGORY_CONFIG: Record<GuardrailCategory, CategoryConfig> = {
     icon: AlertTriangle,
     title: 'Toxicity Filter',
     description: 'Filter harmful and toxic content',
+    detailedDescription: 'Uses Detoxify ML model to detect toxic, hateful, threatening, obscene, insulting, and identity-attacking content in LLM outputs. Helps maintain safe and respectful AI interactions by filtering harmful language.',
     color: 'from-orange-500 to-red-500',
     thresholdType: 'number',
     thresholdRange: [0, 1]
@@ -47,6 +51,7 @@ const CATEGORY_CONFIG: Record<GuardrailCategory, CategoryConfig> = {
     icon: DollarSign,
     title: 'Rate/Cost Limits',
     description: 'Monitor API usage and costs',
+    detailedDescription: 'Tracks API request rates, token consumption, and estimated costs in real-time. Helps prevent unexpected billing spikes and ensures compliance with rate limits. Can enforce hard limits or provide advisory warnings.',
     color: 'from-green-500 to-emerald-500',
     thresholdType: 'number',
     thresholdRange: [1, 1000]
@@ -55,6 +60,7 @@ const CATEGORY_CONFIG: Record<GuardrailCategory, CategoryConfig> = {
     icon: Clock,
     title: 'Latency Check',
     description: 'Monitor response times',
+    detailedDescription: 'Measures end-to-end response times including network latency, processing time, and queue delays. Helps ensure SLA compliance and identify performance bottlenecks. Tracks P95, P99 latencies and timeout rates.',
     color: 'from-blue-500 to-cyan-500',
     thresholdType: 'number',
     thresholdRange: [100, 10000]
@@ -63,6 +69,7 @@ const CATEGORY_CONFIG: Record<GuardrailCategory, CategoryConfig> = {
     icon: FileCheck,
     title: 'Schema Validation',
     description: 'Validate response structure',
+    detailedDescription: 'Validates LLM outputs against predefined JSON schemas to ensure structured responses meet expected format requirements. Essential for function calling, API integrations, and structured data extraction use cases.',
     color: 'from-teal-500 to-green-500',
     thresholdType: 'select',
     thresholdOptions: ['strict', 'medium', 'lenient']
@@ -71,6 +78,7 @@ const CATEGORY_CONFIG: Record<GuardrailCategory, CategoryConfig> = {
     icon: Zap,
     title: 'Resilience',
     description: 'Test system robustness',
+    detailedDescription: 'Tests system robustness against various failure modes including unicode confusables, gibberish inputs, very long prompts, repeat tokens, and adversarial inputs. Measures entropy, detects confusable characters, and stress-tests edge cases.',
     color: 'from-yellow-500 to-orange-500',
     thresholdType: 'select',
     thresholdOptions: ['light', 'medium', 'heavy']
@@ -79,6 +87,7 @@ const CATEGORY_CONFIG: Record<GuardrailCategory, CategoryConfig> = {
     icon: Scale,
     title: 'Bias Detection',
     description: 'Detect unfair or biased responses',
+    detailedDescription: 'Analyzes LLM outputs for demographic bias, unfair treatment, and discriminatory language across different groups. Uses statistical parity metrics and fairness indicators to ensure equitable AI behavior across all user demographics.',
     color: 'from-pink-500 to-purple-500',
     thresholdType: 'number',
     thresholdRange: [0, 1]
@@ -86,11 +95,31 @@ const CATEGORY_CONFIG: Record<GuardrailCategory, CategoryConfig> = {
 };
 
 const SOURCE_BADGES = {
-  safety: { label: 'Safety', color: 'bg-red-500/20 text-red-300 border-red-500/30' },
-  red_team: { label: 'RedTeam', color: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
-  rag_reliability: { label: 'RAG', color: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
-  performance: { label: 'Perf', color: 'bg-green-500/20 text-green-300 border-green-500/30' },
-  bias: { label: 'Bias', color: 'bg-pink-500/20 text-pink-300 border-pink-500/30' }
+  safety: { 
+    label: 'Safety', 
+    color: 'bg-red-500/20 text-red-300 border-red-500/30',
+    description: 'Originated from Safety test suite - content safety and policy compliance checks'
+  },
+  red_team: { 
+    label: 'RedTeam', 
+    color: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+    description: 'Originated from Red Team test suite - adversarial testing and attack simulation'
+  },
+  rag_reliability: { 
+    label: 'RAG', 
+    color: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+    description: 'Originated from RAG Reliability test suite - retrieval and generation quality checks'
+  },
+  performance: { 
+    label: 'Perf', 
+    color: 'bg-green-500/20 text-green-300 border-green-500/30',
+    description: 'Originated from Performance test suite - latency, throughput and resource monitoring'
+  },
+  bias: { 
+    label: 'Bias', 
+    color: 'bg-pink-500/20 text-pink-300 border-pink-500/30',
+    description: 'Originated from Bias Detection test suite - fairness and demographic parity checks'
+  }
 };
 
 interface GuardrailsSheetProps {
@@ -102,7 +131,7 @@ interface GuardrailsSheetProps {
 export default function GuardrailsSheet({ isOpen, onClose, onRunPreflight }: GuardrailsSheetProps) {
   const { 
     profile, setProfile, rules, updateRule, toggleRule, 
-    estimated, llmType, resetToProfile 
+    estimated, llmType, resetToProfile, addCustomRule 
   } = usePreflightStore();
   
   const [preflightResult, setPreflightResult] = useState<{
@@ -112,6 +141,18 @@ export default function GuardrailsSheet({ isOpen, onClose, onRunPreflight }: Gua
   } | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [showComposer, setShowComposer] = useState(false);
+  const [showSourceLabels, setShowSourceLabels] = useState(false);
+  const [showAddRuleModal, setShowAddRuleModal] = useState(false);
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  const [selectedInfo, setSelectedInfo] = useState<{title: string, description: string} | null>(null);
+  const [newRule, setNewRule] = useState({
+    id: '',
+    category: 'pii' as GuardrailCategory,
+    threshold: 0.8,
+    mode: 'advisory' as 'advisory' | 'hardGate',
+    applicability: 'agnostic' as 'agnostic' | 'requiresRag' | 'requiresTools',
+    source: 'safety' as 'safety' | 'red_team' | 'rag_reliability' | 'performance' | 'bias'
+  });
 
   const handleProfileChange = (newProfile: 'quick' | 'standard' | 'deep') => {
     setProfile(newProfile);
@@ -211,6 +252,16 @@ export default function GuardrailsSheet({ isOpen, onClose, onRunPreflight }: Gua
                 <h2 id="guardrails-sheet-title" className="text-xl font-bold text-white">Recommended Guardrails</h2>
                 <p id="guardrails-sheet-description" className="sr-only">Configure guardrails for your LLM testing including PII detection, jailbreak protection, and performance monitoring</p>
                 
+                {/* Source Labels Toggle */}
+                <button
+                  onClick={() => setShowSourceLabels(!showSourceLabels)}
+                  className="flex items-center gap-2 px-3 py-1 text-xs text-gray-400 hover:text-white border border-gray-600 hover:border-gray-500 rounded-lg transition-colors"
+                  title={showSourceLabels ? "Hide source suite labels" : "Show source suite labels"}
+                >
+                  <span>{showSourceLabels ? 'Hide' : 'Show'} Sources</span>
+                  <span className="text-xs">({showSourceLabels ? 'ON' : 'OFF'})</span>
+                </button>
+                
                 {/* Profile chips */}
                 <div className="flex bg-gray-800 rounded-lg p-1" role="radiogroup" aria-label="Guardrails profile selection">
                   {(['quick', 'standard', 'deep'] as const).map((p) => (
@@ -289,11 +340,33 @@ export default function GuardrailsSheet({ isOpen, onClose, onRunPreflight }: Gua
                               <Icon className="w-5 h-5 text-white" />
                             </div>
                             <div>
-                              <h3 className="font-medium text-white">{config.title}</h3>
+                              <div className="flex items-center gap-2">
+                                <h3 className="font-medium text-white">{config.title}</h3>
+                                {config.detailedDescription && (
+                                  <button 
+                                    onClick={() => {
+                                      setSelectedInfo({
+                                        title: config.title,
+                                        description: config.detailedDescription || ''
+                                      });
+                                      setShowInfoModal(true);
+                                    }}
+                                    className="cursor-pointer hover:bg-gray-700/50 rounded p-1 transition-colors"
+                                    title="Click for detailed information"
+                                  >
+                                    <Info className="w-4 h-4 text-gray-400 hover:text-blue-400 transition-colors" />
+                                  </button>
+                                )}
+                              </div>
                               <div className="flex items-center gap-2 mt-1">
-                                <span className={`px-2 py-0.5 text-xs border rounded ${sourceBadge.color}`}>
-                                  {sourceBadge.label}
-                                </span>
+                                {showSourceLabels && (
+                                  <span 
+                                    className={`px-2 py-0.5 text-xs border rounded ${sourceBadge.color}`}
+                                    title={sourceBadge.description}
+                                  >
+                                    {sourceBadge.label}
+                                  </span>
+                                )}
                                 {rule.applicability !== 'agnostic' && (
                                   <span className="px-2 py-0.5 text-xs bg-gray-700 text-gray-300 rounded">
                                     {rule.applicability === 'requiresRag' ? 'RAG' : 'Tools'}
@@ -435,7 +508,10 @@ export default function GuardrailsSheet({ isOpen, onClose, onRunPreflight }: Gua
                         <button className="px-3 py-1 bg-purple-600 text-white text-sm rounded">AND</button>
                         <button className="px-3 py-1 border border-gray-600 text-gray-300 text-sm rounded">OR</button>
                       </div>
-                      <button className="flex items-center gap-2 w-full px-3 py-2 border border-gray-600 text-gray-300 text-sm rounded hover:border-gray-500 transition-colors duration-200">
+                      <button 
+                        onClick={() => setShowAddRuleModal(true)}
+                        className="flex items-center gap-2 w-full px-3 py-2 border border-gray-600 text-gray-300 text-sm rounded hover:border-gray-500 transition-colors duration-200"
+                      >
                         <Plus className="w-4 h-4" />
                         Add Rule
                       </button>
@@ -446,6 +522,173 @@ export default function GuardrailsSheet({ isOpen, onClose, onRunPreflight }: Gua
             </div>
           </motion.div>
         </>
+      )}
+      
+      {/* Add Rule Modal */}
+      {showAddRuleModal && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setShowAddRuleModal(false)}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            className="bg-gray-900 border border-gray-700 rounded-xl p-6 max-w-md w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-white mb-4">Add Custom Guardrail Rule</h3>
+            
+            <div className="space-y-4">
+              {/* Rule ID */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Rule ID</label>
+                <input
+                  type="text"
+                  value={newRule.id}
+                  onChange={(e) => setNewRule(prev => ({ ...prev, id: e.target.value }))}
+                  placeholder="custom-rule-1"
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:border-purple-500 focus:outline-none"
+                />
+              </div>
+              
+              {/* Category */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Category</label>
+                <select
+                  value={newRule.category}
+                  onChange={(e) => setNewRule(prev => ({ ...prev, category: e.target.value as GuardrailCategory }))}
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+                >
+                  <option value="pii">PII Detection</option>
+                  <option value="jailbreak">Jailbreak Guard</option>
+                  <option value="toxicity">Toxicity Filter</option>
+                  <option value="rateCost">Rate/Cost Limits</option>
+                  <option value="latency">Latency Check</option>
+                  <option value="schema">Schema Validation</option>
+                  <option value="resilience">Resilience</option>
+                  <option value="bias">Bias Detection</option>
+                </select>
+              </div>
+              
+              {/* Threshold */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Threshold</label>
+                <input
+                  type="number"
+                  value={newRule.threshold}
+                  onChange={(e) => setNewRule(prev => ({ ...prev, threshold: parseFloat(e.target.value) || 0 }))}
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+                />
+              </div>
+              
+              {/* Mode */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Mode</label>
+                <select
+                  value={newRule.mode}
+                  onChange={(e) => setNewRule(prev => ({ ...prev, mode: e.target.value as 'advisory' | 'hardGate' }))}
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+                >
+                  <option value="advisory">Advisory</option>
+                  <option value="hardGate">Hard Gate</option>
+                </select>
+              </div>
+              
+              {/* Source */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Source Suite</label>
+                <select
+                  value={newRule.source}
+                  onChange={(e) => setNewRule(prev => ({ ...prev, source: e.target.value as any }))}
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+                >
+                  <option value="safety">Safety</option>
+                  <option value="red_team">Red Team</option>
+                  <option value="rag_reliability">RAG Reliability</option>
+                  <option value="performance">Performance</option>
+                  <option value="bias">Bias</option>
+                </select>
+              </div>
+            </div>
+            
+            {/* Actions */}
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowAddRuleModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-600 text-gray-300 rounded-lg hover:border-gray-500 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (newRule.id.trim()) {
+                    addCustomRule({
+                      ...newRule,
+                      enabled: true
+                    });
+                    setNewRule({
+                      id: '',
+                      category: 'pii',
+                      threshold: 0.8,
+                      mode: 'advisory',
+                      applicability: 'agnostic',
+                      source: 'safety'
+                    });
+                    setShowAddRuleModal(false);
+                  }
+                }}
+                disabled={!newRule.id.trim()}
+                className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+              >
+                Add Rule
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+      
+      {/* Info Modal */}
+      {showInfoModal && selectedInfo && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setShowInfoModal(false)}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            className="bg-gray-900 border border-gray-700 rounded-xl p-6 max-w-lg w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <Info className="w-6 h-6 text-blue-400" />
+              <h3 className="text-lg font-semibold text-white">{selectedInfo.title}</h3>
+            </div>
+            
+            <div className="text-gray-300 text-sm leading-relaxed mb-6">
+              {selectedInfo.description}
+            </div>
+            
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowInfoModal(false)}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+              >
+                Got it
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
       )}
     </AnimatePresence>
   );

@@ -906,111 +906,42 @@ class TestRunner:
         return filtered_cases
     
     def _filter_red_team_tests(self, test_cases: List[Dict[str, Any]], selected_test_ids: List[str]) -> List[Dict[str, Any]]:
-        """Filter red team tests based on selected attack types and subtests."""
+        """Filter red team tests based on selected test IDs - simple and direct."""
         filtered_cases = []
         
-        # Check if Red Team subtests configuration is provided
-        red_team_config = None
-        if self.request.options and 'red_team' in self.request.options:
-            red_team_config = self.request.options['red_team']
+        # Simple mapping: test ID -> keywords to match in test cases
+        test_keywords = {
+            'prompt_injection': ['injection', 'prompt_injection'],
+            'jailbreak_attempts': ['jailbreak', 'role_play'],
+            'data_extraction': ['extraction', 'data_leak'],
+            'context_manipulation': ['context', 'manipulation'],
+            'social_engineering': ['social', 'engineering']
+        }
         
-        # If subtests are configured, use the new filtering logic
-        if red_team_config and 'subtests' in red_team_config:
-            subtests_config = red_team_config['subtests']
+        for test_case in test_cases:
+            test_category = test_case.get('category', '').lower()
+            test_type = test_case.get('type', '').lower()
             
-            # Map category names to subtest filtering
-            category_mapping = {
-                'prompt_injection': 'prompt_injection',
-                'jailbreak_attempts': 'jailbreak', 
-                'data_extraction': 'data_extraction',
-                'context_manipulation': 'context_poisoning',
-                'social_engineering': 'social_engineering'
-            }
+            # Check if this test case matches any selected test
+            should_include = False
+            for selected_id in selected_test_ids:
+                if selected_id in test_keywords:
+                    keywords = test_keywords[selected_id]
+                    if any(keyword in test_category or keyword in test_type for keyword in keywords):
+                        should_include = True
+                        break
             
-            for test_case in test_cases:
-                test_category = test_case.get('category', '').lower()
-                test_subtype = test_case.get('subtype', '').lower()
-                
-                # Check if this test case matches any selected category and subtest
-                should_include = False
-                for selected_id in selected_test_ids:
-                    if selected_id in category_mapping:
-                        config_category = category_mapping[selected_id]
-                        
-                        # Check if category is enabled in subtests config
-                        if config_category in subtests_config:
-                            selected_subtests = subtests_config[config_category]
-                            
-                            # If no subtests selected for this category, skip
-                            if not selected_subtests:
-                                continue
-                                
-                            # Check if test matches category
-                            category_keywords = {
-                                'prompt_injection': ['injection', 'prompt_injection'],
-                                'jailbreak': ['jailbreak', 'role_play'],
-                                'data_extraction': ['extraction', 'data_leak'],
-                                'context_poisoning': ['context', 'manipulation'],
-                                'social_engineering': ['social', 'engineering']
-                            }
-                            
-                            keywords = category_keywords.get(config_category, [])
-                            category_matches = any(keyword in test_category for keyword in keywords)
-                            
-                            if category_matches:
-                                # If test has subtype, check if it's selected
-                                if test_subtype:
-                                    if test_subtype in selected_subtests:
-                                        should_include = True
-                                        break
-                                else:
-                                    # If no subtype, include when category is enabled
-                                    should_include = True
-                                    break
-                
-                if should_include:
-                    filtered_cases.append(test_case)
-            
-            # Log subtests filtering
-            if filtered_cases:
-                self.capture_log("INFO", "orchestrator", 
-                               f"Red Team subtests filtering: {len(filtered_cases)} tests selected from {len(test_cases)} total",
-                               event="red_team_subtests_filter", 
-                               selected_subtests=subtests_config)
-        else:
-            # Fallback to legacy filtering logic
-            attack_type_mapping = {
-                'prompt_injection': ['injection', 'prompt_injection'],
-                'jailbreak_attempts': ['jailbreak', 'role_play'],
-                'data_extraction': ['extraction', 'data_leak'],
-                'context_manipulation': ['context', 'manipulation'],
-                'social_engineering': ['social', 'engineering']
-            }
-            
-            for test_case in test_cases:
-                test_category = test_case.get('category', '').lower()
-                test_type = test_case.get('type', '').lower()
-                
-                # Check if this test case matches any selected test type
-                should_include = False
-                for selected_id in selected_test_ids:
-                    if selected_id in attack_type_mapping:
-                        keywords = attack_type_mapping[selected_id]
-                        if any(keyword in test_category or keyword in test_type for keyword in keywords):
-                            should_include = True
-                            break
-                
-                if should_include:
-                    filtered_cases.append(test_case)
+            if should_include:
+                filtered_cases.append(test_case)
         
         return filtered_cases
     
     def _filter_safety_tests(self, test_cases: List[Dict[str, Any]], selected_test_ids: List[str]) -> List[Dict[str, Any]]:
-        """Filter safety tests based on selected safety categories."""
+        """Filter safety tests based on selected test IDs - simple and direct."""
         filtered_cases = []
         
-        # Map UI test IDs to safety categories
-        safety_type_mapping = {
+        # Simple mapping: test ID -> keywords to match in test cases
+        test_keywords = {
             'toxicity_detection': ['toxicity', 'toxic'],
             'hate_speech': ['hate', 'discrimination'],
             'violence_content': ['violence', 'violent'],
@@ -1023,11 +954,11 @@ class TestRunner:
             test_category = test_case.get('category', '').lower()
             test_type = test_case.get('type', '').lower()
             
-            # Check if this test case matches any selected safety type
+            # Check if this test case matches any selected test
             should_include = False
             for selected_id in selected_test_ids:
-                if selected_id in safety_type_mapping:
-                    keywords = safety_type_mapping[selected_id]
+                if selected_id in test_keywords:
+                    keywords = test_keywords[selected_id]
                     if any(keyword in test_category or keyword in test_type for keyword in keywords):
                         should_include = True
                         break
@@ -1038,11 +969,11 @@ class TestRunner:
         return filtered_cases
     
     def _filter_performance_tests(self, test_cases: List[Dict[str, Any]], selected_test_ids: List[str]) -> List[Dict[str, Any]]:
-        """Filter performance tests based on selected performance metrics."""
+        """Filter performance tests based on selected test IDs - simple and direct."""
         filtered_cases = []
         
-        # Map UI test IDs to performance test types
-        perf_type_mapping = {
+        # Simple mapping: test ID -> keywords to match in test cases
+        test_keywords = {
             'cold_start_latency': ['cold', 'start'],
             'warm_performance': ['warm', 'performance'],
             'throughput_testing': ['throughput', 'concurrent'],
@@ -1054,11 +985,11 @@ class TestRunner:
             test_category = test_case.get('category', '').lower()
             test_type = test_case.get('type', '').lower()
             
-            # Check if this test case matches any selected performance type
+            # Check if this test case matches any selected test
             should_include = False
             for selected_id in selected_test_ids:
-                if selected_id in perf_type_mapping:
-                    keywords = perf_type_mapping[selected_id]
+                if selected_id in test_keywords:
+                    keywords = test_keywords[selected_id]
                     if any(keyword in test_category or keyword in test_type for keyword in keywords):
                         should_include = True
                         break

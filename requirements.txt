@@ -289,3 +289,9 @@ confusable-homoglyphs==3.2.0
 transformers==4.36.2
 torch==2.1.2
 jsonschema==4.20.0
+
+# Hybrid Detection Dependencies - Vector Similarity
+sentence-transformers==2.2.2
+scikit-learn==1.3.2
+numpy==1.24.3
+PyYAML==6.0.1

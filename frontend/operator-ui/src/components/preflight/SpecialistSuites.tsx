@@ -18,7 +18,6 @@ import {
 import type { DataRequirements } from '../../types/metrics';
 import { usePreflightStore } from '../../stores/preflightStore';
 import InlineDataIntake, { type TestDataArtifact, type ValidationResult } from './InlineDataIntake';
-import SuiteConfiguration from './SuiteConfiguration';
 
 interface SpecialistSuitesProps {
   llmType: string;
@@ -103,6 +102,8 @@ export default function SpecialistSuites({
   };
   
   // Handle test selection toggle
+  // Suite Configuration removed - test selection is sufficient
+
   const toggleTest = (suiteId: string, testId: string) => {
     const suite = suiteStates[suiteId];
     if (suite?.locked) return;
@@ -117,6 +118,8 @@ export default function SpecialistSuites({
         ...prev,
         [suiteId]: newSuiteTests
       };
+      
+      // Suite Configuration removed - no sync needed
       
       onSelectionChange(newSelection);
       return newSelection;
@@ -368,6 +371,27 @@ export default function SpecialistSuites({
         </div>
       </div>
       
+      {/* Header */}
+      <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+            <span className="text-white font-bold text-sm">2</span>
+          </div>
+          <div>
+            <h3 className="font-semibold text-slate-900 dark:text-slate-100">Specialist Test Suites</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              Comprehensive testing after Guardrails preflight passes
+            </p>
+          </div>
+        </div>
+        <div className="text-xs text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 p-3 rounded-lg">
+          <strong>Note:</strong> These are detailed test suites that run comprehensive analysis. 
+          Each suite has configurable parameters and can take 5-30 minutes to complete.
+          <br />
+          <strong>Suite Configuration:</strong> Click to customize test parameters, thresholds, and attack vectors.
+        </div>
+      </div>
+      
       {/* Suite cards */}
       <div className="space-y-3">
         {Object.values(suiteStates).map(suite => {
@@ -532,10 +556,7 @@ export default function SpecialistSuites({
                 </div>
               )}
               
-              {/* Suite Configuration */}
-              {suite.expanded && !suite.locked && (
-                <SuiteConfiguration suiteId={suite.id} />
-              )}
+              {/* Suite Configuration - REMOVED: Test selection is sufficient */}
 
               {/* Suite tests */}
               <AnimatePresence>
@@ -550,9 +571,14 @@ export default function SpecialistSuites({
                     <div className="p-4 space-y-3">
                       {/* Test Selection Controls */}
                       <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-700">
-                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                          Tests ({selectedCount}/{totalTests})
-                        </span>
+                        <div>
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                            Individual Tests ({selectedCount}/{totalTests})
+                          </span>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                            Select which specific tests to run. Configuration above controls how each test executes.
+                          </p>
+                        </div>
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => {

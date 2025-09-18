@@ -245,8 +245,18 @@ export default function PreflightWizard({ onRunTests }: PreflightWizardProps) {
             >
               {/* Guardrails Trigger */}
               <div className="text-center">
-                <h2 className="text-2xl font-bold text-white mb-2">Configure Guardrails</h2>
-                <p className="text-gray-400 mb-8">Set up safety checks and performance monitoring</p>
+                <div className="flex items-center justify-center gap-3 mb-4">
+                  <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center">
+                    <span className="text-white font-bold text-sm">1</span>
+                  </div>
+                  <h2 className="text-2xl font-bold text-white">Guardrails Preflight</h2>
+                </div>
+                <p className="text-gray-400 mb-4">Quick safety gate - runs in ~30 seconds</p>
+                <div className="text-sm text-gray-500 bg-gray-800/50 p-3 rounded-lg mb-8 max-w-2xl mx-auto">
+                  <strong>Purpose:</strong> Fast preliminary checks before running comprehensive tests.
+                  <br />
+                  <strong>Coverage:</strong> PII detection, jailbreak protection, toxicity filtering, basic performance.
+                </div>
                 
                 <motion.button
                   whileHover={{ scale: 1.02 }}
