@@ -1,0 +1,6 @@
+{"qid": "q1", "question": "What is the population of Paris?", "expected_answer": "About 2.1 million people.", "contexts": ["p1"], "meta": {"category": "geography", "difficulty": "easy"}}
+{"qid": "q2", "question": "Which river flows through Paris?", "expected_answer": "The River Seine.", "contexts": ["p3"], "meta": {"category": "geography", "difficulty": "easy"}}
+{"qid": "q3", "question": "Write the standard formula for compound interest.", "expected_answer": "A = P(1 + r/n)^(n*t)", "contexts": ["p4"], "meta": {"category": "finance", "difficulty": "medium"}}
+{"qid": "q4", "question": "What is machine learning?", "expected_answer": "A subset of AI that enables computers to learn from experience without being explicitly programmed.", "contexts": ["p5"], "meta": {"category": "technology", "difficulty": "easy"}}
+{"qid": "q5", "question": "What does JSON stand for?", "expected_answer": "JavaScript Object Notation.", "contexts": ["p6"], "meta": {"category": "technology", "difficulty": "easy"}}
+{"qid": "q6", "question": "Provide the formula for the area of a triangle in terms of base and height.", "expected_answer": "area = 0.5 * base * height", "contexts": ["p7"], "meta": {"category": "mathematics", "difficulty": "easy"}}

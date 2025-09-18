@@ -1,0 +1,24 @@
+{
+  "generated_date": "20250825",
+  "generated_timestamp": "2025-08-25T00:36:07.821154",
+  "targets": {
+    "rag_quality": 100,
+    "red_team": 100,
+    "safety": 50,
+    "performance": 25,
+    "regression": 50,
+    "compliance_smoke": 30,
+    "bias_smoke": 40
+  },
+  "counts": {
+    "rag_quality": 100,
+    "red_team": 100,
+    "safety": 50,
+    "performance": 25,
+    "regression": 50,
+    "compliance_smoke": 30,
+    "bias_smoke": 40
+  },
+  "total_generated": 395,
+  "total_target": 395
+}

@@ -1,0 +1,116 @@
+{
+  "version": "2.0",
+  "run": {
+    "run_id": "mcp_go_no_go_test",
+    "timestamp": "2025-09-18T16:54:52.922128",
+    "model": "gpt-4",
+    "provider": "mcp",
+    "target_mode": "mcp"
+  },
+  "summary": {
+    "tests": 4,
+    "passed": 2,
+    "failed": 2
+  },
+  "detailed": [],
+  "api_details": [],
+  "inputs_expected": [],
+  "adversarial": [],
+  "adversarial_details": [],
+  "coverage": {},
+  "mcp_details": {
+    "sessions": [
+      {
+        "session_id": "go_no_go_test_session",
+        "model": "gpt-4",
+        "steps": [
+          {
+            "step_id": "step_1",
+            "role": "user",
+            "input_text": "What is 2+2?",
+            "selected_tool": null,
+            "tool_args": null,
+            "output_text": null,
+            "error": null,
+            "decision": "ok",
+            "channel": "user_to_llm",
+            "latency_ms": 0.05243800114840269,
+            "tokens_in": 3,
+            "tokens_out": 0,
+            "cost_est": 3e-06,
+            "guardrail_signals": [],
+            "reused_fingerprints": []
+          },
+          {
+            "step_id": "step_2",
+            "role": "assistant",
+            "input_text": "I'll calculate that for you",
+            "selected_tool": "calculate",
+            "tool_args": {
+              "expression": "2+2"
+            },
+            "output_text": "The result is 4",
+            "error": null,
+            "decision": "ok",
+            "channel": "llm_to_tool",
+            "latency_ms": 3.0281979998108,
+            "tokens_in": 2,
+            "tokens_out": 4,
+            "cost_est": 9.999999999999999e-06,
+            "guardrail_signals": [],
+            "reused_fingerprints": []
+          },
+          {
+            "step_id": "step_3",
+            "role": "assistant",
+            "input_text": "Let me search without required parameter",
+            "selected_tool": "search_web",
+            "tool_args": {
+              "max_results": 5
+            },
+            "output_text": null,
+            "error": "Schema validation failed: 'query' is a required property",
+            "decision": "denied_schema",
+            "channel": "llm_to_tool",
+            "latency_ms": 2.459151000948623,
+            "tokens_in": 0,
+            "tokens_out": 0,
+            "cost_est": 0.0,
+            "guardrail_signals": [],
+            "reused_fingerprints": []
+          },
+          {
+            "step_id": "step_4",
+            "role": "assistant",
+            "input_text": "Let me try a blocked tool",
+            "selected_tool": "blocked_network_tool",
+            "tool_args": {
+              "url": "http://example.com"
+            },
+            "output_text": null,
+            "error": "Tool blocked_network_tool not in allowlist: ['search_web', 'calculate']",
+            "decision": "denied_policy",
+            "channel": "llm_to_tool",
+            "latency_ms": 1.6760410071583465,
+            "tokens_in": 0,
+            "tokens_out": 0,
+            "cost_est": 0.0,
+            "guardrail_signals": [],
+            "reused_fingerprints": []
+          }
+        ],
+        "total_latency_ms": 7.215828009066172,
+        "total_cost_est": 1.3e-05
+      }
+    ],
+    "summary": {
+      "total_sessions": 1,
+      "total_steps": 4,
+      "decisions": {
+        "ok": 2,
+        "denied_schema": 1,
+        "denied_policy": 1
+      }
+    }
+  }
+}
